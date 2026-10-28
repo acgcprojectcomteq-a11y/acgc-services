@@ -1043,11 +1043,21 @@ body:has(.mobile-fullscreen-overlay) .customer-mobile-navigation {
   background-color: #78350f !important;
 }
 
+.admin-theme-dark .progress-edit-dialog .progress-cooldown-notice {
+  border-color: #b45309 !important;
+  background-color: #451a03 !important;
+  color: #fef3c7 !important;
+}
+
 .admin-theme-dark .progress-edit-dialog .border-emerald-200 {
   border-color: #047857 !important;
 }
 
 .admin-theme-dark .progress-edit-dialog .border-amber-200 {
+  border-color: #b45309 !important;
+}
+
+.admin-theme-dark .progress-edit-dialog .border-amber-300 {
   border-color: #b45309 !important;
 }
 
@@ -1059,6 +1069,11 @@ body:has(.mobile-fullscreen-overlay) .customer-mobile-navigation {
 .admin-theme-dark .progress-edit-dialog .text-amber-700,
 .admin-theme-dark .progress-edit-dialog .text-amber-800 {
   color: #fcd34d !important;
+}
+
+.admin-theme-dark .progress-edit-dialog .text-amber-900,
+.admin-theme-dark .progress-edit-dialog .text-amber-950 {
+  color: #fde68a !important;
 }
 
 .admin-theme-dark .progress-edit-dialog .progress-delay-panel {

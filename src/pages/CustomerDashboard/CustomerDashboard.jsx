@@ -523,6 +523,7 @@ function CustomerDashboard() {
   }, [customerPaymentProofPreview?.url]);
   const [showCustomerReviewModal, setShowCustomerReviewModal] = useState(false);
   const [reviewDetailsOrder, setReviewDetailsOrder] = useState(null);
+  const [reviewPhotoPreview, setReviewPhotoPreview] = useState(null);
   const [selectedReviewRatingTab, setSelectedReviewRatingTab] = useState(0);
   const [reviewOrderMode, setReviewOrderMode] = useState("estimate");
   const [orderReviewAgreed, setOrderReviewAgreed] = useState(false);
@@ -607,6 +608,10 @@ function CustomerDashboard() {
   useEffect(() => {
     const handleEscape = (event) => {
       if (event.key !== "Escape" || showCustomerExitConfirm) return;
+      if (reviewPhotoPreview) {
+        event.preventDefault();
+        setReviewPhotoPreview(null);
+      } else
       if (showCustomerReviewModal) {
         event.preventDefault();
         requestCloseCustomerReviewModal();
@@ -635,7 +640,7 @@ function CustomerDashboard() {
     };
     window.addEventListener("keydown", handleEscape);
     return () => window.removeEventListener("keydown", handleEscape);
-  }, [showCustomerExitConfirm, showCustomerReviewModal, showDeliveryConfirmModal, showOrderNowModal, showCartDecisionModal, showBatchOrderModal, cancelRequestModal.open, cancelRequestReason, paymentProofOpenOrderId, paymentProofForm, selectedProduct, productEstimatorForm, orderReviewForm, selectedReviewTopics, deliveryConfirmForm, deliveryConfirmNotes, orderNowQuantity, orderNowExtraCharges, estimateForm, batchOrderForm]);
+  }, [showCustomerExitConfirm, reviewPhotoPreview, showCustomerReviewModal, showDeliveryConfirmModal, showOrderNowModal, showCartDecisionModal, showBatchOrderModal, cancelRequestModal.open, cancelRequestReason, paymentProofOpenOrderId, paymentProofForm, selectedProduct, productEstimatorForm, orderReviewForm, selectedReviewTopics, deliveryConfirmForm, deliveryConfirmNotes, orderNowQuantity, orderNowExtraCharges, estimateForm, batchOrderForm]);
   const [cancelRequestSubmitting, setCancelRequestSubmitting] = useState(false);
   const [expandedOrderId, setExpandedOrderId] = useState(null);
   const [highlightedOrderId, setHighlightedOrderId] = useState(null);
@@ -3431,6 +3436,14 @@ function CustomerDashboard() {
   const handleCancelDeliveryConfirm = () => requestCustomerExit(
     createUnsavedSnapshot({ form: deliveryConfirmForm, notes: deliveryConfirmNotes }) !== deliveryFormBaselineRef.current,
     performCancelDeliveryConfirm,
+  );
+
+  const closeDeliveryConfirm = () => requestCustomerExit(
+    createUnsavedSnapshot({ form: deliveryConfirmForm, notes: deliveryConfirmNotes }) !== deliveryFormBaselineRef.current,
+    () => {
+      performCancelDeliveryConfirm();
+      setSelectedProduct(null);
+    },
   );
 
   const handleTrackingSubmit = async () => {
@@ -6734,7 +6747,7 @@ function CustomerDashboard() {
                                       <p className={`mt-2 whitespace-pre-line break-words text-sm leading-6 ${darkMode ? "text-slate-300" : "text-slate-700"}`}>{review.comment || "No review comment."}</p>
                                       {review.photos?.length > 0 && (
                                         <div className="mt-3 flex flex-wrap gap-2">
-                                          {review.photos.map((photo, photoIndex) => <img key={photoIndex} src={photo} alt={`Review photo ${photoIndex + 1}`} className="h-20 w-20 rounded-lg border border-slate-200 object-cover" loading="lazy" />)}
+                                          {review.photos.map((photo, photoIndex) => <button key={`${photo}-${photoIndex}`} type="button" onClick={() => setReviewPhotoPreview({ url: ensureAbsoluteUrl(photo), index: photoIndex })} aria-label={`Open review photo ${photoIndex + 1}`} className="h-20 w-20 overflow-hidden rounded-lg border border-slate-200"><img src={ensureAbsoluteUrl(photo)} alt={`Review photo ${photoIndex + 1}`} className="h-full w-full object-cover" loading="lazy" /></button>)}
                                         </div>
                                       )}
                                       {review.adminResponse && (
@@ -7089,7 +7102,7 @@ function CustomerDashboard() {
                       </button>
                       <button
                         type="button"
-                        onClick={handleCancelDeliveryConfirm}
+                        onClick={closeDeliveryConfirm}
                         className={`rounded-full border p-1.5 transition ${darkMode ? "border-slate-600 text-slate-300 hover:bg-slate-800" : "border-slate-200 text-slate-500 hover:bg-slate-100"}`}
                         aria-label="Close place order request"
                       >
@@ -8975,16 +8988,15 @@ function CustomerDashboard() {
                   {(reviewDetailsOrder.review?.photos || []).length > 0 ? (
                     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                       {reviewDetailsOrder.review.photos.map((photo, index) => (
-                        <a
+                        <button
                           key={`${photo}-${index}`}
-                          href={ensureAbsoluteUrl(photo)}
-                          target="_blank"
-                          rel="noreferrer"
+                          type="button"
+                          onClick={() => setReviewPhotoPreview({ url: ensureAbsoluteUrl(photo), index })}
                           aria-label={`Open review photo ${index + 1}`}
                           className={`aspect-square overflow-hidden rounded-lg border ${darkMode ? "border-slate-700 bg-slate-800" : "border-slate-200 bg-slate-50"}`}
                         >
                           <img src={ensureAbsoluteUrl(photo)} alt={`Review photo ${index + 1}`} className="h-full w-full object-cover" />
-                        </a>
+                        </button>
                       ))}
                     </div>
                   ) : (
@@ -9016,6 +9028,13 @@ function CustomerDashboard() {
                 )}
               </footer>
             </section>
+          </div>
+        )}
+
+        {reviewPhotoPreview && (
+          <div role="dialog" aria-modal="true" aria-label={`Review photo ${reviewPhotoPreview.index + 1} preview`} className="fixed inset-0 z-[160] flex items-center justify-center bg-black/90 p-3 sm:p-6" onMouseDown={(event) => { if (event.target === event.currentTarget) setReviewPhotoPreview(null); }}>
+            <button type="button" onClick={() => setReviewPhotoPreview(null)} aria-label="Close image preview" className="absolute right-4 top-4 z-10 rounded-full bg-white/15 p-2 text-white hover:bg-white/25"><X size={22} /></button>
+            <img src={reviewPhotoPreview.url} alt={`Customer review photo ${reviewPhotoPreview.index + 1}`} className="max-h-[90dvh] max-w-[96vw] rounded-lg object-contain" />
           </div>
         )}
 

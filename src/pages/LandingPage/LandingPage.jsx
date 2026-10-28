@@ -39,7 +39,7 @@ import { getPaymentSummary } from "@/pages/Transactions/paymentProofUtils";
 import { getPaymentStatusBadgeClassName, getPaymentStatusLabel, statusBadgeBaseClassName } from "@/lib/statusBadgeStyles";
 import { getProducts } from "../../api/products";
 import { subscribeToRealtime } from "@/lib/realtimeEvents";
-import { getCustomerFeedbackSummary, getProductReviewSummary, trackOrder } from "../../api/orders";
+import { getCustomerFeedbackSummary, getProductReviewSummary, getProductReviews, trackOrder } from "../../api/orders";
 import { trackRepairRequest } from "@/api/repairs";
 import OrderRepairProgress from "@/components/OrderRepairProgress";
 import logo from "../../assets/images/ACGCLOGO1.png";
@@ -62,6 +62,7 @@ function LandingPage() {
   const reduceMotion = useReducedMotion();
   const { user, loading: authLoading } = useAuth();
   const customerPermissions = useCustomerPermissions();
+  const canSeeCustomerRatings = customerPermissions.show_ratings_homepage;
   const isMobile = useIsMobile();
   const {
     phone: adminContactPhone,
@@ -83,6 +84,10 @@ function LandingPage() {
     return validSections.includes(section) ? section : "home";
   });
   const [selectedProduct, setSelectedProduct] = useState(null);
+  const [selectedProductReviews, setSelectedProductReviews] = useState([]);
+  const [selectedProductReviewsLoading, setSelectedProductReviewsLoading] = useState(false);
+  const [selectedLandingReviewRatingTab, setSelectedLandingReviewRatingTab] = useState(0);
+  const [landingReviewPhotoPreview, setLandingReviewPhotoPreview] = useState(null);
   const [showLoginRequired, setShowLoginRequired] = useState(false);
   const [pendingGuestCartAdd, setPendingGuestCartAdd] = useState(null);
   const [addingCartProductId, setAddingCartProductId] = useState("");
@@ -113,6 +118,17 @@ function LandingPage() {
   const [trackingLoading, setTrackingLoading] = useState(false);
   const [showAllTrackedItems, setShowAllTrackedItems] = useState(false);
   const [pendingActionError, setPendingActionError] = useState("");
+  const ratedLandingReviews = selectedProductReviews.filter((review) => Number(review.rating) >= 1 && Number(review.rating) <= 5);
+  const landingReviewAverage = ratedLandingReviews.length
+    ? ratedLandingReviews.reduce((sum, review) => sum + Number(review.rating), 0) / ratedLandingReviews.length
+    : 0;
+  const landingReviewCounts = [5, 4, 3, 2, 1].map((star) => ({
+    star,
+    count: ratedLandingReviews.filter((review) => Number(review.rating) === star).length,
+  }));
+  const filteredLandingReviews = selectedLandingReviewRatingTab === 0
+    ? selectedProductReviews
+    : selectedProductReviews.filter((review) => Number(review.rating) === selectedLandingReviewRatingTab);
   useEffect(() => {
     if (lastLocationSearchRef.current === location.search) return;
     lastLocationSearchRef.current = location.search;
@@ -221,33 +237,22 @@ function LandingPage() {
         setFeaturedProducts(activeProducts.slice(0, 3));
         setCatalogLoaded(true);
 
-        const productReviewData = await Promise.all(
-          activeProducts.map(async (product) => {
-            try {
-              const reviewResponse = await getProductReviewSummary(product._id || product.id);
-
-              return {
-                product,
-                averageRating: Number(reviewResponse.average) || 0,
-                ratingsCount: Number(reviewResponse.total) || 0,
-                ratingCounts: reviewResponse.counts || { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 },
-              };
-            } catch {
-              return {
-                product,
-                averageRating: 0,
-                ratingsCount: 0,
-                ratingCounts: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 },
-              };
-            }
-          })
-        );
-
+        const productReviewData = await Promise.all(activeProducts.map(async (product) => {
+          try {
+            const reviewResponse = await getProductReviewSummary(product._id || product.id);
+            return {
+              product,
+              averageRating: Number(reviewResponse.average) || 0,
+              ratingsCount: Number(reviewResponse.total) || 0,
+            };
+          } catch {
+            return { product, averageRating: 0, ratingsCount: 0 };
+          }
+        }));
         const stats = {};
         productReviewData.forEach(({ product, averageRating, ratingsCount }) => {
           stats[product._id || product.id] = { averageRating, ratingsCount };
         });
-
         const feedbackSummary = await getCustomerFeedbackSummary().catch(() => null);
         const ratingCounts = [5, 4, 3, 2, 1].reduce((counts, star) => {
           counts[star] = Math.max(0, Number(feedbackSummary?.counts?.[star]) || 0);
@@ -255,7 +260,6 @@ function LandingPage() {
         }, {});
         const totalRatings = [5, 4, 3, 2, 1].reduce((sum, star) => sum + ratingCounts[star], 0);
         const weightedRatingTotal = [5, 4, 3, 2, 1].reduce((sum, star) => sum + ratingCounts[star] * star, 0);
-
         setCatalogProducts(activeProducts);
         setFeaturedProductStats(stats);
         setFeaturedRatingStats({
@@ -288,7 +292,10 @@ function LandingPage() {
 
     const previousOverflow = document.body.style.overflow;
     const closeOnEscape = (event) => {
-      if (event.key === "Escape") setSelectedProduct(null);
+      if (event.key === "Escape") {
+        if (landingReviewPhotoPreview) setLandingReviewPhotoPreview(null);
+        else setSelectedProduct(null);
+      }
     };
 
     document.body.style.overflow = "hidden";
@@ -297,7 +304,33 @@ function LandingPage() {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", closeOnEscape);
     };
-  }, [selectedProduct]);
+  }, [selectedProduct, landingReviewPhotoPreview]);
+
+  useEffect(() => {
+    const productId = selectedProduct?._id || selectedProduct?.id;
+    setSelectedLandingReviewRatingTab(0);
+    setLandingReviewPhotoPreview(null);
+    if (!productId || !canSeeCustomerRatings || !customerPermissions.can_upload_feedback) {
+      setSelectedProductReviews([]);
+      setSelectedProductReviewsLoading(false);
+      return undefined;
+    }
+
+    let active = true;
+    setSelectedProductReviewsLoading(true);
+    getProductReviews(productId)
+      .then((response) => {
+        if (active) setSelectedProductReviews(response.reviews || []);
+      })
+      .catch(() => {
+        if (active) setSelectedProductReviews([]);
+      })
+      .finally(() => {
+        if (active) setSelectedProductReviewsLoading(false);
+      });
+
+    return () => { active = false; };
+  }, [selectedProduct, canSeeCustomerRatings, customerPermissions.can_upload_feedback]);
 
   const getProductImage = (product, width = 640) => {
     const source = getProductImageSource(product);
@@ -710,7 +743,7 @@ function LandingPage() {
       toast.error("Price estimation is currently unavailable.");
       return;
     }
-    if (actionType !== "estimate" && !customerPermissions.can_request_orders) {
+    if (actionType !== "estimate" && user && !customerPermissions.can_request_orders) {
       toast.error("Order requests are currently unavailable.");
       return;
     }
@@ -915,16 +948,9 @@ function LandingPage() {
     const normalizedRating = Number(rating) || 0;
     const fullStars = Math.floor(normalizedRating);
     const hasHalfStar = normalizedRating - fullStars >= 0.5;
-
     return Array.from({ length: 5 }, (_, index) => {
-      if (index < fullStars) {
-        return <Star key={index} size={size} fill="currentColor" className="text-amber-500" />;
-      }
-
-      if (index === fullStars && hasHalfStar) {
-        return <StarHalf key={index} size={size} fill="currentColor" className="text-amber-500" />;
-      }
-
+      if (index < fullStars) return <Star key={index} size={size} fill="currentColor" className="text-amber-500" />;
+      if (index === fullStars && hasHalfStar) return <StarHalf key={index} size={size} fill="currentColor" className="text-amber-500" />;
       return <Star key={index} size={size} className="text-slate-300" />;
     });
   };
@@ -1193,7 +1219,7 @@ function LandingPage() {
                         <p className="line-clamp-3 min-h-[4.5rem] text-sm leading-6 text-slate-700">
                           {product.description || "Premium aluminum and glass solution for modern spaces."}
                         </p>
-                        {customerPermissions.show_ratings_homepage && (
+                        {canSeeCustomerRatings && (
                           <div className="flex items-center gap-2">
                             <div className="flex shrink-0 items-center gap-0.5 text-amber-500">
                               {renderRatingStars(averageRating, 14)}
@@ -1215,7 +1241,7 @@ function LandingPage() {
             )}
           </div>
 
-          {customerPermissions.show_ratings_homepage && <section className="mt-8 rounded-[30px] border border-white/60 bg-white/[0.32] px-6 py-8 shadow-[0_20px_48px_rgba(15,23,42,0.06)] backdrop-blur-2xl sm:px-10">
+          {canSeeCustomerRatings && <section className="mt-8 rounded-[30px] border border-white/60 bg-white/[0.32] px-6 py-8 shadow-[0_20px_48px_rgba(15,23,42,0.06)] backdrop-blur-2xl sm:px-10">
             <h2 className="text-center text-3xl font-black text-slate-900">Customer Ratings</h2>
             <div className="mt-8 grid gap-8 md:grid-cols-[220px_1fr] md:items-center">
               <div className="text-center">
@@ -1364,7 +1390,7 @@ function LandingPage() {
                     )}
                   </div>
                   <div className="absolute inset-x-0 bottom-0 flex items-end justify-end gap-3 p-3 max-md:p-1.5">
-                    <div className="hidden gap-1.5 md:flex">
+                    {customerPermissions.can_request_orders && <div className="hidden gap-1.5 md:flex">
                       <button
                         type="button"
                         onClick={(event) => {
@@ -1392,7 +1418,7 @@ function LandingPage() {
                           ? <LoaderCircle size={14} className="animate-spin" aria-hidden="true" />
                           : <ShoppingCart size={16} aria-hidden="true" />}
                       </button>
-                    </div>
+                    </div>}
                   </div>
                 </div>
 
@@ -1402,7 +1428,7 @@ function LandingPage() {
                     <p className="mt-1 truncate text-[12px] font-medium text-slate-600 max-md:text-[10px]">{category}</p>
                   </div>
 
-                  {customerPermissions.show_ratings_homepage && (
+                  {canSeeCustomerRatings && (
                     <div className="flex min-w-0 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] max-md:w-fit max-md:gap-1 max-md:border-0 max-md:bg-transparent max-md:p-0">
                       <span className="flex shrink-0 items-center gap-0.5 text-amber-400">{renderRatingStars(rating.averageRating || 0, 13)}</span>
                       <span className="truncate font-medium text-slate-700">
@@ -1429,7 +1455,7 @@ function LandingPage() {
                       <p className="text-[10px] uppercase tracking-[0.14em] text-slate-500 max-md:text-[8px]">Starting from</p>
                       <p className="mt-1 truncate text-[22px] font-black text-red-700 max-md:text-base">{getProductPrice(product)}</p>
                     </div>
-                    <div className="flex w-full shrink-0 items-center justify-end gap-1 md:hidden">
+                    {customerPermissions.can_request_orders && <div className="flex w-full shrink-0 items-center justify-end gap-1 md:hidden">
                       <button
                         type="button"
                         onClick={(event) => {
@@ -1457,7 +1483,7 @@ function LandingPage() {
                           ? <LoaderCircle size={14} className="animate-spin" aria-hidden="true" />
                           : <ShoppingCart size={14} aria-hidden="true" />}
                       </button>
-                    </div>
+                    </div>}
                   </div>
                 </div>
               </article>
@@ -1520,17 +1546,18 @@ function LandingPage() {
       role="dialog"
       aria-modal="true"
       aria-labelledby="landing-product-dialog-title"
-      className="mobile-fullscreen-dialog relative flex max-h-[calc(100dvh-2rem)] min-h-0 w-full max-w-4xl flex-col overflow-hidden rounded-[28px] border border-white/20 bg-white shadow-2xl"
+      className={`mobile-fullscreen-dialog relative flex min-h-0 w-full flex-col overflow-hidden rounded-2xl border border-white/20 bg-white shadow-2xl ${isBladeProduct(selectedProduct) ? "max-h-[92vh] max-w-7xl" : "max-h-[88vh] max-w-5xl"}`}
       onClick={(event) => event.stopPropagation()}
     >
-      {!isProductModalReadOnly ? <header className="flex shrink-0 items-center justify-between gap-4 border-b border-red-500/25 bg-gradient-to-r from-red-700 to-red-800 px-5 py-4 text-white sm:px-6">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 ring-1 ring-white/25">
-            <Package size={19} aria-hidden="true" />
+      {!isProductModalReadOnly ? <header className="flex shrink-0 flex-col border-b border-red-500/30 bg-gradient-to-r from-red-600 via-red-600 to-red-700 px-4 py-1.5 text-white shadow-[0_8px_18px_rgba(220,38,38,0.16)] sm:px-5 sm:py-2">
+        <div className="flex min-w-0 items-center justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/10 ring-1 ring-white/20 sm:h-9 sm:w-9">
+            <Package size={16} aria-hidden="true" />
           </span>
           <div className="min-w-0">
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-red-100">Product details</p>
-            <h2 id="landing-product-dialog-title" className="truncate text-lg font-black sm:text-xl">
+            <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-red-100/90">Product details</p>
+            <h2 id="landing-product-dialog-title" className="truncate text-base font-black sm:text-lg">
               {selectedProduct.product_name || selectedProduct.name || "Product"}
             </h2>
           </div>
@@ -1539,10 +1566,15 @@ function LandingPage() {
           type="button"
           onClick={() => setSelectedProduct(null)}
           aria-label="Close product details"
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/10 transition hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 transition hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white sm:h-9 sm:w-9"
         >
           <X size={20} aria-hidden="true" />
         </button>
+        </div>
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+          <span className="rounded-full border border-white/25 bg-white/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.12em] text-red-50">{selectedProduct.category || selectedProduct.product_type || "General"}</span>
+          <span className="text-xs text-red-100/90">Ready for inquiry</span>
+        </div>
       </header> : <button
         type="button"
         onClick={() => setSelectedProduct(null)}
@@ -1552,9 +1584,10 @@ function LandingPage() {
         <X size={18} aria-hidden="true" />
       </button>}
 
-      <div className="grid min-h-0 flex-1 gap-5 overflow-y-auto p-4 sm:p-6 md:grid-cols-[1.1fr_0.9fr]">
+      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className={`grid items-start gap-5 p-4 sm:p-5 lg:gap-7 lg:p-6 ${isBladeProduct(selectedProduct) ? "md:grid-cols-[minmax(0,1fr)_minmax(400px,1fr)]" : "md:grid-cols-[minmax(0,1.3fr)_minmax(300px,0.9fr)]"}`}>
         <div className="min-w-0 space-y-4">
-          <div className="relative aspect-[4/3] overflow-hidden rounded-2xl bg-slate-100">
+          <div className="relative aspect-[3/2] w-full overflow-hidden rounded-2xl bg-white shadow-sm">
             <div data-product-image-skeleton className="absolute inset-0 animate-pulse bg-slate-200 motion-reduce:animate-none" />
             <img
               src={getProductImage(selectedProduct, 960) || PRODUCT_IMAGE_PLACEHOLDER}
@@ -1567,7 +1600,7 @@ function LandingPage() {
               decoding="async"
               onLoad={handleProductImageLoad}
               onError={handleProductImageError}
-              className="aspect-[4/3] max-h-[340px] w-full object-cover"
+              className="h-full w-full object-fill"
             />
           </div>
           {!isProductModalReadOnly && <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -1575,6 +1608,20 @@ function LandingPage() {
             <p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-600">
               {selectedProduct.description || "No description available."}
             </p>
+          </div>}
+          {!isProductModalReadOnly && <div className="grid gap-2 sm:grid-cols-3">
+            <div className="min-w-0 rounded-xl border border-slate-200 bg-white p-3">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Type</p>
+              <p className="mt-1 truncate text-sm font-bold text-slate-900">{selectedProduct.product_type || selectedProduct.type || "N/A"}</p>
+            </div>
+            <div className="min-w-0 rounded-xl border border-slate-200 bg-white p-3">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Dimensions</p>
+              <p className="mt-1 truncate text-sm font-bold text-slate-900">{selectedProduct.dimensions || selectedProduct.standard_size || (selectedProduct.width > 0 || selectedProduct.height > 0 ? `${selectedProduct.width || 0} x ${selectedProduct.height || 0}` : "N/A")}</p>
+            </div>
+            <div className="min-w-0 rounded-xl border border-slate-200 bg-white p-3">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Unit rate</p>
+              <p className="mt-1 truncate text-sm font-bold text-slate-900">{getProductUnitRate(selectedProduct)}</p>
+            </div>
           </div>}
         </div>
 
@@ -1613,38 +1660,10 @@ function LandingPage() {
           <h3 className="text-2xl font-black leading-tight text-slate-900">
             {selectedProduct.product_name || selectedProduct.name || "Product"}
           </h3>
-          {customerPermissions.show_ratings_homepage && <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Customer Rating</p>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-0.5">{renderRatingStars(selectedProductRating.averageRating, 16)}</span>
-              <span className="text-sm font-bold text-slate-900">
-                {selectedProductRating.ratingsCount ? `${selectedProductRating.averageRating.toFixed(1)} / 5` : "No ratings yet"}
-              </span>
-            </div>
-            <p className="mt-1 text-xs text-slate-500">
-              {selectedProductRating.ratingsCount} rating{selectedProductRating.ratingsCount === 1 ? "" : "s"}
-            </p>
-          </div>}
           <div className="rounded-2xl border border-red-200 bg-red-50 p-4">
             <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">Starting from</p>
             <p className="mt-1 text-2xl font-black text-red-700">{getProductPrice(selectedProduct)}</p>
             <p className="mt-1 text-xs text-slate-500">Price may vary based on specifications.</p>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-xl border border-slate-200 bg-white p-3">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Dimensions</p>
-              <p className="mt-1 text-sm font-bold text-slate-800">
-                {selectedProduct.dimensions || selectedProduct.standard_size || (
-                  selectedProduct.width > 0 || selectedProduct.height > 0
-                    ? `${selectedProduct.width || 0} × ${selectedProduct.height || 0}`
-                    : "N/A"
-                )}
-              </p>
-            </div>
-            <div className="rounded-xl border border-slate-200 bg-white p-3">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Unit rate</p>
-              <p className="mt-1 text-sm font-bold text-slate-800">{getProductUnitRate(selectedProduct)}</p>
-            </div>
           </div>
           {customerPermissions.can_estimate_pricing && <ProductPriceEstimator
             product={selectedProduct}
@@ -1834,30 +1853,69 @@ function LandingPage() {
               {pendingActionError}
             </p>
           )}
-          <>
+          {customerPermissions.can_request_orders && <div className="grid gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => continueProductActionAfterLogin("direct")}
+              className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
+            >
+              <Package size={17} aria-hidden="true" /> Place Order
+            </button>
             <button
               type="button"
               onClick={() => handleAddToCart(selectedProduct, productEstimatorForm)}
               disabled={addingCartProductId === String(selectedProduct._id || selectedProduct.id || "")}
-              className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-red-700 px-5 py-3 text-sm font-bold text-red-700 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-3 text-sm font-bold text-white transition hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {addingCartProductId === String(selectedProduct._id || selectedProduct.id || "")
                 ? <LoaderCircle size={17} className="animate-spin" aria-hidden="true" />
                 : <ShoppingCart size={17} aria-hidden="true" />}
               Add to Cart
             </button>
-            <button
-              type="button"
-              onClick={() => continueProductActionAfterLogin("direct")}
-              className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-red-600 px-5 py-3 text-sm font-bold text-white transition hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
-            >
-              Place Order Request <ArrowRight size={16} aria-hidden="true" />
-            </button>
-          </>
+          </div>}
           </>}
         </aside>
       </div>
+      {canSeeCustomerRatings && customerPermissions.can_upload_feedback && (
+        <section className="mx-4 mb-5 overflow-hidden rounded-xl border border-slate-200 bg-white sm:mx-5 lg:mx-6" aria-labelledby="landing-product-ratings-heading">
+            <div className="border-b border-slate-200 px-5 py-4 sm:px-6">
+              <h4 id="landing-product-ratings-heading" className="text-lg font-bold text-slate-900">Product Ratings</h4>
+            </div>
+            <div className="grid gap-4 border-b border-slate-100 bg-rose-50/40 p-4 sm:p-5 md:grid-cols-[190px_minmax(0,1fr)]">
+              <div className="flex flex-col items-center justify-center border-b pb-4 text-center md:border-b-0 md:border-r md:pb-0 md:pr-5">
+                {selectedProductReviewsLoading ? <p className="text-sm text-slate-500" role="status">Loading reviews...</p> : ratedLandingReviews.length ? <>
+                  <p className="text-3xl font-bold text-red-600">{landingReviewAverage.toFixed(1)}<span className="text-base font-medium"> / 5</span></p>
+                  <div className="mt-1 flex items-center gap-0.5 text-amber-500" aria-label={`${landingReviewAverage.toFixed(1)} out of 5 stars`}>{renderRatingStars(landingReviewAverage, 20)}</div>
+                  <p className="mt-2 text-xs text-slate-500">{ratedLandingReviews.length} rating{ratedLandingReviews.length === 1 ? "" : "s"}</p>
+                </> : <><p className="text-2xl font-bold text-slate-500">- <span className="text-sm font-medium">/ 5</span></p><p className="mt-2 text-xs text-slate-500">No ratings yet</p></>}
+              </div>
+              <div className="flex flex-wrap content-center gap-2" role="group" aria-label="Filter reviews by rating">
+                <button type="button" onClick={() => setSelectedLandingReviewRatingTab(0)} aria-pressed={selectedLandingReviewRatingTab === 0} className={`rounded-md border px-3 py-2 text-xs font-semibold transition ${selectedLandingReviewRatingTab === 0 ? "border-red-600 bg-red-600 text-white" : "border-slate-200 bg-white text-slate-700 hover:border-red-300"}`}>All ({selectedProductReviews.length})</button>
+                {landingReviewCounts.map(({ star, count }) => <button key={star} type="button" onClick={() => setSelectedLandingReviewRatingTab(star)} aria-pressed={selectedLandingReviewRatingTab === star} className={`rounded-md border px-3 py-2 text-xs font-semibold transition ${selectedLandingReviewRatingTab === star ? "border-red-600 bg-red-600 text-white" : "border-slate-200 bg-white text-slate-700 hover:border-red-300"}`}>{star} Star ({count})</button>)}
+              </div>
+            </div>
+            {selectedProductReviewsLoading ? <p className="px-5 py-6 text-sm text-slate-500" role="status">Loading reviews...</p> : filteredLandingReviews.length === 0 ? <p className="px-5 py-6 text-sm text-slate-500">{selectedProductReviews.length === 0 ? "No reviews yet" : `No ${selectedLandingReviewRatingTab}-star reviews`}</p> : <div className="max-h-[55dvh] divide-y divide-slate-100 overflow-y-auto">
+              {filteredLandingReviews.map((review, index) => <article key={`${review.orderId || index}-${review.submittedAt || index}`} className="p-4 sm:p-5">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-bold text-slate-600" aria-hidden="true">{String(review.customerName || "A").trim().charAt(0).toUpperCase()}</div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-start justify-between gap-2"><div className="min-w-0"><p className="truncate text-sm font-semibold text-slate-900">{review.customerName || "Anonymous"}</p><p className="mt-1 text-xs text-slate-500">{review.submittedAt ? new Date(review.submittedAt).toLocaleDateString("en-PH", { dateStyle: "medium" }) : "Date unavailable"}</p></div><div className="inline-flex items-center gap-1 text-xs font-semibold text-amber-600"><span className="inline-flex items-center">{renderRatingStars(review.rating, 14)}</span><span>{Number(review.rating) > 0 ? `${Number(review.rating).toFixed(1)} / 5` : "No rating"}</span></div></div>
+                    {review.title && <h5 className="mt-3 text-sm font-semibold text-slate-900">{review.title}</h5>}
+                    <p className="mt-2 whitespace-pre-line break-words text-sm leading-6 text-slate-700">{review.comment || "No review comment."}</p>
+                    {review.photos?.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{review.photos.map((photo, photoIndex) => <button key={`${photo}-${photoIndex}`} type="button" onClick={() => setLandingReviewPhotoPreview({ url: resolveBackendImageUrl(photo), index: photoIndex })} aria-label={`Open review photo ${photoIndex + 1}`} className="h-20 w-20 overflow-hidden rounded-lg border border-slate-200"><img src={resolveBackendImageUrl(photo)} alt={`Review photo ${photoIndex + 1}`} className="h-full w-full object-cover" loading="lazy" /></button>)}</div>}
+                    {review.adminResponse && <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3"><p className="text-xs font-bold text-slate-700">ACGC SERVICES</p><p className="mt-1 whitespace-pre-line break-words text-sm leading-5 text-slate-600">{review.adminResponse}</p></div>}
+                  </div>
+                </div>
+              </article>)}
+            </div>}
+        </section>
+      )}
+      </div>
     </section>
+    {landingReviewPhotoPreview && <div role="dialog" aria-modal="true" aria-label={`Review photo ${landingReviewPhotoPreview.index + 1} preview`} className="fixed inset-0 z-[160] flex items-center justify-center bg-black/90 p-3 sm:p-6" onMouseDown={(event) => { if (event.target === event.currentTarget) setLandingReviewPhotoPreview(null); }}>
+      <button type="button" onClick={() => setLandingReviewPhotoPreview(null)} aria-label="Close photo preview" className="absolute right-4 top-4 rounded-full bg-white/15 p-3 text-white transition hover:bg-white/25"><X size={22} aria-hidden="true" /></button>
+      <img src={landingReviewPhotoPreview.url} alt={`Customer review photo ${landingReviewPhotoPreview.index + 1}`} className="max-h-[90dvh] max-w-[96vw] rounded-lg object-contain" />
+    </div>}
   </div>
 ), document.body)}
 

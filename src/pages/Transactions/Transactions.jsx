@@ -31,6 +31,7 @@ import AdminPageHeader from "../../components/layout/AdminPageHeader";
 import ContractModal from "../../components/ContractModal";
 import TransactionDetailsModal from "../../components/TransactionDetailsModal";
 import { getAdminOrders, acceptContract, declineContract, updateOrderStatus, deleteOrderReview, setOrderReviewVisibility, respondToCustomerReview, downloadTransactionReport } from "@/api/orders";
+import { hasAcceptedTransactionContract } from "@/lib/transactionAcceptance";
 import { formatDateToMMDDYYYY, formatDateTimeToMMDDYYYY, formatDateToMMMDDYYYY } from "@/lib/dateUtils";
 import { useAuth } from "@/contexts/AuthContext";
 import { recordActivity } from "@/lib/activityLog";
@@ -264,20 +265,7 @@ function Transactions() {
     return entries;
   };
 
-  const hasAcceptedContract = (order) => {
-    const contractStatus = String(order.contract_status || "").toLowerCase();
-    if (contractStatus !== "accepted") return false;
-
-    if (order.order_type === "walk_in_customer") {
-      return order.acceptance_method === "walk_in_signed_contract" &&
-        Boolean(order.signed_contract_url) &&
-        Boolean(order.contract_signed_date);
-    }
-
-    return order.acceptance_method === "online" && order.acceptedByCustomer === true;
-  };
-
-  const transactionOrders = orders.filter(hasAcceptedContract);
+  const transactionOrders = orders.filter(hasAcceptedTransactionContract);
   const financialOrders = transactionOrders.filter((order) => {
     const status = String(order.status || "").toLowerCase();
     const contractStatus = String(order.contract_status || "").toLowerCase();
@@ -286,16 +274,6 @@ function Transactions() {
   });
   const getTransactionTotal = (order) => getPaymentSummary(order).totalAmount;
   const getConfirmedPayment = (order) => getPaymentSummary(order).paidAmount;
-
-  const hasVerifiedContractAcceptance = (order) => {
-    if (String(order.contract_status || "").toLowerCase() !== "accepted") return false;
-
-    if (order.order_type === "walk_in_customer") {
-      return order.acceptance_method === "walk_in_signed_contract" && Boolean(order.signed_contract_url);
-    }
-
-    return order.acceptedByCustomer === true && order.acceptance_method === "online";
-  };
 
   // Warranty helpers
   const getInstallationCompletionDate = (order, item = null) => {
@@ -1293,7 +1271,7 @@ function Transactions() {
     ];
 
     return (
-      hasVerifiedContractAcceptance(o) &&
+      hasAcceptedTransactionContract(o) &&
       !blockedStatuses.includes(status) &&
       !blockedStatuses.includes(orderStatus)
     );

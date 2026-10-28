@@ -529,10 +529,14 @@ function Settings() {
   const getPermissions = (account) => normalizePermissions(account.access_permissions);
 
   const updateGlobalPermission = (key, checked) => {
-    setGlobalPermissions((current) => normalizeGlobalCustomerPermissions({
-      ...current,
-      [key]: checked,
-    }));
+    setGlobalPermissions((current) => {
+      const next = {
+        ...current,
+        ...(key !== "view_only_access" && checked ? { view_only_access: false } : {}),
+        [key]: checked,
+      };
+      return normalizeGlobalCustomerPermissions(next);
+    });
   };
 
   const updateUser = async (account, patch) => {
@@ -1671,8 +1675,8 @@ function Settings() {
               <button type="button" onClick={() => setGlobalOpen((open) => !open)} className={`inline-flex max-w-full items-center gap-2 self-start rounded-full border px-4 py-2 text-xs font-bold transition sm:self-auto ${darkMode ? "border-red-900/70 bg-red-950/50 text-red-200 hover:bg-red-900/60" : "border-red-200 bg-red-100 text-red-900 hover:bg-red-200"}`}>{globalOpen ? "Collapse" : "Manage All"}<ChevronDown size={14} className={`transition-transform ${globalOpen ? "rotate-180" : ""}`} /></button>
             </div>
             {globalOpen && <>
-              <div className={`flex items-center justify-between border-b px-5 py-4 ${darkMode ? "border-slate-800" : "border-slate-100"}`}><div><p className={`text-[10px] font-black uppercase tracking-[0.18em] ${darkMode ? "text-slate-500" : "text-slate-400"}`}>Global customer access profile</p><p className={`mt-1 text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Choose the global profile; each account's matrix remains independent.</p></div><span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-wide ${darkMode ? "bg-slate-800 text-slate-300" : "bg-slate-100 text-slate-600"}`}>{Object.values(globalPermissions).filter(Boolean).length} enabled</span></div>
-              <div className="grid gap-3 p-4 md:grid-cols-2">{PERMISSIONS.map((permission, index) => <PermissionSwitch key={permission.key} permission={permission} index={index} checked={permission.key === "view_only_access" ? globalPermissions.view_only_access : !globalPermissions.view_only_access && globalPermissions[permission.key]} disabled={globalPermissions.view_only_access && permission.key !== "view_only_access"} onChange={(checked) => updateGlobalPermission(permission.key, checked)} darkMode={darkMode} />)}</div>
+              <div className={`flex items-center justify-between border-b px-5 py-4 ${darkMode ? "border-slate-800" : "border-slate-100"}`}><div><p className={`text-[10px] font-black uppercase tracking-[0.18em] ${darkMode ? "text-slate-500" : "text-slate-400"}`}>Global customer access profile</p><p className={`mt-1 text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Choose the global profile; each account's matrix remains independent.</p></div><span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-wide ${darkMode ? "bg-slate-800 text-slate-300" : "bg-slate-100 text-slate-600"}`}>{globalPermissions.view_only_access ? 1 : Object.entries(globalPermissions).filter(([key, enabled]) => key !== "view_only_access" && enabled).length} enabled</span></div>
+              <div className="grid gap-3 p-4 md:grid-cols-2">{PERMISSIONS.map((permission, index) => <PermissionSwitch key={permission.key} permission={permission} index={index} checked={permission.key === "view_only_access" ? globalPermissions.view_only_access : !globalPermissions.view_only_access && globalPermissions[permission.key]} disabled={globalPermissions.view_only_access && permission.key !== "view_only_access" && ["can_request_orders", "can_estimate_pricing", "can_track_products", "can_upload_feedback", "show_ratings_homepage"].some((key) => globalPermissions[key])} onChange={(checked) => updateGlobalPermission(permission.key, checked)} darkMode={darkMode} />)}</div>
               <div className={`mx-4 mb-4 flex items-center justify-between gap-4 rounded-2xl border px-4 py-4 ${maintenanceMode ? (darkMode ? "border-amber-700/70 bg-amber-950/40" : "border-amber-300 bg-amber-50") : (darkMode ? "border-slate-700 bg-slate-800/70" : "border-slate-200 bg-slate-50")}`}>
                 <div className="flex items-center gap-3"><span className={`h-2.5 w-2.5 rounded-full ${maintenanceMode ? "bg-amber-500 shadow-[0_0_12px_rgba(245,158,11,0.8)]" : "bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.55)]"}`} /><div><p className={`text-xs font-black ${maintenanceMode ? (darkMode ? "text-amber-200" : "text-amber-900") : (darkMode ? "text-slate-200" : "text-slate-700")}`}>System Maintenance Mode</p><p className={`text-[10px] ${darkMode ? "text-slate-400" : "text-slate-500"}`}>{maintenanceMode ? "Customer activity is temporarily restricted." : "Platform is operating normally."}</p></div></div>
                 <button type="button" role="switch" aria-checked={maintenanceMode} disabled={savingMaintenance} onClick={toggleMaintenanceMode} className={`relative h-6 w-11 shrink-0 rounded-full transition ${maintenanceMode ? "bg-amber-600" : "bg-slate-300"}`}><span className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow transition ${maintenanceMode ? "left-[22px]" : "left-1"}`} /></button>

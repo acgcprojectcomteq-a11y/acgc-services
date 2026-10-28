@@ -357,7 +357,7 @@ export default function ProgressEditModal({ project, onClose, onSave, canUploadP
   const remainingSeconds = Math.ceil(progressCooldownRemainingMs / 1000);
   const progressCountdownLabel = `${String(Math.floor(remainingSeconds / 60)).padStart(2, "0")}:${String(remainingSeconds % 60).padStart(2, "0")}`;
   const renderProgressCooldownNotice = () => (
-    <div role="status" aria-live="polite" className="w-full rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+    <div role="status" aria-live="polite" className="progress-cooldown-notice w-full rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
       <p className="font-semibold">Completed: {latestProgressCompletion?.label || "Progress stage"}</p>
       <p className="mt-0.5 font-bold">Next progress available in {progressCountdownLabel}</p>
       <p className="mt-0.5">Please wait 10 minutes before proceeding to the next progress stage.</p>

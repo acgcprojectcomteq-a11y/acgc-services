@@ -6,6 +6,7 @@ import { getProductReviews } from "../../api/orders";
 import ProductPriceEstimator, { getDefaultProductEstimatorForm, isBladePricingProduct } from "@/components/ProductPriceEstimator";
 import logo from "../../assets/images/ACGCLOGO1.png";
 import { resolveBackendImageUrl } from "../../lib/resolveBackendImageUrl";
+import { useCustomerPermissions } from "../../hooks/useCustomerPermissions";
 
 const getImage = (product) => {
   const candidates = [
@@ -44,6 +45,8 @@ function RatingStars({ rating }) {
 }
 
 function BrowseProducts() {
+  const customerPermissions = useCustomerPermissions();
+  const showRatings = customerPermissions.show_ratings_homepage;
   const [products, setProducts] = useState([]);
   const [ratings, setRatings] = useState({});
   const [search, setSearch] = useState("");
@@ -66,7 +69,7 @@ function BrowseProducts() {
       try {
         const response = await getProducts();
         const activeProducts = (response.products || []).filter((product) => product.is_active !== false);
-        const ratingEntries = await Promise.all(activeProducts.map(async (product) => {
+        const ratingEntries = showRatings ? await Promise.all(activeProducts.map(async (product) => {
           try {
             const response = await getProductReviews(product._id || product.id);
             const reviews = (response.reviews || []).filter((review) => Number(review.rating) > 0);
@@ -75,7 +78,7 @@ function BrowseProducts() {
           } catch {
             return [product._id || product.id, { average: 0, count: 0 }];
           }
-        }));
+        })) : [];
         if (active) {
           setProducts(activeProducts);
           setRatings(Object.fromEntries(ratingEntries));
@@ -88,7 +91,7 @@ function BrowseProducts() {
     };
     loadProducts();
     return () => { active = false; };
-  }, []);
+  }, [showRatings]);
 
   const visibleProducts = products.filter((product) => {
     const query = search.trim().toLowerCase();
@@ -150,7 +153,7 @@ function BrowseProducts() {
                     <p className="mt-2 line-clamp-3 text-sm leading-6 text-slate-600">{product.description || "Premium aluminum and glass product crafted for reliability and style."}</p>
                   </div>
                   <div className="flex items-center justify-between gap-3 text-amber-500">
-                    <div className="flex items-center gap-1"><RatingStars rating={rating.average} /><span className="ml-1 text-xs font-semibold text-slate-500">{rating.count ? `${rating.average.toFixed(1)} (${rating.count})` : "No reviews"}</span></div>
+                    {showRatings ? <div className="flex items-center gap-1"><RatingStars rating={rating.average} /><span className="ml-1 text-xs font-semibold text-slate-500">{rating.count ? `${rating.average.toFixed(1)} (${rating.count})` : "No reviews"}</span></div> : <span />}
                     <button type="button" onClick={() => openProduct(product)} className="inline-flex items-center gap-1 rounded-full bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-700">Estimate <ArrowRight size={14} /></button>
                   </div>
                 </div>

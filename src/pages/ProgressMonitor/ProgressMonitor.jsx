@@ -601,7 +601,6 @@ function ProgressMonitor() {
       const response = await updateOrderProgress(targetOrderId, {
         progress: 20,
         status: "Cutting",
-        estimated_installation_date: project.estimated_installation_date || "",
         stages,
         proof_images: [],
         ...(isBatchOrder ? { itemIndex: project.itemIndex } : {}),

@@ -51,7 +51,7 @@ router.put("/:orderId/installation-schedule", authMiddleware, respondToInstallat
 router.put("/:orderId/review", authMiddleware, roleMiddleware("customer"), permissionMiddleware("can_upload_feedback"), submitOrderReview);
 router.get("/reviews/summary", getCustomerFeedbackSummary);
 router.get("/reviews/product/:productId/summary", getProductReviewSummary);
-router.get("/reviews/product/:productId", authMiddleware, permissionMiddleware("can_upload_feedback"), getProductReviews);
+router.get("/reviews/product/:productId", optionalAuthMiddleware, permissionMiddleware("can_upload_feedback"), getProductReviews);
 
 // Admin routes
 const orderReadModules = ["dashboard", "site_inspection", "transactions", "progress_monitoring"];

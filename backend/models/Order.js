@@ -935,6 +935,17 @@ const OrderSchema = new mongoose.Schema(
   }
 );
 
+OrderSchema.pre("validate", function normalizeLegacyPaymentStatus() {
+  const status = String(this.payment_status || "").trim().toLowerCase();
+  const legacyStatuses = {
+    downpaymentpaid: "downpayment",
+    downpayment_paid: "downpayment",
+    "downpayment-paid": "downpayment",
+  };
+
+  if (legacyStatuses[status]) this.payment_status = legacyStatuses[status];
+});
+
 OrderSchema.index({ customer: 1, createdAt: -1 });
 OrderSchema.index({ status: 1, createdAt: -1 });
 OrderSchema.index({ contract_status: 1, createdAt: -1 });
