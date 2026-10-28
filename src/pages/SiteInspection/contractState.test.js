@@ -13,6 +13,7 @@ describe("contract state tracking", () => {
       },
     )).toEqual({
       isBlade: true,
+      hasPriceOverride: false,
       glassName: "Tinted",
       bladeCount: 12,
       bladeRate: 90,
@@ -50,7 +51,9 @@ describe("contract state tracking", () => {
       product: "Glass Panel",
       dimensions: "36 x 60 in",
       quantity: 2,
+      productCharges: [{ product: "Glass Panel", charges: [] }],
       projectCost: 5000,
+      additionalCharges: [],
       downpayment: 2500,
       paymentTerms: "50% down",
       inspectionDate: "2026-06-18",

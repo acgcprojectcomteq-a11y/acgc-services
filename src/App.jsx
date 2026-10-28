@@ -27,7 +27,6 @@ import ProtectedRoute from "@/components/layout/ProtectedRoute";
 import Sidebar from "@/components/layout/Sidebar";
 import KeepAliveOutlet from "@/components/layout/KeepAliveOutlet";
 import AdminNavigationContext from "@/contexts/AdminNavigationContext";
-import { prefetchAdminRoute } from "@/lib/adminRoutePrefetch";
 import { LoaderCircle, RefreshCw } from "lucide-react";
 import logo from "./assets/images/ACGCLOGO1.png";
 
@@ -126,12 +125,6 @@ function PublicPageRoutes() {
 }
 
 function AdminLayout({ isSidebarOpen, onSidebarToggle }) {
-  useEffect(() => {
-    ["/site-inspection", "/transactions", "/repair-requests", "/progress-monitor"].forEach((path) => {
-      void prefetchAdminRoute(path);
-    });
-  }, []);
-
   return (
     <AdminNavigationContext.Provider value>
       <div className="flex h-full min-h-0 min-w-0 flex-1 overflow-hidden">

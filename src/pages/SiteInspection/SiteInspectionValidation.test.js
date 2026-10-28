@@ -109,6 +109,8 @@ describe("walk-in account linking validation", () => {
     phone: "09123456789",
     siteAddress: "1 Main Street",
     inspection_date: "2026-10-10",
+    inspection_duration_minutes: 30,
+    installation_duration_minutes: 60,
     order_type: "walk_in_customer",
     items: [{ product_id: "p-1", name: "Sliding Window", width: 120, height: 150, qty: 1 }],
   };
@@ -274,6 +276,8 @@ describe("inspection measurement calculations", () => {
       phone: "09123456789",
       siteAddress: "1 Main Street",
       inspection_date: "2026-10-10",
+      inspection_duration_minutes: 30,
+      installation_duration_minutes: 60,
       items: [item],
     })).toEqual({});
   });
@@ -293,6 +297,8 @@ describe("inspection measurement calculations", () => {
       phone: "09123456789",
       siteAddress: "1 Main Street",
       inspection_date: "2026-10-10",
+      inspection_duration_minutes: 30,
+      installation_duration_minutes: 60,
       items: [item],
     })).toEqual({});
   });

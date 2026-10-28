@@ -49,6 +49,7 @@ const normalizeStage = (source = {}, key, name, defaultStatus = "pending") => {
     date: source.date ? new Date(source.date) : null,
     completedAt: source.completedAt ? new Date(source.completedAt) : null,
     completionNote: source.completionNote || "",
+    photoRequirement: source.photoRequirement === "required" ? "required" : "optional",
     installationStartedAt: source.installationStartedAt ? new Date(source.installationStartedAt) : null,
     installationCompletedAt: source.installationCompletedAt ? new Date(source.installationCompletedAt) : null,
     images: Array.isArray(source.images) ? source.images : [],
@@ -743,6 +744,14 @@ export default function ProgressEditModal({ project, onClose, onSave, canUploadP
 
   const confirmMarkStageDone = () => {
     if (stagePendingCompletion === null) return;
+    const stage = stages[stagePendingCompletion];
+    const incompleteSubStages = (stage?.subStages || []).filter((subStage) =>
+      !subStage.completed && !["done", "completed"].includes(String(subStage.status || "").toLowerCase())
+    );
+    if (incompleteSubStages.length > 0) {
+      setMarkDoneValidationError(`Cannot mark ${stage.name} as done. Complete all sub-stages first: ${incompleteSubStages.map((subStage) => subStage.name).join(", ")}`);
+      return;
+    }
     handleMarkStageDone(stagePendingCompletion);
     closeMarkDoneConfirmation();
   };
@@ -912,7 +921,10 @@ export default function ProgressEditModal({ project, onClose, onSave, canUploadP
   };
 
   const canMarkStageDone = (stage, stageIndex) => {
-    return isStageEditable(stageIndex) && !stage.completed;
+    const allSubStagesComplete = (stage.subStages || []).every((subStage) =>
+      subStage.completed || ["done", "completed"].includes(String(subStage.status || "").toLowerCase())
+    );
+    return isStageEditable(stageIndex) && !stage.completed && allSubStagesComplete && (stage.photoRequirement !== "required" || getPhotoCount(stage) > 0);
   };
 
   const handleMarkSubStageDone = (stageIndex, subIndex) => {
@@ -984,6 +996,7 @@ export default function ProgressEditModal({ project, onClose, onSave, canUploadP
         date: stage.date ? stage.date.toISOString() : null,
         completedAt: stage.completedAt ? stage.completedAt.toISOString() : null,
         completionNote: stage.completionNote || "",
+        photoRequirement: stage.photoRequirement || "optional",
         installationStartedAt: stage.installationStartedAt ? stage.installationStartedAt.toISOString() : null,
         installationCompletedAt: stage.installationCompletedAt ? stage.installationCompletedAt.toISOString() : null,
         images: stage.images,
@@ -1568,6 +1581,7 @@ export default function ProgressEditModal({ project, onClose, onSave, canUploadP
                       <div className="mt-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800">Completed</div>
                     ) : (
                       <select
+                        aria-label="Stage State"
                         className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus-visible:ring-2 focus-visible:ring-blue-500"
                         value={stage.status}
                         disabled={!stageEditable}
@@ -1577,6 +1591,21 @@ export default function ProgressEditModal({ project, onClose, onSave, canUploadP
                         <option value="in_progress" disabled={progressCooldownRemainingMs > 0 && stage.status !== "in_progress"}>In Progress</option>
                         <option value="delayed">Delayed</option>
                       </select>
+                    )}
+                    {!stage.completed && (
+                      <label className="mt-3 block text-sm text-gray-600">
+                        Progress Photo Requirement
+                        <select
+                          aria-label={`Progress Photo Requirement for ${stage.name}`}
+                          value={stage.photoRequirement || "optional"}
+                          disabled={!stageEditable}
+                          onChange={(event) => updateStage(stageIndex, { photoRequirement: event.target.value })}
+                          className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus-visible:ring-2 focus-visible:ring-blue-500 disabled:bg-slate-50"
+                        >
+                          <option value="optional">Optional</option>
+                          <option value="required">Required</option>
+                        </select>
+                      </label>
                     )}
                     {stage.completed && (
                       <label className="mt-3 block text-sm font-medium text-slate-700">
@@ -1947,6 +1976,12 @@ export default function ProgressEditModal({ project, onClose, onSave, canUploadP
                     </div>
                 
                 <div className="mt-4 flex flex-wrap justify-end gap-3 border-t border-slate-100 pt-3">
+                  {!stage.completed && stage.photoRequirement === "required" && getPhotoCount(stage) === 0 && (
+                    <p className="mr-auto self-center text-xs text-amber-700">A progress photo is required before this stage can be marked as completed.</p>
+                  )}
+                  {!stage.completed && (stage.subStages || []).some((subStage) => !subStage.completed && !["done", "completed"].includes(String(subStage.status || "").toLowerCase())) && (
+                    <p className="mr-auto self-center text-xs text-amber-700">Complete all sub-stages before marking this stage as done.</p>
+                  )}
                   {!stage.completed && (
                     <button
                       type="button"

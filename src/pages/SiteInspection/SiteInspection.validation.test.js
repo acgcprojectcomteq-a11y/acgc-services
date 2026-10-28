@@ -7,6 +7,8 @@ describe("site inspection validation", () => {
     phone: "09171234567",
     siteAddress: "123 Main St",
     inspection_date: "2026-10-10",
+    inspection_duration_minutes: 30,
+    installation_duration_minutes: 60,
     estimated_installation_date: "2026-10-15",
     items: [
       {

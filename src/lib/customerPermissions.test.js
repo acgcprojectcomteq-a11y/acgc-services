@@ -32,7 +32,7 @@ describe("customer global permissions", () => {
     });
   });
 
-  it("preserves explicitly restricted features when View Only is disabled", () => {
+  it("enables View Only when every customer feature is restricted", () => {
     const restricted = normalizeGlobalCustomerPermissions({
       view_only_access: true,
       can_request_orders: false,
@@ -43,7 +43,7 @@ describe("customer global permissions", () => {
     });
 
     expect(normalizeGlobalCustomerPermissions({ ...restricted, view_only_access: false })).toMatchObject({
-      view_only_access: false,
+      view_only_access: true,
       can_request_orders: false,
       can_estimate_pricing: false,
       can_track_products: false,

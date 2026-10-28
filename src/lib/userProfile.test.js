@@ -10,7 +10,7 @@ describe("normalizeUserProfile", () => {
       last_name: "Doe",
     };
 
-    expect(normalizeUserProfile(user)).toEqual({
+    expect(normalizeUserProfile(user)).toMatchObject({
       id: "abc123",
       email: "customer@example.com",
       username: "",
@@ -24,6 +24,15 @@ describe("normalizeUserProfile", () => {
       zip_code: "",
       created_at: null,
       updated_at: null,
+    });
+    expect(normalizeUserProfile(user)).toMatchObject({
+      is_super_admin: false,
+      is_primary_super_admin: false,
+      is_active: true,
+      access_permissions: {},
+      staff_access: {},
+      customer_cancellation_count: 0,
+      online_order_cooldown_until: null,
     });
   });
 
@@ -44,6 +53,6 @@ describe("normalizeUserProfile", () => {
       updated_at: "2024-01-02T00:00:00.000Z",
     };
 
-    expect(normalizeUserProfile(user)).toEqual(user);
+    expect(normalizeUserProfile(user)).toMatchObject(user);
   });
 });

@@ -3,6 +3,18 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import ProgressEditModal from "../ProgressEditModal";
 
+const clickSaveChanges = () => {
+  fireEvent.click(screen.getByRole("button", { name: /Save Changes/i }));
+  const confirmButton = screen.queryByRole("button", { name: "Confirm and save" });
+  if (confirmButton) fireEvent.click(confirmButton);
+};
+
+const clickMarkDone = (name) => {
+  fireEvent.click(screen.getByRole("button", { name }));
+  const confirmButton = screen.queryByRole("button", { name: "Confirm completion" });
+  if (confirmButton) fireEvent.click(confirmButton);
+};
+
 describe("ProgressEditModal", () => {
   it("places the mobile dialog above navigation and keeps its actions available", () => {
     render(
@@ -45,7 +57,7 @@ describe("ProgressEditModal", () => {
     fireEvent.change(screen.getByLabelText("Progress Photo Requirement for Cutting"), { target: { value: "required" } });
     expect(screen.getByRole("button", { name: "Mark Cutting Done" }).disabled).toBe(true);
     expect(screen.getByText("A progress photo is required before this stage can be marked as completed.")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /Save Changes/i }));
+    clickSaveChanges();
 
     await waitFor(() => expect(onSave).toHaveBeenCalled());
     expect(onSave.mock.calls[0][0].stages.find((stage) => stage.key === "cutting")).toMatchObject({
@@ -64,8 +76,8 @@ describe("ProgressEditModal", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Mark Cutting Done" }));
-    fireEvent.click(screen.getByRole("button", { name: /Save Changes/i }));
+    clickMarkDone("Mark Cutting Done");
+    clickSaveChanges();
 
     await waitFor(() => expect(onSave).toHaveBeenCalled());
     expect(onSave.mock.calls[0][0].stages.find((stage) => stage.key === "cutting")).toMatchObject({
@@ -95,7 +107,7 @@ describe("ProgressEditModal", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /Save Changes/i }));
+    clickSaveChanges();
 
     await waitFor(() => expect(onSave).toHaveBeenCalled());
     expect(onSave.mock.calls[0][0].stages.find((stage) => stage.key === "cutting").subStages).toMatchObject([
@@ -149,7 +161,7 @@ describe("ProgressEditModal", () => {
     );
 
     expect(screen.getByRole("button", { name: "Mark Installation as Done" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /Save Changes/i }));
+    clickSaveChanges();
 
     await waitFor(() => expect(onSave).toHaveBeenCalled());
     const installation = onSave.mock.calls[0][0].stages.find((stage) => stage.key === "installation");
@@ -175,8 +187,8 @@ describe("ProgressEditModal", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Mark Installation as Done" }));
-    fireEvent.click(screen.getByRole("button", { name: /Save Changes/i }));
+    clickMarkDone("Mark Installation as Done");
+    clickSaveChanges();
 
     await waitFor(() => expect(onSave).toHaveBeenCalled());
     const installation = onSave.mock.calls[0][0].stages.find((stage) => stage.key === "installation");
@@ -209,9 +221,9 @@ describe("ProgressEditModal", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Mark Installation as Done" }));
-    expect(screen.getByText("Cannot mark Installation as done. Complete all sub-stages first: Final fitting")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /Save Changes/i }));
+    expect(screen.getByRole("button", { name: "Mark Installation as Done" }).disabled).toBe(true);
+    expect(screen.getByText("Complete all sub-stages before marking this stage as done.")).toBeTruthy();
+    clickSaveChanges();
 
     await waitFor(() => expect(onSave).toHaveBeenCalled());
     const installation = onSave.mock.calls[0][0].stages.find((stage) => stage.key === "installation");
@@ -226,7 +238,7 @@ describe("ProgressEditModal", () => {
     fireEvent.change(screen.getByLabelText("Select a preset stage"), { target: { value: "installation" } });
     fireEvent.change(screen.getByLabelText("Insert after:"), { target: { value: "assembly" } });
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
-    fireEvent.click(screen.getByRole("button", { name: /Save Changes/i }));
+    clickSaveChanges();
 
     await waitFor(() => expect(onSave).toHaveBeenCalled());
     expect(onSave.mock.calls[0][0].stages.map((stage) => stage.key)).toEqual([
@@ -250,7 +262,7 @@ describe("ProgressEditModal", () => {
     fireEvent.change(screen.getByLabelText("Select a preset stage"), { target: { value: "cutting" } });
     fireEvent.change(screen.getByLabelText("Insert after:"), { target: { value: "assembly" } });
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
-    fireEvent.click(screen.getByRole("button", { name: /Save Changes/i }));
+    clickSaveChanges();
 
     await waitFor(() => expect(onSave).toHaveBeenCalled());
     expect(onSave.mock.calls[0][0].stages.map((stage) => stage.key)).toEqual([
@@ -275,7 +287,7 @@ describe("ProgressEditModal", () => {
     fireEvent.change(screen.getByLabelText("Custom stage name"), { target: { value: "Final Packaging" } });
     fireEvent.change(screen.getByLabelText("Insert after:"), { target: { value: "installation" } });
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
-    fireEvent.click(screen.getByRole("button", { name: /Save Changes/i }));
+    clickSaveChanges();
 
     await waitFor(() => expect(onSave).toHaveBeenCalled());
     expect(onSave.mock.calls[0][0].stages.map((stage) => stage.name)).toEqual([
@@ -305,7 +317,7 @@ describe("ProgressEditModal", () => {
     fireEvent.click(screen.getByRole("button", { name: "Edit added stage Final Packaging" }));
     fireEvent.change(screen.getByLabelText("Edit stage name for Final Packaging"), { target: { value: "Packaging" } });
     fireEvent.click(screen.getByRole("button", { name: "Save Name" }));
-    fireEvent.click(screen.getByRole("button", { name: /Save Changes/i }));
+    clickSaveChanges();
 
     await waitFor(() => expect(onSave).toHaveBeenCalled());
     expect(onSave.mock.calls[0][0].stages.at(-1)).toMatchObject({ key: "packaging", name: "Packaging" });
@@ -328,7 +340,7 @@ describe("ProgressEditModal", () => {
     fireEvent.click(screen.getByText("Final Packaging"));
     fireEvent.click(screen.getByRole("button", { name: "Remove added stage Final Packaging" }));
     fireEvent.click(screen.getByRole("button", { name: "Remove Stage" }));
-    fireEvent.click(screen.getByRole("button", { name: /Save Changes/i }));
+    clickSaveChanges();
 
     await waitFor(() => expect(onSave).toHaveBeenCalled());
     expect(onSave.mock.calls[0][0].stages.some((stage) => stage.name === "Final Packaging")).toBe(false);
@@ -349,7 +361,7 @@ describe("ProgressEditModal", () => {
     };
 
     render(<ProgressEditModal project={project} onSave={onSave} onClose={vi.fn()} />);
-    fireEvent.click(screen.getByRole("button", { name: /Save Changes/i }));
+    clickSaveChanges();
 
     await waitFor(() => expect(onSave).toHaveBeenCalled());
     expect(onSave.mock.calls[0][0].stages.map((stage) => stage.key)).toEqual([
@@ -384,7 +396,7 @@ describe("ProgressEditModal", () => {
     });
     fireEvent.change(screen.getByLabelText("Select a preset stage"), { target: { value: "assembly" } });
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
-    fireEvent.click(screen.getByRole("button", { name: /Save Changes/i }));
+    clickSaveChanges();
 
     await waitFor(() => expect(onSave).toHaveBeenCalled());
     expect(onSave.mock.calls[0][0].stages.map((stage) => stage.key)).toEqual([
@@ -409,7 +421,7 @@ describe("ProgressEditModal", () => {
 
     render(<ProgressEditModal project={project} onSave={onSave} onClose={onClose} />);
 
-    fireEvent.click(screen.getByRole("button", { name: /Save Changes/i }));
+    clickSaveChanges();
 
     await waitFor(() => {
       expect(onSave).toHaveBeenCalled();
@@ -439,7 +451,7 @@ describe("ProgressEditModal", () => {
     expect(installationDateInput.min).toBe("2026-10-11");
 
     fireEvent.change(installationDateInput, { target: { value: "2026-10-10" } });
-    fireEvent.click(screen.getByRole("button", { name: /Save Changes/i }));
+    clickSaveChanges();
 
     expect(screen.getByText("Est. Installation Date must be after the Site Inspection Date.")).toBeTruthy();
     expect(onSave).not.toHaveBeenCalled();
@@ -474,7 +486,7 @@ describe("ProgressEditModal", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /Save Changes/i }));
+    clickSaveChanges();
 
     await waitFor(() => {
       expect(onSave).toHaveBeenCalled();

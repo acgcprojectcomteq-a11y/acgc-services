@@ -100,9 +100,26 @@ export const buildContractSnapshot = (order = {}) => {
   };
 };
 
+const stableSnapshotString = (value) => {
+  if (Array.isArray(value)) return `[${value.map(stableSnapshotString).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableSnapshotString(value[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+};
+
 export const hasContractSnapshotChanged = (order = {}) => {
   const savedSnapshot = order.contractSnapshot || {};
   if (!savedSnapshot || Object.keys(savedSnapshot).length === 0) return false;
 
-  return JSON.stringify(buildContractSnapshot(order)) !== JSON.stringify(savedSnapshot);
+  const currentSnapshot = buildContractSnapshot(order);
+  const compatibleSavedSnapshot = {
+    ...savedSnapshot,
+    productCharges: Array.isArray(savedSnapshot.productCharges)
+      ? savedSnapshot.productCharges
+      : currentSnapshot.productCharges.map(({ product }) => ({ product, charges: [] })),
+    additionalCharges: Array.isArray(savedSnapshot.additionalCharges) ? savedSnapshot.additionalCharges : [],
+  };
+
+  return stableSnapshotString(currentSnapshot) !== stableSnapshotString(compatibleSavedSnapshot);
 };

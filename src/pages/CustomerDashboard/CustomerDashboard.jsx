@@ -69,7 +69,7 @@ import {
   declineContract,
   submitOrderReview,
   getProductReviews,
-  getProductReviewSummary,
+  getProductReviewSummaries,
   getCustomerFeedbackSummary,
   cancelCustomerOrder,
 } from "@/api/orders";
@@ -1771,35 +1771,6 @@ function CustomerDashboard() {
           return;
         }
 
-        const productReviewData = await Promise.all(
-          eligibleProducts.map(async (product) => {
-            try {
-              const reviewResponse = await getProductReviewSummary(product._id || product.id);
-              const ratingsCount = Math.max(0, Number(reviewResponse.total) || 0);
-              const ratingCounts = [5, 4, 3, 2, 1].reduce((counts, star) => {
-                counts[star] = Math.max(0, Number(reviewResponse.counts?.[star]) || 0);
-                return counts;
-              }, {});
-              const verifiedTotal = [5, 4, 3, 2, 1].reduce((sum, star) => sum + ratingCounts[star] * star, 0);
-              const verifiedCount = [5, 4, 3, 2, 1].reduce((sum, star) => sum + ratingCounts[star], 0);
-
-              return {
-                product,
-                averageRating: verifiedCount ? verifiedTotal / verifiedCount : 0,
-                ratingsCount: verifiedCount || ratingsCount,
-                ratingCounts,
-              };
-            } catch (error) {
-              return {
-                product,
-                averageRating: 0,
-                ratingsCount: 0,
-                ratingCounts: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 },
-              };
-            }
-          })
-        );
-
         const feedbackSummary = await getCustomerFeedbackSummary().catch(() => null);
         const featuredRatingCounts = [5, 4, 3, 2, 1].reduce((counts, star) => {
           counts[star] = Math.max(0, Number(feedbackSummary?.counts?.[star]) || 0);
@@ -1870,30 +1841,25 @@ function CustomerDashboard() {
           return;
         }
 
+        const reviewSummaryResponse = await getProductReviewSummaries(
+          productsList.slice(0, 12).map((product) => product._id || product.id).filter(Boolean),
+        ).catch(() => ({ summaries: {} }));
         const stats = {};
-        await Promise.all(
-          productsList.slice(0, 12).map(async (product) => {
-            try {
-              const reviewResponse = await getProductReviewSummary(product._id || product.id);
-              const ratingsCount = Math.max(0, Number(reviewResponse.total) || 0);
-              const ratingCounts = [5, 4, 3, 2, 1].reduce((counts, star) => {
-                counts[star] = Math.max(0, Number(reviewResponse.counts?.[star]) || 0);
-                return counts;
-              }, {});
-              const verifiedTotal = [5, 4, 3, 2, 1].reduce((sum, star) => sum + ratingCounts[star] * star, 0);
-              const verifiedCount = [5, 4, 3, 2, 1].reduce((sum, star) => sum + ratingCounts[star], 0);
-              stats[product._id || product.id] = {
-                averageRating: verifiedCount ? Number((verifiedTotal / verifiedCount).toFixed(1)) : 0,
-                ratingsCount: verifiedCount || ratingsCount,
-              };
-            } catch (error) {
-              stats[product._id || product.id] = {
-                averageRating: 0,
-                ratingsCount: 0,
-              };
-            }
-          })
-        );
+        productsList.slice(0, 12).forEach((product) => {
+          const productId = product._id || product.id;
+          const summary = reviewSummaryResponse.summaries?.[productId];
+          if (!productId) return;
+          const ratingCounts = [5, 4, 3, 2, 1].reduce((counts, star) => {
+            counts[star] = Math.max(0, Number(summary?.counts?.[star]) || 0);
+            return counts;
+          }, {});
+          const verifiedTotal = [5, 4, 3, 2, 1].reduce((sum, star) => sum + ratingCounts[star] * star, 0);
+          const verifiedCount = [5, 4, 3, 2, 1].reduce((sum, star) => sum + ratingCounts[star], 0);
+          stats[productId] = {
+            averageRating: verifiedCount ? Number((verifiedTotal / verifiedCount).toFixed(1)) : 0,
+            ratingsCount: verifiedCount || Math.max(0, Number(summary?.total) || 0),
+          };
+        });
 
         if (active) {
           setProductReviewStats(stats);

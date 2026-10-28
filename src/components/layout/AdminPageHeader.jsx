@@ -1,3 +1,4 @@
+import React from "react";
 import { useAdminTheme } from "../../contexts/AdminThemeContext";
 
 function AdminPageHeader({ title, description, stats = [], className = "", statsClassName = "", compactStats = false, statsBelow = false, mobileCompact = false }) {

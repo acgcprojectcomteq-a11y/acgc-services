@@ -16,7 +16,7 @@ const toMeters = (value, unit) => {
 export const getDefaultExtraChargeSelections = (product = {}) => (
   (Array.isArray(product.extra_charges) ? product.extra_charges : []).map((charge) => ({
     ...charge,
-    is_selected: charge?.is_optional === true ? false : true,
+    is_selected: charge?.is_optional === true ? charge?.is_default_selected === true : true,
   }))
 );
 
@@ -43,10 +43,11 @@ const getBladePricing = (product = {}, item = {}) => {
   const frameType = frameTypes.find((frame) => String(frame.name).toLowerCase() === String(frameName).toLowerCase());
   const configuredBladeCount = Number(item.blade_count) || Number(frameType?.blade_count) || Number(product.blade_count) || Number(product.minimum_blades) || 0;
   const bladeCount = Math.max(0, configuredBladeCount);
+  const configuredBladeRate = toNonNegativeNumber(glassType?.price_per_blade ?? product.price_per_blade ?? item.price_per_blade);
   const hasPriceOverride = toNonNegativeNumber(product.estimated_price_override ?? item.estimated_price_override) > 0;
-  const bladeRate = hasPriceOverride
-    ? getBladePriceOverrideRate(product, item)
-    : toNonNegativeNumber(glassType?.price_per_blade ?? product.price_per_blade ?? item.price_per_blade);
+  const bladeRate = configuredBladeRate > 0
+    ? configuredBladeRate
+    : hasPriceOverride ? getBladePriceOverrideRate(product, item) : 0;
   const framePrice = saleMode === "frame"
     ? toNonNegativeNumber(item.frame_price ?? (item.custom_frame_size ? product.custom_frame_price : frameType?.price))
     : 0;
@@ -97,10 +98,6 @@ export const getBladePriceOverrideRate = (product = {}, item = {}) => {
 
 export const getProductLineTotal = (product = {}, item = {}, options = {}) => {
   const quantity = getQuantity(item);
-  const exactPriceOverride = toNonNegativeNumber(product.estimated_price_override ?? item.estimated_price_override);
-  if (exactPriceOverride > 0) {
-    return Math.round(exactPriceOverride * quantity * 100) / 100;
-  }
   const method = getPricingMethod(product, item);
   const bladePricing = ["blade", "per_blade"].includes(method) ? getBladePricing(product, item) : null;
   const productPriceOverride = toNonNegativeNumber(product.estimated_price_override ?? item.estimated_price_override);
@@ -110,7 +107,10 @@ export const getProductLineTotal = (product = {}, item = {}, options = {}) => {
   const overridePrice = ["fixed", "per_piece", "per_set", "piece", "set"].includes(method)
     ? overrideCoreSubtotal
     : 0;
-  const measuredPriceOverride = ["sqft", "per_sqft"].includes(method) ? overrideCoreSubtotal : 0;
+  const configuredAreaRate = toNonNegativeNumber(product.price_per_sqft ?? item.price_per_sqft);
+  const measuredPriceOverride = ["sqft", "per_sqft"].includes(method) && configuredAreaRate <= 0
+    ? overrideCoreSubtotal
+    : 0;
   const lengthPriceOverride = ["per_meter", "meter"].includes(method) ? overrideCoreSubtotal : 0;
 
   const unit = item.measurement_unit || item.measurementUnit || item.dimensions?.unit || product.measurement_unit || "in";
@@ -146,8 +146,8 @@ export const getProductLineTotal = (product = {}, item = {}, options = {}) => {
       : lengthPriceOverride * quantity;
   }
 
-  if (productPriceOverride <= 0 && (method === "sqft" || method === "per_sqft")) {
-    const rate = toNonNegativeNumber(product.price_per_sqft ?? item.price_per_sqft);
+  if (method === "sqft" || method === "per_sqft") {
+    const rate = configuredAreaRate;
     if (rate > 0 && width > 0 && height > 0) {
       const areaPerUnit = toSquareFeet(width, height, unit);
       subtotal = areaPerUnit * rate * quantity;
@@ -206,7 +206,7 @@ export const getProductLineTotal = (product = {}, item = {}, options = {}) => {
     if (charge?.is_active === false) return false;
     if (charge?.is_optional !== true) return true;
     const isSelected = itemCharges[index]?.is_selected;
-    return typeof isSelected === "boolean" ? isSelected : false;
+    return typeof isSelected === "boolean" ? isSelected : charge?.is_default_selected === true;
   });
   const additionalCharges = charges.reduce((total, charge) => {
     const amount = toNonNegativeNumber(charge.amount);
@@ -265,7 +265,7 @@ export const getProductLineBreakdown = (product = {}, item = {}) => {
     if (charge?.is_optional === true) {
       const selected = typeof selection.is_selected === "boolean"
         ? selection.is_selected
-        : false;
+        : charge?.is_default_selected === true;
       if (!selected) return [];
     }
 
@@ -320,14 +320,7 @@ export const getProductSizeLimitWarnings = (product = {}, item = {}) => {
 };
 
 export const getMeasuredProductLineTotal = (product = {}, item = {}) => {
-  if (toNonNegativeNumber(product.estimated_price_override ?? item.estimated_price_override) > 0) {
-    return getProductLineTotal(product, item);
-  }
   const method = getPricingMethod(product, item);
-  if (["sqft", "per_sqft"].includes(method)
-    && toNonNegativeNumber(product.estimated_price_override ?? item.estimated_price_override) > 0) {
-    return getProductLineTotal(product, item);
-  }
   const configuredFixedPrice = toNonNegativeNumber(product.base_price ?? item.base_price)
     || toNonNegativeNumber(product.unit_price ?? item.unit_price);
   const overridePrice = method === "fixed"
