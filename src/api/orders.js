@@ -59,13 +59,31 @@ export const getProductReviewSummaries = (productIds = []) => {
   const uniqueIds = [...new Set(productIds.filter(Boolean).map(String))];
   if (!uniqueIds.length) return Promise.resolve({ summaries: {} });
   const batches = Array.from({ length: Math.ceil(uniqueIds.length / 100) }, (_, index) => uniqueIds.slice(index * 100, (index + 1) * 100));
-  return Promise.all(batches.map((batch) => {
+  const fetchBatches = Promise.all(batches.map((batch) => {
     const query = new URLSearchParams();
     batch.forEach((productId) => query.append("productIds", productId));
     return apiFetch(`/orders/reviews/products/summary?${query}`, { cache: "no-store" });
   })).then((responses) => ({
     summaries: Object.assign({}, ...responses.map((response) => response.summaries || {})),
   }));
+
+  return fetchBatches.catch(async (batchError) => {
+    // Older deployed API instances may not have the batch route yet. Fall back
+    // to the established per-product summary endpoint so product ratings keep
+    // rendering during a staggered frontend/backend rollout.
+    if (batchError?.status !== 404 && batchError?.statusCode !== 404 && batchError?.response?.status !== 404) {
+      throw batchError;
+    }
+
+    const entries = await Promise.all(uniqueIds.map(async (productId) => {
+      try {
+        return [productId, await getProductReviewSummary(productId)];
+      } catch {
+        return [productId, null];
+      }
+    }));
+    return { summaries: Object.fromEntries(entries.map(([productId, summary]) => [productId, summary || {}])) };
+  });
 };
 export const getProductReviewSummary = (productId) =>
   apiFetch(`/orders/reviews/product/${encodeURIComponent(productId)}/summary`);
