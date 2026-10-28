@@ -127,6 +127,7 @@ function Settings() {
   const [customSubroleInput, setCustomSubroleInput] = useState("");
   const [editingCustomSubrole, setEditingCustomSubrole] = useState("");
   const [showStaffSubroleMenu, setShowStaffSubroleMenu] = useState(false);
+  const [showStaffTypeConfirm, setShowStaffTypeConfirm] = useState(false);
   const [showUpgradeConfirm, setShowUpgradeConfirm] = useState(false);
   const [showConvertStaffConfirm, setShowConvertStaffConfirm] = useState(false);
   const [superAdminPromotionTarget, setSuperAdminPromotionTarget] = useState(null);
@@ -1122,11 +1123,14 @@ function Settings() {
     }));
   };
 
-  const saveStaffAccess = async () => {
+  const saveStaffAccess = async (confirmedTypeChange = false) => {
     if (!isAdmin || !staffAccount || !staffDraft) return;
     const accountId = staffAccount._id || staffAccount.id;
     const originalType = staffAccount.staff_access?.staff_type || "";
-    if (staffDraft.staff_type !== originalType && !window.confirm(`Change this staff member's type to ${staffDraft.staff_type === "helper" ? "Helper" : "Skilled Worker"}?`)) return;
+    if (staffDraft.staff_type !== originalType && !confirmedTypeChange) {
+      setShowStaffTypeConfirm(true);
+      return;
+    }
     setSavingId(accountId);
     try {
       const response = await updateAdminUserAccess(accountId, { staff_access: staffDraft });
@@ -2028,6 +2032,16 @@ function Settings() {
               <div className="mt-6 flex justify-end gap-2">
                 <button type="button" onClick={() => setShowConvertStaffConfirm(false)} disabled={savingId === (staffAccount._id || staffAccount.id)} className={`rounded-md border px-4 py-2.5 text-sm font-medium ${darkMode ? "border-slate-700 text-slate-200 hover:bg-slate-800" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`}>Cancel</button>
                 <button type="button" onClick={convertStaffToCustomer} disabled={savingId === (staffAccount._id || staffAccount.id)} className="rounded-md bg-red-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-60">{savingId === (staffAccount._id || staffAccount.id) ? "Converting..." : "Confirm Conversion"}</button>
+              </div>
+            </section>
+          </div>}
+          {showStaffTypeConfirm && staffAccount && staffDraft && <div className="fixed inset-0 z-[125] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget && savingId !== (staffAccount._id || staffAccount.id)) setShowStaffTypeConfirm(false); }}>
+            <section role="alertdialog" aria-modal="true" aria-labelledby="staff-type-confirm-title" aria-describedby="staff-type-confirm-description" className={`w-full max-w-md rounded-xl border p-6 shadow-2xl ${darkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-white"}`}>
+              <h2 id="staff-type-confirm-title" className={`text-lg font-bold leading-tight ${darkMode ? "text-slate-100" : "text-slate-900"}`}>Change Staff Type?</h2>
+              <p id="staff-type-confirm-description" className={`mt-3 text-sm leading-6 ${darkMode ? "text-slate-300" : "text-slate-600"}`}>Change {`${staffAccount.first_name || "this staff member"} ${staffAccount.last_name || ""}`.trim()}'s type to <strong>{staffDraft.staff_type === "helper" ? "Helper" : "Skilled Worker"}</strong>?</p>
+              <div className="mt-6 flex justify-end gap-2">
+                <button type="button" onClick={() => setShowStaffTypeConfirm(false)} disabled={savingId === (staffAccount._id || staffAccount.id)} className={`rounded-md border px-4 py-2.5 text-sm font-medium ${darkMode ? "border-slate-700 text-slate-200 hover:bg-slate-800" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`}>Cancel</button>
+                <button type="button" onClick={() => { setShowStaffTypeConfirm(false); void saveStaffAccess(true); }} disabled={savingId === (staffAccount._id || staffAccount.id)} className="rounded-md bg-red-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-900 disabled:cursor-not-allowed disabled:opacity-60">Confirm Change</button>
               </div>
             </section>
           </div>}
