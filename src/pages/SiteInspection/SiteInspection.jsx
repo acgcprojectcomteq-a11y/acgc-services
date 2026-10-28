@@ -1046,6 +1046,7 @@ function SiteInspection() {
   const [contractInspection, setContractInspection] = useState(null);
   const [contractNeedsRegeneration, setContractNeedsRegeneration] = useState(false);
   const [sendingCustomerEmail, setSendingCustomerEmail] = useState(false);
+  const contractModalLoadRequestRef = useRef(0);
   const [manualApprovalModal, setManualApprovalModal] = useState({
     open: false,
     orderId: null,
@@ -3420,14 +3421,24 @@ function SiteInspection() {
       return;
     }
 
+    const loadRequestId = ++contractModalLoadRequestRef.current;
+    const initialContractData = generateContractData(inspection);
+    const initialNeedsRegeneration = hasContractSnapshotChanged(inspection);
+    setContractInspection(inspection);
+    setContractData({ ...initialContractData, contractNeedsRegeneration: initialNeedsRegeneration });
+    setContractNeedsRegeneration(initialNeedsRegeneration);
+    setShowContractModal(true);
+
     try {
       const { order } = await getAdminOrder(orderId, "site_inspection");
+      if (loadRequestId !== contractModalLoadRequestRef.current) return;
       if (!order) {
         toast.error("Order not found");
         return;
       }
 
       if (!hasExistingContract(order)) {
+        setShowContractModal(false);
         requestGenerateContract(orderId);
         return;
       }
@@ -3439,8 +3450,9 @@ function SiteInspection() {
       setContractNeedsRegeneration(shouldRegenerate);
       setShowContractModal(true);
     } catch (error) {
+      if (loadRequestId !== contractModalLoadRequestRef.current) return;
       console.error("Failed to open contract", error);
-      toast.error("Unable to open contract details.");
+      toast.error("Showing the saved contract summary. Unable to refresh its latest details.");
     }
   };
 
@@ -6689,6 +6701,7 @@ function SiteInspection() {
         <ContractModal
           isOpen={showContractModal}
           onClose={() => {
+            contractModalLoadRequestRef.current += 1;
             setShowContractModal(false);
             setContractNeedsRegeneration(false);
           }}
