@@ -8,3 +8,7 @@ export const isUntransferredSiteInspection = (order = {}) => {
     && order.transactionCreated !== true
     && ACTIVE_SITE_INSPECTION_CONTRACT_STATUSES.has(contractStatus);
 };
+
+export const getPendingRepairCount = (repairs = []) => repairs.filter((repair) =>
+  ["pending_review", "quotation_pending_approval"].includes(String(repair?.status || "").trim().toLowerCase())
+).length;

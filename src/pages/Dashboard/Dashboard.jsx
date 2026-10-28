@@ -15,7 +15,7 @@ import { getFinalProjectCost } from "@/lib/orderPricing";
 import { recordActivity } from "@/lib/activityLog";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAdminTheme } from "@/contexts/AdminThemeContext";
-import { isUntransferredSiteInspection } from "./dashboardOrderUtils";
+import { getPendingRepairCount, isUntransferredSiteInspection } from "./dashboardOrderUtils";
 import ProfileAvatar from "../../components/ui/ProfileAvatar";
 import TransactionDetailsModal from "../../components/TransactionDetailsModal";
 import { getRepairRequests } from "@/api/repairs";
@@ -271,7 +271,7 @@ function Dashboard() {
     const loadPendingRepairs = async () => {
       try {
         const response = await getRepairRequests();
-        if (active) setPendingRepairCount((response.repairs || []).filter((repair) => repair.status === "pending_review").length);
+        if (active) setPendingRepairCount(getPendingRepairCount(response.repairs || []));
       } catch (error) {
         console.error("Failed to load pending repair requests:", error);
       }
@@ -597,7 +597,7 @@ function Dashboard() {
                   className={`rounded-2xl border p-3 text-left transition ${darkMode ? "border-red-400/80 bg-red-950/50 hover:bg-red-900/70" : "border-red-500 bg-red-50/50 hover:bg-red-100"}`}
                 >
                   <ClipboardCheck className="mb-2 text-red-600" size={20} />
-                  <h3 className="text-xs font-bold leading-tight">New Inspection</h3>
+                  <h3 className="text-xs font-bold leading-tight">View Inspection</h3>
                   <p className={`mt-1 text-[11px] ${darkMode ? "text-slate-300" : "text-gray-500"}`}>Site inspection</p>
                 </button>
 
@@ -630,7 +630,7 @@ function Dashboard() {
                   className={`rounded-2xl border p-3 text-left transition ${darkMode ? "border-fuchsia-400/80 bg-fuchsia-950/50 hover:bg-fuchsia-900/70" : "border-purple-500 bg-purple-50 hover:bg-purple-100"}`}
                 >
                   <Package className="mb-2 text-purple-600" size={20} />
-                  <h3 className="text-xs font-bold leading-tight">Add Product</h3>
+                  <h3 className="text-xs font-bold leading-tight">View Product</h3>
                   <p className={`mt-1 text-[11px] ${darkMode ? "text-slate-300" : "text-gray-500"}`}>Inventory</p>
                 </button>
               </div>
@@ -661,10 +661,7 @@ function Dashboard() {
 
             <button
               type="button"
-              onClick={() => {
-                const warranty = allWarrantiesToDisplay[0];
-                if (warranty) handleViewOrder(warranty.order._id || warranty.order.id);
-              }}
+              onClick={() => navigate("/transactions", { state: { activeTable: "receipts" } })}
               className="group rounded-3xl bg-white p-6 text-left shadow transition duration-200 hover:-translate-y-1 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-green-500"
             >
               <p className="text-gray-500">
