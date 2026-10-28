@@ -14,15 +14,15 @@
   "crons": [
     {
       "path": "/api/auth/system-settings/cron-backup",
-      "schedule": "* * * * *"
+      "schedule": "0 16 * * *"
     },
     {
       "path": "/api/auth/system-settings/cron-site-inspection-reminders",
-      "schedule": "* * * * *"
+      "schedule": "0 0 * * *"
     },
     {
       "path": "/api/auth/system-settings/cron-payment-reminders",
-      "schedule": "*/15 * * * *"
+      "schedule": "0 1 * * *"
     }
   ]
 }
