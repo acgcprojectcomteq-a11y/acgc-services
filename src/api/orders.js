@@ -55,6 +55,18 @@ export const getAdminOrder = (orderId, module) => {
 
 export const getProductReviews = (productId) => apiFetch(`/orders/reviews/product/${encodeURIComponent(productId)}`);
 export const getCustomerFeedbackSummary = () => apiFetch("/orders/reviews/summary", { cache: "no-store" });
+export const getProductReviewSummaries = (productIds = []) => {
+  const uniqueIds = [...new Set(productIds.filter(Boolean).map(String))];
+  if (!uniqueIds.length) return Promise.resolve({ summaries: {} });
+  const batches = Array.from({ length: Math.ceil(uniqueIds.length / 100) }, (_, index) => uniqueIds.slice(index * 100, (index + 1) * 100));
+  return Promise.all(batches.map((batch) => {
+    const query = new URLSearchParams();
+    batch.forEach((productId) => query.append("productIds", productId));
+    return apiFetch(`/orders/reviews/products/summary?${query}`, { cache: "no-store" });
+  })).then((responses) => ({
+    summaries: Object.assign({}, ...responses.map((response) => response.summaries || {})),
+  }));
+};
 export const getProductReviewSummary = (productId) =>
   apiFetch(`/orders/reviews/product/${encodeURIComponent(productId)}/summary`);
 

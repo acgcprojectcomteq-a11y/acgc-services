@@ -2499,6 +2499,66 @@ export const getProductReviewSummary = async (req, res) => {
   }
 };
 
+export const getProductReviewSummaries = async (req, res) => {
+  try {
+    const requestedIds = Array.isArray(req.query.productIds)
+      ? req.query.productIds
+      : [req.query.productIds].filter(Boolean);
+    const productIds = [...new Set(requestedIds.map((id) => String(id).trim()))];
+
+    if (!productIds.length || productIds.length > 100 || productIds.some((id) => !mongoose.isValidObjectId(id))) {
+      return res.status(400).json({ success: false, message: "Provide between 1 and 100 valid product IDs." });
+    }
+
+    const productIdSet = new Set(productIds);
+    const orders = await Order.find({
+      "items.product_id": { $in: productIds },
+      $or: [
+        { "review.submittedAt": { $ne: null } },
+        {
+          items: {
+            $elemMatch: {
+              product_id: { $in: productIds },
+              "review.submittedAt": { $ne: null },
+            },
+          },
+        },
+      ],
+    }).select("review items.product_id items.review").lean();
+
+    const summaries = Object.fromEntries(productIds.map((id) => [id, {
+      average: 0,
+      total: 0,
+      counts: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 },
+      ratingTotal: 0,
+    }]));
+
+    for (const order of orders) {
+      for (const item of order.items || []) {
+        const productId = String(item.product_id);
+        if (!productIdSet.has(productId)) continue;
+        const review = item.review?.submittedAt ? item.review : order.review;
+        const rating = Number(review?.rating);
+        if (!review?.submittedAt || review.hiddenFromCustomers === true || !Number.isFinite(rating) || rating < 1 || rating > 5) continue;
+        const summary = summaries[productId];
+        summary.counts[Math.round(rating)] += 1;
+        summary.ratingTotal += rating;
+        summary.total += 1;
+      }
+    }
+
+    for (const summary of Object.values(summaries)) {
+      summary.average = summary.total ? summary.ratingTotal / summary.total : 0;
+      delete summary.ratingTotal;
+    }
+
+    return res.json({ success: true, summaries });
+  } catch (error) {
+    console.error("Get product review summaries error:", error);
+    return res.status(500).json({ success: false, message: "Unable to fetch product ratings." });
+  }
+};
+
 export const getCustomerFeedbackSummary = async (req, res) => {
   try {
     const orders = await Order.find({

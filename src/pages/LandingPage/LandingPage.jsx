@@ -39,7 +39,7 @@ import { getPaymentSummary } from "@/pages/Transactions/paymentProofUtils";
 import { getPaymentStatusBadgeClassName, getPaymentStatusLabel, statusBadgeBaseClassName } from "@/lib/statusBadgeStyles";
 import { getProducts } from "../../api/products";
 import { subscribeToRealtime } from "@/lib/realtimeEvents";
-import { getCustomerFeedbackSummary, getProductReviewSummary, getProductReviews, trackOrder } from "../../api/orders";
+import { getCustomerFeedbackSummary, getProductReviewSummaries, getProductReviews, trackOrder } from "../../api/orders";
 import { trackRepairRequest } from "@/api/repairs";
 import OrderRepairProgress from "@/components/OrderRepairProgress";
 import logo from "../../assets/images/ACGCLOGO1.png";
@@ -225,8 +225,8 @@ function LandingPage() {
   };
 
   useEffect(() => {
-    const loadFeaturedProducts = async () => {
-      setIsLoadingFeatured(true);
+    const loadFeaturedProducts = async (showInitialLoading = false) => {
+      if (showInitialLoading) setIsLoadingFeatured(true);
       setFeaturedError("");
 
       try {
@@ -236,22 +236,22 @@ function LandingPage() {
         setCatalogProducts(activeProducts);
         setFeaturedProducts(activeProducts.slice(0, 3));
         setCatalogLoaded(true);
+        // Product cards only depend on the catalog response. Don't keep the
+        // whole grid in its loading state while review summaries are fetched.
+        setIsLoadingFeatured(false);
 
-        const productReviewData = await Promise.all(activeProducts.map(async (product) => {
-          try {
-            const reviewResponse = await getProductReviewSummary(product._id || product.id);
-            return {
-              product,
-              averageRating: Number(reviewResponse.average) || 0,
-              ratingsCount: Number(reviewResponse.total) || 0,
-            };
-          } catch {
-            return { product, averageRating: 0, ratingsCount: 0 };
-          }
-        }));
+        const reviewSummaryResponse = await getProductReviewSummaries(
+          activeProducts.map((product) => product._id || product.id).filter(Boolean),
+        ).catch(() => ({ summaries: {} }));
         const stats = {};
-        productReviewData.forEach(({ product, averageRating, ratingsCount }) => {
-          stats[product._id || product.id] = { averageRating, ratingsCount };
+        activeProducts.forEach((product) => {
+          const productId = product._id || product.id;
+          const summary = reviewSummaryResponse.summaries?.[productId];
+          if (!productId) return;
+          stats[productId] = {
+            averageRating: Number(summary?.average) || 0,
+            ratingsCount: Number(summary?.total) || 0,
+          };
         });
         const feedbackSummary = await getCustomerFeedbackSummary().catch(() => null);
         const ratingCounts = [5, 4, 3, 2, 1].reduce((counts, star) => {
@@ -282,8 +282,11 @@ function LandingPage() {
       }
     };
 
-    loadFeaturedProducts();
-    const unsubscribeRealtime = subscribeToRealtime(["products", "catalog", "reviews"], loadFeaturedProducts);
+    loadFeaturedProducts(true);
+    const unsubscribeRealtime = subscribeToRealtime(
+      ["products", "catalog", "reviews"],
+      () => loadFeaturedProducts(false),
+    );
     return unsubscribeRealtime;
   }, []);
 

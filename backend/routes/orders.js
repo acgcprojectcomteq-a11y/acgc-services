@@ -6,6 +6,7 @@ import {
   listOrders,
   trackOrder,
   getCustomerFeedbackSummary,
+  getProductReviewSummaries,
   getProductReviewSummary,
   getProductReviews,
   getAdminOrders,
@@ -50,6 +51,7 @@ router.get(
 router.put("/:orderId/installation-schedule", authMiddleware, respondToInstallationSchedule);
 router.put("/:orderId/review", authMiddleware, roleMiddleware("customer"), permissionMiddleware("can_upload_feedback"), submitOrderReview);
 router.get("/reviews/summary", getCustomerFeedbackSummary);
+router.get("/reviews/products/summary", getProductReviewSummaries);
 router.get("/reviews/product/:productId/summary", getProductReviewSummary);
 router.get("/reviews/product/:productId", optionalAuthMiddleware, permissionMiddleware("can_upload_feedback"), getProductReviews);
 

@@ -952,5 +952,6 @@ OrderSchema.index({ contract_status: 1, createdAt: -1 });
 OrderSchema.index({ payment_proof_submitted_at: -1 });
 OrderSchema.index({ updatedAt: -1 });
 OrderSchema.index({ customer_email: 1 });
+OrderSchema.index({ "items.product_id": 1 });
 
 export default mongoose.model("Order", OrderSchema);
