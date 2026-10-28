@@ -613,10 +613,7 @@ function Dashboard() {
 
                 <button
                   type="button"
-                  onClick={() => {
-                    const warranty = allWarrantiesToDisplay[0];
-                    if (warranty) handleViewOrder(warranty.order._id || warranty.order.id);
-                  }}
+                  onClick={() => navigate("/transactions", { state: { activeTable: "receipts" } })}
                   className={`rounded-2xl border p-3 text-left transition ${darkMode ? "border-green-400/80 bg-green-950/50 hover:bg-green-900/70" : "border-green-500 bg-green-50/50 hover:bg-green-100"}`}
                 >
                   <ShieldCheck className="mb-2 text-green-600" size={20} />
