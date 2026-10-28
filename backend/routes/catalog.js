@@ -1,34 +1,35 @@
 import express from "express";
-import { authMiddleware, roleMiddleware } from "../middleware/auth.js";
+import { authMiddleware, roleMiddleware, staffModulePermission } from "../middleware/auth.js";
 import * as catalogCtrl from "../controllers/catalogController.js";
 
 const router = express.Router();
+const productWrite = (action) => [authMiddleware, roleMiddleware(["admin", "super_admin", "skilled_worker"]), staffModulePermission("product_management", action)];
 
 // Types
 router.get("/types", catalogCtrl.getTypes);
-router.post("/types", authMiddleware, roleMiddleware("admin"), catalogCtrl.createType);
-router.put("/types/:id", authMiddleware, roleMiddleware("admin"), catalogCtrl.updateType);
-router.delete("/types/:id", authMiddleware, roleMiddleware("admin"), catalogCtrl.deleteType);
+router.post("/types", ...productWrite("add"), catalogCtrl.createType);
+router.put("/types/:id", ...productWrite("edit"), catalogCtrl.updateType);
+router.delete("/types/:id", ...productWrite("delete"), catalogCtrl.deleteType);
 
 // Names
 router.get("/names", catalogCtrl.getNames);
-router.post("/names", authMiddleware, roleMiddleware("admin"), catalogCtrl.createName);
-router.put("/names/:id", authMiddleware, roleMiddleware("admin"), catalogCtrl.updateName);
-router.delete("/names/:id", authMiddleware, roleMiddleware("admin"), catalogCtrl.deleteName);
+router.post("/names", ...productWrite("add"), catalogCtrl.createName);
+router.put("/names/:id", ...productWrite("edit"), catalogCtrl.updateName);
+router.delete("/names/:id", ...productWrite("delete"), catalogCtrl.deleteName);
 
 // Variants
 router.get("/variants", catalogCtrl.getVariants);
-router.post("/variants", authMiddleware, roleMiddleware("admin"), catalogCtrl.createVariant);
-router.put("/variants/:id", authMiddleware, roleMiddleware("admin"), catalogCtrl.updateVariant);
-router.delete("/variants/:id", authMiddleware, roleMiddleware("admin"), catalogCtrl.deleteVariant);
+router.post("/variants", ...productWrite("add"), catalogCtrl.createVariant);
+router.put("/variants/:id", ...productWrite("edit"), catalogCtrl.updateVariant);
+router.delete("/variants/:id", ...productWrite("delete"), catalogCtrl.deleteVariant);
 
 // Categories
 router.get("/categories", catalogCtrl.getCategories);
-router.post("/categories", authMiddleware, roleMiddleware("admin"), catalogCtrl.createCategory);
-router.put("/categories/:id", authMiddleware, roleMiddleware("admin"), catalogCtrl.updateCategory);
-router.delete("/categories/:id", authMiddleware, roleMiddleware("admin"), catalogCtrl.deleteCategory);
+router.post("/categories", ...productWrite("add"), catalogCtrl.createCategory);
+router.put("/categories/:id", ...productWrite("edit"), catalogCtrl.updateCategory);
+router.delete("/categories/:id", ...productWrite("delete"), catalogCtrl.deleteCategory);
 
 // Usage check
-router.get("/usage/:kind/:id", authMiddleware, roleMiddleware("admin"), catalogCtrl.checkUsage);
+router.get("/usage/:kind/:id", ...productWrite("view"), catalogCtrl.checkUsage);
 
 export default router;

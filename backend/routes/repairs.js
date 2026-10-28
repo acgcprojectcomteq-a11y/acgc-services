@@ -25,7 +25,7 @@ import {
 const router = express.Router();
 const customer = [authMiddleware, roleMiddleware("customer")];
 const staffRepairAccess = (action) => [authMiddleware, roleMiddleware(["admin", "super_admin", "skilled_worker"]), staffModulePermission("repair_management", action)];
-const adminRepairPaymentAccess = [authMiddleware, roleMiddleware(["admin", "super_admin"]), staffModulePermission("repair_management", "manage")];
+const adminRepairPaymentAccess = staffRepairAccess("manage");
 
 router.get("/customer/orders", ...customer, listCompletedRepairProjects);
 router.get("/customer", ...customer, listCustomerRepairRequests);
@@ -41,8 +41,8 @@ router.post("/admin/requests/:repairId/approve-warranty", ...staffRepairAccess("
 router.post("/admin/requests/:repairId/reject-warranty", ...staffRepairAccess("manage"), rejectWarrantyClaim);
 router.post("/admin/requests/:repairId/quotation", ...staffRepairAccess("manage"), issueRepairQuotation);
 router.post("/admin/requests/:repairId/payment-proof/review", ...adminRepairPaymentAccess, reviewRepairPaymentProof);
-router.post("/admin/requests/:repairId/payments", authMiddleware, roleMiddleware(["admin", "super_admin"]), staffModulePermission("repair_management", "manage"), recordRepairPayment);
-router.post("/admin/requests/:repairId/receipt", authMiddleware, roleMiddleware(["admin", "super_admin"]), staffModulePermission("repair_management", "manage"), generateRepairReceipt);
+router.post("/admin/requests/:repairId/payments", ...staffRepairAccess("manage"), recordRepairPayment);
+router.post("/admin/requests/:repairId/receipt", ...staffRepairAccess("manage"), generateRepairReceipt);
 router.post("/admin/requests/:repairId/schedule", ...staffRepairAccess("manage"), scheduleRepair);
 router.post("/admin/requests/:repairId/start", ...staffRepairAccess("manage"), startRepair);
 router.post("/admin/requests/:repairId/complete", ...staffRepairAccess("manage"), completeRepair);

@@ -6,6 +6,8 @@ export const normalizeUserProfile = (user = {}) => {
     first_name: user.first_name || "",
     last_name: user.last_name || "",
     role: String(user.role || "customer").trim().toLowerCase(),
+    is_super_admin: user.is_super_admin === true || String(user.role || "").trim().toLowerCase() === "super_admin",
+    is_primary_super_admin: user.is_primary_super_admin === true,
     phone: user.phone || "",
     street_address: user.street_address || "",
     city: user.city || "",

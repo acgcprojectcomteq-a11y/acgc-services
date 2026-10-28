@@ -37,6 +37,7 @@ import UnsavedChangesDialog from "@/components/UnsavedChangesDialog";
 import { createUnsavedSnapshot } from "@/lib/unsavedSnapshot";
 import { getProductEstimatorState } from "@/components/ProductPriceEstimator";
 import { subscribeToRealtime } from "@/lib/realtimeEvents";
+import { hasStaffModulePermission } from "../../../shared/staffPermissions.js";
 
 const PRODUCT_IMAGE_PLACEHOLDER =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='400' viewBox='0 0 600 400'%3E%3Crect width='600' height='400' fill='%23e2e8f0'/%3E%3Cpath d='M248 148h104a28 28 0 0 1 28 28v48a28 28 0 0 1-28 28H248a28 28 0 0 1-28-28v-48a28 28 0 0 1 28-28Zm0 20a8 8 0 0 0-8 8v48a8 8 0 0 0 8 8h104a8 8 0 0 0 8-8v-48a8 8 0 0 0-8-8H248Zm18 22a16 16 0 1 1 0 32 16 16 0 0 1 0-32Zm50 35 17-21 31 40H244l34-42 25 30 13-7Z' fill='%2394a3b8'/%3E%3Ctext x='300' y='292' text-anchor='middle' font-family='Arial, sans-serif' font-size='24' font-weight='700' fill='%23475569'%3EProduct image%3C/text%3E%3C/svg%3E";
@@ -684,9 +685,9 @@ function ProductFormModal({
                 catalogItems={productTypeCatalogItems}
                 placeholder="Select product type"
                 onChange={(value) => setNewProduct((product) => ({ ...product, product_type: value, product_name: "", pricing_method: "", variant: "" }))}
-                onAdd={(name) => saveCatalogOption("types", name)}
-                onEdit={(item, name) => editCatalogOption("types", item, name)}
-                onDelete={(item) => deleteCatalogOption("types", item)}
+                onAdd={canAddProducts ? (name) => saveCatalogOption("types", name) : undefined}
+                onEdit={canEditProducts ? (item, name) => editCatalogOption("types", item, name) : undefined}
+                onDelete={canDeleteProducts ? (item) => deleteCatalogOption("types", item) : undefined}
               />
               <CatalogPicker
                 label="Category *"
@@ -695,9 +696,9 @@ function ProductFormModal({
                 catalogItems={categoryCatalogItems}
                 placeholder="Select category"
                 onChange={(value) => updateField("category", value)}
-                onAdd={(name) => saveCatalogOption("categories", name)}
-                onEdit={(item, name) => editCatalogOption("categories", item, name)}
-                onDelete={(item) => deleteCatalogOption("categories", item)}
+                onAdd={canAddProducts ? (name) => saveCatalogOption("categories", name) : undefined}
+                onEdit={canEditProducts ? (item, name) => editCatalogOption("categories", item, name) : undefined}
+                onDelete={canDeleteProducts ? (item) => deleteCatalogOption("categories", item) : undefined}
               />
               <div className="md:col-span-2">
                 <label htmlFor="product-name-input" className={labelClass}>Product Name *</label>
@@ -730,9 +731,9 @@ function ProductFormModal({
                     addLabel={`Add new variant for "${newProduct.product_type}"...`}
                     disabled={!newProduct.product_type}
                     onChange={(value) => updateField("variant", value)}
-                    onAdd={(name) => saveCatalogOption("variants", name)}
-                    onEdit={(item, name) => editCatalogOption("variants", item, name)}
-                    onDelete={(item) => deleteCatalogOption("variants", item)}
+                    onAdd={canAddProducts ? (name) => saveCatalogOption("variants", name) : undefined}
+                    onEdit={canEditProducts ? (item, name) => editCatalogOption("variants", item, name) : undefined}
+                    onDelete={canDeleteProducts ? (item) => deleteCatalogOption("variants", item) : undefined}
                   />
                   <p className="mt-2 text-xs text-slate-400">Choose or add a variant for the selected product type.</p>
                 </div>
@@ -1678,7 +1679,10 @@ function Products() {
     useState(null);
 
   const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
+  const isAdmin = user?.role === "admin" || user?.role === "super_admin";
+  const canAddProducts = isAdmin || hasStaffModulePermission(user, "product_management", "add");
+  const canEditProducts = isAdmin || hasStaffModulePermission(user, "product_management", "edit");
+  const canDeleteProducts = isAdmin || hasStaffModulePermission(user, "product_management", "delete");
 
   const [modalError, setModalError] =
     useState("");
@@ -1877,6 +1881,7 @@ function Products() {
   };
 
   const toggleFeaturedProduct = async (product) => {
+    if (!canEditProducts) return;
     try {
       const updated = await updateProductApi(product.id, {
         is_featured: !product.is_featured,
@@ -1920,8 +1925,8 @@ function Products() {
 
     const openModal = (product = null) => {
       setModalError("");
-      if (!isAdmin) {
-        setModalError("Only administrators can manage products.");
+      if (!(product ? canEditProducts : canAddProducts)) {
+        setModalError("Your account does not have permission to manage this product.");
         return;
       }
       void reloadCatalogLists();
@@ -2031,8 +2036,8 @@ function Products() {
 
   const saveProduct = async () => {
     if (saveProductRequestRef.current) return;
-    if (!isAdmin) {
-      setModalError("Only administrators can save products.");
+    if (!(editingProduct ? canEditProducts : canAddProducts)) {
+      setModalError("Your account does not have permission to save this product.");
       return;
     }
 
@@ -2304,6 +2309,10 @@ function Products() {
   };
 
   const deleteProduct = async (id) => {
+    if (!canDeleteProducts) {
+      toast.error("Your account does not have permission to delete products.");
+      return;
+    }
     try {
       await deleteProductApi(id);
       const deletedProduct = products.find((product) => product.id === id || product._id === id);
@@ -2317,6 +2326,7 @@ function Products() {
   };
 
   const openDeleteConfirm = (product) => {
+    if (!canDeleteProducts) return;
     setProductToDelete(product);
     setDeleteConfirmOpen(true);
   };
@@ -2401,8 +2411,8 @@ function Products() {
                 </div>
                 <button
                   onClick={() => openModal()}
-                  disabled={!isAdmin}
-                  className={`inline-flex h-9 items-center justify-center rounded-xl px-3 text-xs font-semibold text-white shadow-sm transition ${isAdmin ? "bg-red-600 hover:bg-red-700" : "bg-gray-300 cursor-not-allowed"}`}
+                  disabled={!canAddProducts}
+                  className={`inline-flex h-9 items-center justify-center rounded-xl px-3 text-xs font-semibold text-white shadow-sm transition ${canAddProducts ? "bg-red-600 hover:bg-red-700" : "bg-gray-300 cursor-not-allowed"}`}
                 >
                   <Plus size={16} className="mr-1.5" />
                   Add Product
@@ -2498,6 +2508,7 @@ function Products() {
                             <div className="absolute bottom-3 right-3 z-10 flex gap-1.5">
                               <button
                                 type="button"
+                                disabled={!canEditProducts}
                                 className={`inline-flex h-[34px] w-[34px] items-center justify-center rounded-[10px] border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 ${darkMode ? product.is_featured ? "border-amber-400 bg-amber-300 text-amber-950 hover:border-amber-300 hover:bg-amber-400" : "border-slate-700 bg-slate-900 text-slate-400 hover:border-amber-400 hover:text-amber-300" : product.is_featured ? "border-amber-500 bg-amber-50 text-amber-600 hover:bg-amber-100" : "border-slate-300 bg-white text-slate-500 hover:border-amber-400 hover:text-amber-600"}`}
                                 onClick={() => toggleFeaturedProduct(product)}
                                 title={product.is_featured ? "Remove from Top Products" : "Make Top Product"}
@@ -2508,6 +2519,7 @@ function Products() {
                               </button>
                               <button
                                 type="button"
+                                disabled={!canEditProducts}
                                 className={`inline-flex h-[34px] w-[34px] items-center justify-center rounded-[10px] border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 ${darkMode ? "border-amber-800/70 bg-slate-900 text-amber-300 hover:border-amber-500 hover:bg-amber-950/60 hover:text-amber-200" : "border-amber-200 bg-amber-50 text-amber-700 hover:border-amber-400 hover:bg-amber-100 hover:text-amber-800"}`}
                                 onClick={() => openModal(product)}
                                 title="Edit product"
@@ -2517,6 +2529,7 @@ function Products() {
                               </button>
                               <button
                                 type="button"
+                                disabled={!canDeleteProducts}
                                 className={`inline-flex h-[34px] w-[34px] items-center justify-center rounded-[10px] border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 ${darkMode ? "border-red-900/70 bg-slate-900 text-red-300 hover:border-red-500 hover:bg-red-950/60 hover:text-red-200" : "border-red-200 bg-red-50 text-red-700 hover:border-red-400 hover:bg-red-100 hover:text-red-800"}`}
                                 onClick={() => openDeleteConfirm(product)}
                                 title="Delete product"

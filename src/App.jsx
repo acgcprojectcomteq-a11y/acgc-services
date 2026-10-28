@@ -201,8 +201,8 @@ function AppRoutes() {
   ]);
   const isPublicLightRoute = publicLightRoutes.has(location.pathname);
   const routePath = location.pathname.replace(/\/+$/, "") || "/";
-  const isAdminRoute = Boolean(user && ["admin", "skilled_worker"].includes(user.role)) && ADMIN_ROUTE_PATHS.has(routePath);
-  const usesAdminTheme = !isPublicLightRoute && (user?.role === "admin" || user?.role === "skilled_worker");
+  const isAdminRoute = Boolean(user && ["admin", "super_admin", "skilled_worker"].includes(user.role)) && ADMIN_ROUTE_PATHS.has(routePath);
+  const usesAdminTheme = !isPublicLightRoute && (user?.role === "admin" || user?.role === "super_admin" || user?.role === "skilled_worker");
   const [isSidebarOpen, setIsSidebarOpen] = useState(() => {
     if (typeof window === "undefined") return true;
     const stored = localStorage.getItem("sidebarOpen");
@@ -352,7 +352,7 @@ function AppRoutes() {
               : "Pull to refresh"}
         </div>
       )}
-      {user?.role === "admin" && (
+      {(user?.role === "admin" || user?.role === "super_admin") && (
         <div className="admin-shell-drawing" aria-hidden="true">
           <div className="admin-shell-circle admin-shell-circle-top" />
           <div className="admin-shell-circle admin-shell-circle-top-small" />
@@ -377,7 +377,7 @@ function AppRoutes() {
           <Route
             path="/dashboard"
             element={
-              <ProtectedRoute roles={["admin", "skilled_worker"]} requiredModule="dashboard">
+              <ProtectedRoute roles={["admin", "super_admin", "skilled_worker"]} requiredModule="dashboard">
                 <Dashboard />
               </ProtectedRoute>
             }
@@ -385,7 +385,7 @@ function AppRoutes() {
           <Route
             path="/site-inspection"
             element={
-              <ProtectedRoute roles={["admin", "skilled_worker"]} requiredModule="site_inspection">
+              <ProtectedRoute roles={["admin", "super_admin", "skilled_worker"]} requiredModule="site_inspection">
                 <SiteInspection />
               </ProtectedRoute>
             }
@@ -393,7 +393,7 @@ function AppRoutes() {
           <Route
             path="/notifications"
             element={
-              <ProtectedRoute roles={["admin", "skilled_worker"]} requiredModule="transactions">
+              <ProtectedRoute roles={["admin", "super_admin", "skilled_worker"]} requiredModule="transactions">
                 <Notifications />
               </ProtectedRoute>
             }
@@ -401,7 +401,7 @@ function AppRoutes() {
           <Route
             path="/transactions"
             element={
-              <ProtectedRoute roles={["admin", "skilled_worker"]} requiredModule="transactions">
+              <ProtectedRoute roles={["admin", "super_admin", "skilled_worker"]} requiredModule="transactions">
                 <Transactions />
               </ProtectedRoute>
             }
@@ -417,7 +417,7 @@ function AppRoutes() {
           <Route
             path="/progress-monitor"
             element={
-              <ProtectedRoute roles={["admin", "skilled_worker"]} requiredModule="progress_monitoring">
+              <ProtectedRoute roles={["admin", "super_admin", "skilled_worker"]} requiredModule="progress_monitoring">
                 <ProgressMonitor />
               </ProtectedRoute>
             }
@@ -425,7 +425,7 @@ function AppRoutes() {
           <Route
             path="/product"
             element={
-              <ProtectedRoute roles={["admin", "skilled_worker"]} requiredModule="product_management">
+              <ProtectedRoute roles={["admin", "super_admin", "skilled_worker"]} requiredModule="product_management">
                 <Product />
               </ProtectedRoute>
             }
@@ -433,7 +433,7 @@ function AppRoutes() {
           <Route
             path="/profile"
             element={
-              <ProtectedRoute roles={["admin", "skilled_worker"]} requiredModule="profile">
+              <ProtectedRoute roles={["admin", "super_admin", "skilled_worker"]} requiredModule="profile">
                 <AdminProfile />
               </ProtectedRoute>
             }
@@ -441,7 +441,7 @@ function AppRoutes() {
           <Route
             path="/settings"
             element={
-              <ProtectedRoute roles={["admin", "skilled_worker"]} requiredModule="settings">
+              <ProtectedRoute roles={["admin", "super_admin", "skilled_worker"]} requiredModule="settings">
                 <Settings />
               </ProtectedRoute>
             }

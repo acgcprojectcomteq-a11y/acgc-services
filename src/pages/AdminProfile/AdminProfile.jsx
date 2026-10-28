@@ -64,7 +64,7 @@ const createProfileDraft = (user) => ({
   last_name: user.last_name || "",
   email: user.email || "",
   username: user.username || "",
-  role: user.role === "skilled_worker" ? user.staff_access?.subrole || "Staff" : user.role || "admin",
+  role: user.role === "skilled_worker" ? user.staff_access?.subrole || "Staff" : ["admin", "super_admin"].includes(user.role) ? "Super Admin" : user.role || "admin",
   phone: user.phone || "",
   street_address: user.street_address || "",
   current_password: "",

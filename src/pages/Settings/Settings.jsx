@@ -4,6 +4,8 @@ import {
   CalendarDays,
   CalendarRange,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Circle,
   CircleCheck,
   Clock3,
@@ -15,6 +17,7 @@ import {
   FileArchive,
   History,
   Loader2,
+  Pencil,
   RotateCcw,
   Search,
   Settings2,
@@ -37,6 +40,7 @@ import { recordActivity } from "@/lib/activityLog";
 import { cn } from "@/lib/utils";
 import {
   createSystemBackup,
+  demoteSuperAdminToStaff,
   deleteSystemBackup,
   downloadSystemBackup,
   getAdminUsers,
@@ -50,11 +54,13 @@ import {
   uploadSystemBackup,
   unrestrictCustomerOnlineOrdering,
   updateAdminUserAccess,
+  promoteStaffToSuperAdmin,
   updateSystemSettings,
 } from "@/api/users";
 import { subscribeToRealtime } from "@/lib/realtimeEvents";
 import { normalizeGlobalCustomerPermissions } from "@/lib/customerPermissions";
 import { isPasswordPolicySatisfied, PASSWORD_POLICY_MESSAGE } from "@/lib/passwordStrength";
+import { STAFF_MODULES, createDefaultStaffAccess as defaultStaffAccess, normalizeStaffAccess } from "../../../shared/staffPermissions.js";
 
 const PERMISSIONS = [
   { key: "can_request_orders", label: "Can Request Orders", description: "Submit new glass/aluminum orders" },
@@ -65,17 +71,6 @@ const PERMISSIONS = [
   { key: "show_ratings_homepage", label: "Show Ratings on Homepage", description: "Display customer ratings on the homepage" },
 ];
 
-const STAFF_MODULES = [
-  { key: "dashboard", label: "Dashboard", actions: [{ key: "view", label: "View", enabled: true }] },
-  { key: "product_management", label: "Product Management", actions: [{ key: "view", label: "View", enabled: true }, { key: "add", label: "Add" }, { key: "edit", label: "Edit" }, { key: "delete", label: "Delete" }] },
-  { key: "site_inspection", label: "Site Inspection", enabled: false, actions: [{ key: "view", label: "View" }, { key: "view_details", label: "View Details" }, { key: "edit", label: "Edit" }, { key: "cancel", label: "Cancel" }, { key: "generate_contract", label: "Generate Contract" }, { key: "send_email", label: "Send Email" }, { key: "download_contract", label: "Download Contract" }, { key: "manual_approve", label: "Manual Approve" }] },
-  { key: "repair_management", label: "Repair Management", enabled: false, actions: [{ key: "view", label: "View", enabled: true }, { key: "create", label: "Create Repair Tickets" }, { key: "manage", label: "Manage Repairs" }] },
-  { key: "progress_monitoring", label: "Progress Monitoring", actions: [{ key: "view", label: "View", enabled: true }, { key: "view_details", label: "View Details", enabled: true }, { key: "edit", label: "Edit" }, { key: "upload_progress_photo", label: "Upload Progress Photos" }, { key: "delete_proof", label: "Delete Proof" }] },
-  { key: "transactions", label: "Transactions", actions: [{ key: "view", label: "View", enabled: true }, { key: "view_details", label: "View Details", enabled: true }, { key: "edit", label: "Edit" }, { key: "view_contract", label: "View Contract" }, { key: "download_contract", label: "Download Contract" }, { key: "send_email", label: "Send Email" }] },
-  { key: "settings", label: "Settings", actions: [{ key: "view", label: "View", enabled: true }, { key: "manage_access", label: "Manage Access", enabled: true }, { key: "back_up", label: "Back Up", enabled: true }] },
-  { key: "profile", label: "Profile", actions: [{ key: "view", label: "View", enabled: true }, { key: "edit", label: "Edit" }] },
-];
-const STAFF_SUBROLES = ["Helper", "Installer", "Fabricator", "Site Inspector", "Supervisor"];
 const SETTINGS_LIST_PAGE_SIZE = 10;
 
 const defaultPermissions = () => Object.fromEntries(PERMISSIONS.map(({ key }) => [key, key !== "view_only_access"]));
@@ -90,39 +85,22 @@ const normalizePermissions = (permissions) => {
   return normalized;
 };
 
-const defaultStaffAccess = () => ({
-  profile_version: 2,
-  subrole: "Helper",
-  custom_subroles: [],
-  modules: Object.fromEntries(STAFF_MODULES.map(({ key, enabled = true, actions }) => [key, {
-    enabled,
-    actions: Object.fromEntries(actions.map(({ key: actionKey, enabled: actionEnabled = false }) => [actionKey, actionEnabled])),
-  }])),
-});
+const hasAssignedCustomSubrole = (staffAccess = {}) => {
+  const assignedSubrole = String(staffAccess.subrole || "").trim().toLowerCase();
+  return Boolean(assignedSubrole && Array.isArray(staffAccess.custom_subroles) && staffAccess.custom_subroles.some((subrole) => (
+    typeof subrole === "string" && subrole.trim().toLowerCase() === assignedSubrole
+  )));
+};
 
-const normalizeStaffAccess = (staffAccess = {}) => {
-  const defaults = defaultStaffAccess();
-  const needsSettingsAccessMigration = Number(staffAccess.profile_version || 0) < 2;
-  return {
-    profile_version: 2,
-    subrole: staffAccess.subrole || defaults.subrole,
-    hide_payment_amounts: staffAccess.hide_payment_amounts === true,
-    custom_subroles: Array.isArray(staffAccess.custom_subroles) ? staffAccess.custom_subroles : [],
-    modules: Object.fromEntries(STAFF_MODULES.map(({ key, actions }) => {
-      const moduleAccess = staffAccess.modules?.[key] || defaults.modules[key];
-      return [key, {
-        enabled: key === "settings" && needsSettingsAccessMigration ? true : moduleAccess.enabled === true,
-        actions: Object.fromEntries(actions.map(({ key: actionKey }) => [
-          actionKey,
-          key === "settings" && needsSettingsAccessMigration
-            ? true
-            : typeof moduleAccess.actions?.[actionKey] === "boolean"
-              ? moduleAccess.actions[actionKey]
-              : defaults.modules[key].actions[actionKey],
-        ])),
-      }];
-    })),
-  };
+const getStaffListDesignation = (staffAccess) => {
+  const staffType = staffAccess.staff_type === "helper"
+    ? "Helper"
+    : staffAccess.staff_type === "skilled_worker"
+      ? "Skilled Worker"
+      : "Type not assigned";
+  const assignedSubrole = String(staffAccess.subrole || "").trim();
+  const isCustomSubrole = hasAssignedCustomSubrole(staffAccess);
+  return isCustomSubrole ? assignedSubrole : staffType;
 };
 
 function Settings() {
@@ -147,7 +125,17 @@ function Settings() {
   const [staffDraft, setStaffDraft] = useState(null);
   const [expandedStaffModule, setExpandedStaffModule] = useState(null);
   const [customSubroleInput, setCustomSubroleInput] = useState("");
+  const [editingCustomSubrole, setEditingCustomSubrole] = useState("");
+  const [showStaffSubroleMenu, setShowStaffSubroleMenu] = useState(false);
   const [showUpgradeConfirm, setShowUpgradeConfirm] = useState(false);
+  const [showConvertStaffConfirm, setShowConvertStaffConfirm] = useState(false);
+  const [superAdminPromotionTarget, setSuperAdminPromotionTarget] = useState(null);
+  const [superAdminPromotionPassword, setSuperAdminPromotionPassword] = useState("");
+  const [showSuperAdminPromotionPassword, setShowSuperAdminPromotionPassword] = useState(false);
+  const [superAdminDemotionTarget, setSuperAdminDemotionTarget] = useState(null);
+  const [superAdminDemotionPassword, setSuperAdminDemotionPassword] = useState("");
+  const [showSuperAdminDemotionPassword, setShowSuperAdminDemotionPassword] = useState(false);
+  const [upgradeStaffType, setUpgradeStaffType] = useState("");
   const [restrictionConfirmation, setRestrictionConfirmation] = useState(null);
   const [globalPermissions, setGlobalPermissions] = useState(normalizeGlobalCustomerPermissions);
   const [globalOpen, setGlobalOpen] = useState(false);
@@ -359,7 +347,7 @@ function Settings() {
       setLoading(true);
       try {
         const response = await getAdminUsers();
-        setUsers((response.users || []).map((account) => ({ ...account, is_active: true })));
+        setUsers((response.users || []).map((account) => ({ ...account, is_active: account.is_active !== false })));
       } catch (error) {
         setUsers([]);
         toast.error(error?.data?.message || error?.message || "Unable to load users.");
@@ -409,8 +397,30 @@ function Settings() {
       const accountId = account._id || account.id;
       return accountId && !seenIds.has(accountId);
     });
-    return [authAdmin, ...realUsers];
+    const isPrimaryAccount = (account) => account.is_primary_super_admin === true
+      || account.is_admin_account === true
+      || (account === authAdmin && account.role === "admin");
+
+    return [authAdmin, ...realUsers]
+      .map((account, index) => ({ account, index }))
+      .sort((left, right) => {
+        const getPriority = (account) => isPrimaryAccount(account)
+          ? 0
+          : account.role === "super_admin" ? 1 : account.role === "skilled_worker" ? 2 : 3;
+        return getPriority(left.account) - getPriority(right.account) || left.index - right.index;
+      })
+      .map(({ account }) => account);
   }, [users, user]);
+
+  const activeSuperAdminCount = useMemo(() => {
+    const identities = new Set();
+    allDisplayUsers.forEach((account) => {
+      if (!["admin", "super_admin"].includes(account.role) || account.is_active === false) return;
+      const identity = String(account.email || account._id || account.id || "").trim().toLowerCase();
+      if (identity) identities.add(identity);
+    });
+    return identities.size;
+  }, [allDisplayUsers]);
 
   const restrictedCustomers = useMemo(() => {
     const now = Date.now();
@@ -434,26 +444,44 @@ function Settings() {
     all: allDisplayUsers.length,
     customer: allDisplayUsers.filter((account) => account.role === "customer").length,
     staff: allDisplayUsers.filter((account) => account.role === "skilled_worker").length,
-    helper: allDisplayUsers.filter((account) => account.role === "helper").length,
-    skilled_worker: allDisplayUsers.filter((account) => account.role === "skilled_worker").length,
+    helper: allDisplayUsers.filter((account) => account.role === "skilled_worker" && account.staff_access?.staff_type === "helper" && !hasAssignedCustomSubrole(account.staff_access)).length,
+    skilled_worker: allDisplayUsers.filter((account) => account.role === "skilled_worker" && account.staff_access?.staff_type === "skilled_worker" && !hasAssignedCustomSubrole(account.staff_access)).length,
     active: allDisplayUsers.filter((account) => account.is_active !== false).length,
   }), [allDisplayUsers]);
+
+  const customSubroleNames = useMemo(() => {
+    const reservedNames = new Set(["all users", "customers", "staff", "helper", "skilled worker"]);
+    return [...new Set(allDisplayUsers
+      .filter((account) => account.role === "skilled_worker")
+      .flatMap((account) => Array.isArray(account.staff_access?.custom_subroles) ? account.staff_access.custom_subroles : [])
+      .filter((subrole) => typeof subrole === "string" && subrole.trim())
+      .map((subrole) => subrole.trim())
+      .filter((subrole) => !reservedNames.has(subrole.toLowerCase())))]
+      .sort((left, right) => left.localeCompare(right));
+  }, [allDisplayUsers]);
 
   const userCategoryTabs = [
     { key: "all", label: "All Users", count: counts.all },
     { key: "customer", label: "Customers", count: counts.customer },
     { key: "staff", label: "Staff", count: counts.staff },
-    { key: "helper", label: "Helpers", count: counts.helper },
-    { key: "skilled_worker", label: "Skilled Workers", count: counts.skilled_worker },
+    { key: "helper", label: "Helper", count: counts.helper },
+    { key: "skilled_worker", label: "Skilled Worker", count: counts.skilled_worker },
+    ...customSubroleNames.map((subrole) => ({
+      key: `subrole:${encodeURIComponent(subrole)}`,
+      label: subrole,
+      count: allDisplayUsers.filter((account) => account.role === "skilled_worker" && hasAssignedCustomSubrole(account.staff_access) && account.staff_access?.subrole?.trim().toLowerCase() === subrole.toLowerCase()).length,
+    })),
   ];
 
   const displayUsers = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
     return allDisplayUsers.filter((account) => {
+      const selectedSubrole = activeTab.startsWith("subrole:") ? decodeURIComponent(activeTab.slice("subrole:".length)).toLowerCase() : null;
       const matchesRole = activeTab === "all"
-        || (activeTab === "staff" || activeTab === "skilled_worker"
-          ? account.role === "skilled_worker"
-          : account.role === activeTab);
+        || activeTab === "staff" && account.role === "skilled_worker"
+        || (activeTab === "skilled_worker" || activeTab === "helper") && account.role === "skilled_worker" && account.staff_access?.staff_type === activeTab && !hasAssignedCustomSubrole(account.staff_access)
+        || selectedSubrole !== null && account.role === "skilled_worker" && hasAssignedCustomSubrole(account.staff_access) && account.staff_access?.subrole?.trim().toLowerCase() === selectedSubrole
+        || !["staff", "skilled_worker", "helper"].includes(activeTab) && account.role === activeTab;
       const matchesSearch = !normalizedSearch || [account.first_name, account.last_name, account.email, account.username]
         .some((value) => String(value || "").toLowerCase().includes(normalizedSearch));
       return matchesRole && matchesSearch;
@@ -478,13 +506,21 @@ function Settings() {
     const firstItem = (page - 1) * SETTINGS_LIST_PAGE_SIZE + 1;
     const lastItem = Math.min(page * SETTINGS_LIST_PAGE_SIZE, total);
     return (
-      <div className={`flex flex-col gap-3 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 ${darkMode ? "border-slate-800" : "border-slate-100"}`}>
+      <div className={`mt-4 flex flex-col items-center justify-between gap-3 border-t pt-4 sm:flex-row ${darkMode ? "border-slate-700" : "border-slate-200"}`}>
         <p className={`text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Showing {firstItem}–{lastItem} of {total}</p>
-        <div className="flex items-center justify-end gap-2">
-          <button type="button" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page <= 1} className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 ${darkMode ? "border-slate-700 text-slate-200 hover:bg-slate-800" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`}>Previous</button>
-          <span className={`min-w-16 text-center text-xs font-semibold tabular-nums ${darkMode ? "text-slate-300" : "text-slate-600"}`}>Page {page} of {pageCount}</span>
-          <button type="button" onClick={() => setPage((current) => Math.min(pageCount, current + 1))} disabled={page >= pageCount} className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 ${darkMode ? "border-slate-700 text-slate-200 hover:bg-slate-800" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`}>Next</button>
-        </div>
+        <nav aria-label="User list pagination" className="flex flex-wrap items-center justify-center gap-1.5">
+          <button type="button" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page === 1} aria-label="Previous page" className={`inline-flex h-9 items-center gap-1 rounded-lg border px-3 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${darkMode ? "border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}>
+            <ChevronLeft size={14} /> Previous
+          </button>
+          {Array.from({ length: pageCount }, (_, index) => index + 1).map((pageNumber) => (
+            <button key={pageNumber} type="button" onClick={() => setPage(pageNumber)} aria-current={page === pageNumber ? "page" : undefined} aria-label={`Page ${pageNumber}`} className={`h-9 min-w-9 rounded-lg border px-2.5 text-xs font-semibold ${page === pageNumber ? "border-red-600 bg-red-600 text-white" : darkMode ? "border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}>
+              {pageNumber}
+            </button>
+          ))}
+          <button type="button" onClick={() => setPage((current) => Math.min(pageCount, current + 1))} disabled={page === pageCount} aria-label="Next page" className={`inline-flex h-9 items-center gap-1 rounded-lg border px-3 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${darkMode ? "border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}>
+            Next <ChevronRight size={14} />
+          </button>
+        </nav>
       </div>
     );
   };
@@ -984,16 +1020,18 @@ function Settings() {
   };
 
   const upgradeCustomerToStaff = async () => {
-    if (!permissionAccount) return;
+    if (!permissionAccount || !["skilled_worker", "helper"].includes(upgradeStaffType)) return;
     const accountId = permissionAccount._id || permissionAccount.id;
     setSavingId(accountId);
     try {
-      const response = await updateAdminUserAccess(accountId, { role: "skilled_worker" });
+      const response = await updateAdminUserAccess(accountId, { role: "skilled_worker", staff_access: { ...defaultStaffAccess(), staff_type: upgradeStaffType } });
       setUsers((current) => current.map((item) => (item._id || item.id) === accountId ? { ...response.user, is_active: true } : item));
       recordActivity(user, `Upgraded ${permissionAccount.first_name} ${permissionAccount.last_name} to staff.`, "Settings");
       toast.success("Customer upgraded to staff.");
+      setShowUpgradeConfirm(false);
       setPermissionAccount(null);
       setPermissionDraft(null);
+      setUpgradeStaffType("");
     } catch (error) {
       toast.error(error?.data?.message || error?.message || "Unable to upgrade customer to staff.");
     } finally {
@@ -1011,6 +1049,59 @@ function Settings() {
     setStaffDraft(normalizeStaffAccess(account.staff_access));
     setExpandedStaffModule(null);
     setCustomSubroleInput("");
+    setEditingCustomSubrole("");
+    setShowStaffSubroleMenu(false);
+  };
+
+  const addCustomSubrole = () => {
+    const subrole = customSubroleInput.trim().replace(/\s+/g, " ").slice(0, 40);
+    if (!isAdmin || isOwnStaffAccount || !subrole || !staffDraft) return;
+
+    const duplicate = staffDraft.custom_subroles.find((item) => (
+      typeof item === "string"
+      && item.toLowerCase() === subrole.toLowerCase()
+      && item.toLowerCase() !== editingCustomSubrole.toLowerCase()
+    ));
+    if (duplicate) {
+      toast.error("A custom subrole with that name already exists.");
+      return;
+    }
+
+    const selectedSubrole = subrole;
+    setStaffDraft((current) => ({
+      ...current,
+      subrole: current.subrole?.toLowerCase() === editingCustomSubrole.toLowerCase() || !editingCustomSubrole
+        ? selectedSubrole
+        : current.subrole,
+      custom_subroles: editingCustomSubrole
+        ? current.custom_subroles.map((item) => item === editingCustomSubrole ? selectedSubrole : item)
+        : [...current.custom_subroles, selectedSubrole],
+    }));
+    setCustomSubroleInput("");
+    setEditingCustomSubrole("");
+    toast.success(`${editingCustomSubrole ? "Subrole updated" : "Subrole added"}: ${selectedSubrole}. Save Settings to apply it.`);
+  };
+
+  const editCustomSubrole = (subrole) => {
+    setEditingCustomSubrole(subrole);
+    setCustomSubroleInput(subrole);
+    setShowStaffSubroleMenu(false);
+  };
+
+  const deleteCustomSubrole = (subrole) => {
+    if (!isAdmin || isOwnStaffAccount || !staffDraft) return;
+    if (!window.confirm(`Delete the custom subrole "${subrole}"?`)) return;
+    setStaffDraft((current) => ({
+      ...current,
+      subrole: current.subrole?.toLowerCase() === subrole.toLowerCase() ? "" : current.subrole,
+      custom_subroles: current.custom_subroles.filter((item) => item.toLowerCase() !== subrole.toLowerCase()),
+    }));
+    if (editingCustomSubrole.toLowerCase() === subrole.toLowerCase()) {
+      setEditingCustomSubrole("");
+      setCustomSubroleInput("");
+    }
+    setShowStaffSubroleMenu(false);
+    toast.success(`Subrole deleted: ${subrole}. Save Settings to apply it.`);
   };
 
   const updateStaffModule = (moduleKey, update) => {
@@ -1042,6 +1133,8 @@ function Settings() {
   const saveStaffAccess = async () => {
     if (!isAdmin || !staffAccount || !staffDraft) return;
     const accountId = staffAccount._id || staffAccount.id;
+    const originalType = staffAccount.staff_access?.staff_type || "";
+    if (staffDraft.staff_type !== originalType && !window.confirm(`Change this staff member's type to ${staffDraft.staff_type === "helper" ? "Helper" : "Skilled Worker"}?`)) return;
     setSavingId(accountId);
     try {
       const response = await updateAdminUserAccess(accountId, { staff_access: staffDraft });
@@ -1057,25 +1150,49 @@ function Settings() {
     }
   };
 
-  const addCustomSubrole = () => {
-    const subrole = customSubroleInput.trim().replace(/\s+/g, " ").slice(0, 40);
-    if (!subrole || !staffDraft) return;
-    const existingSubrole = [...STAFF_SUBROLES, ...staffDraft.custom_subroles]
-      .find((item) => item.toLowerCase() === subrole.toLowerCase());
-    if (existingSubrole) {
-      setStaffDraft((current) => ({ ...current, subrole: existingSubrole }));
-      setCustomSubroleInput("");
-      toast.success(`Subrole selected: ${existingSubrole}. Save Settings to apply it.`);
-      return;
+  const promoteStaffAccountToSuperAdmin = async () => {
+    if (!user?.is_super_admin || !superAdminPromotionTarget || !superAdminPromotionPassword) return;
+    if (activeSuperAdminCount >= 2) return;
+    const target = superAdminPromotionTarget;
+    const accountId = target._id || target.id;
+    setSavingId(accountId);
+    try {
+      const response = await promoteStaffToSuperAdmin(accountId, superAdminPromotionPassword);
+      setUsers((current) => current.map((account) => (account._id || account.id) === accountId ? response.user : account));
+      recordActivity(user, `Promoted ${target.first_name} ${target.last_name} to Super Admin.`, "Settings");
+      toast.success(response.message || "Staff member promoted to Super Admin.");
+      setSuperAdminPromotionTarget(null);
+      setSuperAdminPromotionPassword("");
+      setShowSuperAdminPromotionPassword(false);
+      setStaffAccount(null);
+      setStaffDraft(null);
+      setSearch("");
+    } catch (error) {
+      toast.error(error?.data?.message || error?.message || "Unable to promote this staff account.");
+    } finally {
+      setSavingId(null);
     }
+  };
 
-    setStaffDraft((current) => ({
-      ...current,
-      subrole,
-      custom_subroles: [...new Set([...current.custom_subroles, subrole])],
-    }));
-    setCustomSubroleInput("");
-    toast.success(`Subrole added: ${subrole}. Save Settings to apply it.`);
+  const convertSecondarySuperAdminToStaff = async () => {
+    if (!user?.is_primary_super_admin || !superAdminDemotionTarget || !superAdminDemotionPassword) return;
+    const target = superAdminDemotionTarget;
+    const accountId = target._id || target.id;
+    setSavingId(accountId);
+    try {
+      const response = await demoteSuperAdminToStaff(accountId, superAdminDemotionPassword);
+      setUsers((current) => current.map((account) => (account._id || account.id) === accountId ? response.user : account));
+      recordActivity(user, `Converted ${target.first_name} ${target.last_name} from Super Admin to staff.`, "Settings");
+      toast.success(response.message || "Super Admin converted to staff.");
+      setSuperAdminDemotionTarget(null);
+      setSuperAdminDemotionPassword("");
+      setShowSuperAdminDemotionPassword(false);
+      setSearch("");
+    } catch (error) {
+      toast.error(error?.data?.message || error?.message || "Unable to convert this Super Admin to staff.");
+    } finally {
+      setSavingId(null);
+    }
   };
 
   const convertStaffToCustomer = async () => {
@@ -1087,6 +1204,7 @@ function Settings() {
       setUsers((current) => current.map((account) => (account._id || account.id) === accountId ? { ...response.user, is_active: true } : account));
       recordActivity(user, `Converted ${staffAccount.first_name} ${staffAccount.last_name} to customer.`, "Settings");
       toast.success("Staff account converted to customer.");
+      setShowConvertStaffConfirm(false);
       setStaffAccount(null);
       setStaffDraft(null);
     } catch (error) {
@@ -1115,14 +1233,14 @@ function Settings() {
     if (role === "customer") return "Client";
     if (role === "helper") return "Helper";
     if (role === "staff" || role === "skilled_worker") return "Staff";
-    if (role === "admin") return "Super Admin";
+    if (role === "admin" || role === "super_admin") return "Super Admin";
     return "Client";
   };
 
   const getRoleBadgeClasses = (role) => {
     if (role === "customer") return darkMode ? "bg-sky-950/70 text-sky-200" : "bg-sky-100 text-sky-700";
     if (role === "helper") return darkMode ? "bg-violet-950/70 text-violet-200" : "bg-violet-100 text-violet-700";
-    if (role === "admin") return darkMode ? "bg-emerald-950/70 text-emerald-200" : "bg-emerald-100 text-emerald-700";
+    if (role === "admin" || role === "super_admin") return darkMode ? "bg-emerald-950/70 text-emerald-200" : "bg-emerald-100 text-emerald-700";
     return darkMode ? "bg-violet-950/70 text-violet-200" : "bg-violet-100 text-violet-700";
   };
 
@@ -1610,13 +1728,13 @@ function Settings() {
           <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="relative w-full sm:max-w-sm">
               <Search size={16} className="absolute left-3 top-3 text-slate-400" />
-              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by name or email..." className={`w-full rounded-xl border py-2.5 pl-9 pr-3 text-sm outline-none transition focus:border-red-500 focus:ring-2 focus:ring-red-100 ${darkMode ? "border-slate-700 bg-slate-900 text-slate-100 placeholder:text-slate-500" : "border-slate-200 bg-white"}`} />
+              <input type="search" name="user-management-search" autoComplete="off" autoCorrect="off" spellCheck={false} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by name or email..." className={`w-full rounded-xl border py-2.5 pl-9 pr-3 text-sm outline-none transition focus:border-red-500 focus:ring-2 focus:ring-red-100 ${darkMode ? "border-slate-700 bg-slate-900 text-slate-100 placeholder:text-slate-500" : "border-slate-200 bg-white"}`} />
             </div>
             <span className={`text-xs font-semibold ${darkMode ? "text-slate-400" : "text-slate-500"}`}>{loading ? "Loading users..." : `${displayUsers.length} users found`}</span>
           </div>
 
           <section className={`settings-user-access mt-4 overflow-hidden rounded-[22px] border shadow-[0_18px_45px_-28px_rgba(15,23,42,0.55)] ${darkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-white"}`}>
-            {loading ? <div className={`flex items-center justify-center gap-2 p-16 text-sm ${darkMode ? "text-slate-400" : "text-slate-500"}`}><Loader2 size={18} className="animate-spin" /> Loading user access...</div> : displayUsers.length === 0 ? <div className="p-16 text-center"><ShieldCheck size={30} className="mx-auto text-slate-300" /><p className={`mt-3 text-sm font-semibold ${darkMode ? "text-slate-200" : "text-slate-600"}`}>No users found</p><p className="mt-1 text-xs text-slate-400">Try another search or permission group.</p></div> : <div className="overflow-x-auto"><table className="min-w-[1180px] w-full border-collapse text-left"><thead className={darkMode ? "bg-slate-800/80" : "bg-slate-50"}><tr className={`border-b ${darkMode ? "border-slate-700" : "border-slate-200"}`}><th className={`sticky left-0 z-10 w-[280px] px-5 py-4 text-[10px] font-black uppercase tracking-[0.16em] ${darkMode ? "bg-slate-800 text-slate-400" : "bg-slate-50 text-slate-500"}`}>User</th><th className={`w-[200px] px-3 py-4 text-[10px] font-black uppercase tracking-[0.16em] ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Role</th><th className={`w-[240px] px-3 py-4 text-[10px] font-black uppercase tracking-[0.16em] ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Module Access</th><th className={`w-[190px] px-3 py-4 text-[10px] font-black uppercase tracking-[0.16em] ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Actions</th></tr></thead><tbody className={`divide-y ${darkMode ? "divide-slate-800" : "divide-slate-100"}`}>{paginatedUsers.map((account) => { const accountId = account._id || account.id; const permissions = getPermissions(account); const accountActive = account.is_active !== false; const accountIsAdmin = account.role === "admin" || account.role === "super_admin"; const isStaff = account.role === "skilled_worker"; const staffAccess = isStaff ? normalizeStaffAccess(account.staff_access) : null; const effectivePermissions = accountIsAdmin ? Object.fromEntries(PERMISSIONS.map(({ key }) => [key, true])) : permissions; const enabledStaffModules = isStaff ? STAFF_MODULES.filter(({ key }) => staffAccess.modules[key].enabled).length : 0; const moduleCount = isStaff || accountIsAdmin ? STAFF_MODULES.length : 6; const enabledModuleCount = accountIsAdmin ? moduleCount : isStaff ? enabledStaffModules : Math.min(5, Object.values(effectivePermissions).filter(Boolean).length); const moduleAccessLabel = accountIsAdmin ? "Full Module Access" : isStaff ? `${enabledStaffModules} of ${STAFF_MODULES.length} staff modules` : getModuleAccessLabel(effectivePermissions); const actionClasses = accountIsAdmin ? (darkMode ? "border-emerald-800 bg-emerald-950/70 text-emerald-200" : "border-emerald-200 bg-emerald-50 text-emerald-700") : (darkMode ? "border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100"); const avatarLetters = `${(account.first_name || account.email || "U").charAt(0)}${(account.last_name || account.email || "U").charAt(0)}`.toUpperCase(); const name = `${account.first_name || ""} ${account.last_name || ""}`.trim() || "User"; return <tr key={accountId} className={`transition ${darkMode ? "hover:bg-slate-800/50" : "hover:bg-slate-50"}`}><td className={`sticky left-0 z-10 px-5 py-4 ${darkMode ? "bg-slate-900" : "bg-white"}`}><div className="flex min-w-[245px] items-center gap-3"><span className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-red-700 to-amber-600 text-[10px] font-black text-white shadow-sm ${darkMode ? "ring-1 ring-white/10" : ""}`}>{avatarLetters}</span><div className="min-w-0"><div className="truncate text-[15px] font-semibold text-slate-900 dark:text-slate-200">{name}</div><div className="truncate text-xs text-slate-500">{account.email}</div></div></div></td><td className="px-3 py-4"><span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.08em] ${getRoleBadgeClasses(account.role)}`}>{accountActive ? roleLabel(account.role) : "Disabled"}</span></td><td className="px-3 py-4"><div className="flex items-center gap-2"><span className="inline-flex items-center gap-1">{Array.from({ length: moduleCount }).map((_, dotIndex) => (<span key={dotIndex} className={`h-2.5 w-2.5 rounded-full ${dotIndex < enabledModuleCount ? "bg-red-700" : darkMode ? "bg-slate-600" : "bg-slate-300"}`} />))}</span><span className={`text-xs ${darkMode ? "text-slate-300" : "text-slate-600"}`}>{moduleAccessLabel}</span></div></td><td className="px-3 py-4"><div className="flex items-center justify-end">{accountIsAdmin ? <span className={`inline-flex min-w-[120px] items-center justify-center rounded-xl border px-3 py-2 text-xs font-semibold ${actionClasses}`}>✓ Full Access</span> : isStaff ? <button type="button" onClick={() => openStaffAccess(account)} className={`inline-flex min-w-[120px] items-center justify-center rounded-xl border px-3 py-2 text-xs font-semibold transition ${actionClasses}`} aria-label={`Manage access for ${name}`}>Manage Access</button> : canManageAccess ? <button type="button" onClick={() => openPermissionMatrix(account)} className={`inline-flex min-w-[120px] items-center justify-center rounded-xl border px-3 py-2 text-xs font-semibold transition ${actionClasses}`} aria-label={`View permissions for ${name}`}>View Permissions</button> : <span className="px-3 py-2 text-xs text-slate-400">Read Only</span>}</div></td></tr>; })}</tbody></table></div>}
+            {loading ? <div className={`flex items-center justify-center gap-2 p-16 text-sm ${darkMode ? "text-slate-400" : "text-slate-500"}`}><Loader2 size={18} className="animate-spin" /> Loading user access...</div> : displayUsers.length === 0 ? <div className="p-16 text-center"><ShieldCheck size={30} className="mx-auto text-slate-300" /><p className={`mt-3 text-sm font-semibold ${darkMode ? "text-slate-200" : "text-slate-600"}`}>{activeTab === "helper" ? "No Helper staff found" : activeTab === "skilled_worker" ? "No Skilled Worker staff found" : activeTab.startsWith("subrole:") ? `No ${decodeURIComponent(activeTab.slice("subrole:".length))} staff found` : "No users found"}</p><p className="mt-1 text-xs text-slate-400">Try another search or permission group.</p></div> : <div className="overflow-x-auto"><table className="min-w-[1180px] w-full border-collapse text-left"><thead className={darkMode ? "bg-slate-800/80" : "bg-slate-50"}><tr className={`border-b ${darkMode ? "border-slate-700" : "border-slate-200"}`}><th className={`sticky left-0 z-10 w-[280px] px-5 py-4 text-[10px] font-black uppercase tracking-[0.16em] ${darkMode ? "bg-slate-800 text-slate-400" : "bg-slate-50 text-slate-500"}`}>User</th><th className={`w-[200px] px-3 py-4 text-[10px] font-black uppercase tracking-[0.16em] ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Role</th><th className={`w-[240px] px-3 py-4 text-[10px] font-black uppercase tracking-[0.16em] ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Module Access</th><th className={`w-[190px] px-3 py-4 text-[10px] font-black uppercase tracking-[0.16em] ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Actions</th></tr></thead><tbody className={`divide-y ${darkMode ? "divide-slate-800" : "divide-slate-100"}`}>{paginatedUsers.map((account) => { const accountId = account._id || account.id; const permissions = getPermissions(account); const accountActive = account.is_active !== false; const accountIsAdmin = account.role === "admin" || account.role === "super_admin"; const isStaff = account.role === "skilled_worker"; const staffAccess = isStaff ? normalizeStaffAccess(account.staff_access) : null; const effectivePermissions = accountIsAdmin ? Object.fromEntries(PERMISSIONS.map(({ key }) => [key, true])) : permissions; const enabledStaffModules = isStaff ? STAFF_MODULES.filter(({ key }) => staffAccess.modules[key].enabled).length : 0; const moduleCount = isStaff || accountIsAdmin ? STAFF_MODULES.length : 6; const enabledModuleCount = accountIsAdmin ? moduleCount : isStaff ? enabledStaffModules : Math.min(5, Object.values(effectivePermissions).filter(Boolean).length); const moduleAccessLabel = accountIsAdmin ? "Full Module Access" : isStaff ? `${enabledStaffModules} of ${STAFF_MODULES.length} staff modules` : getModuleAccessLabel(effectivePermissions); const actionClasses = accountIsAdmin ? (darkMode ? "border-emerald-800 bg-emerald-950/70 text-emerald-200" : "border-emerald-200 bg-emerald-50 text-emerald-700") : (darkMode ? "border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100"); const avatarLetters = `${(account.first_name || account.email || "U").charAt(0)}${(account.last_name || account.email || "U").charAt(0)}`.toUpperCase(); const name = `${account.first_name || ""} ${account.last_name || ""}`.trim() || "User"; return <tr key={accountId} className={`transition ${darkMode ? "hover:bg-slate-800/50" : "hover:bg-slate-50"}`}><td className={`sticky left-0 z-10 px-5 py-4 ${darkMode ? "bg-slate-900" : "bg-white"}`}><div className="flex min-w-[245px] items-center gap-3"><span className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-red-700 to-amber-600 text-[10px] font-black text-white shadow-sm ${darkMode ? "ring-1 ring-white/10" : ""}`}>{avatarLetters}</span><div className="min-w-0"><div className="truncate text-[15px] font-semibold text-slate-900 dark:text-slate-200">{name}</div><div className="truncate text-xs text-slate-500">{account.email}</div></div></div></td><td className="px-3 py-4"><span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.08em] ${getRoleBadgeClasses(account.role)}`}>{accountActive ? roleLabel(account.role) : "Disabled"}</span>{isStaff && <span className={`ml-2 inline-flex rounded-full border px-2.5 py-1 text-[10px] font-semibold ${darkMode ? "border-slate-700 bg-slate-800 text-slate-300" : "border-slate-200 bg-slate-100 text-slate-700"}`}>{getStaffListDesignation(staffAccess)}</span>}</td><td className="px-3 py-4"><div className="flex items-center gap-2"><span className="inline-flex items-center gap-1">{Array.from({ length: moduleCount }).map((_, dotIndex) => (<span key={dotIndex} className={`h-2.5 w-2.5 rounded-full ${dotIndex < enabledModuleCount ? "bg-red-700" : darkMode ? "bg-slate-600" : "bg-slate-300"}`} />))}</span><span className={`text-xs ${darkMode ? "text-slate-300" : "text-slate-600"}`}>{moduleAccessLabel}</span></div></td><td className="px-3 py-4"><div className="flex items-center justify-end">{accountIsAdmin ? (account.role === "super_admin" && user?.is_primary_super_admin === true && !account.is_admin_account ? <button type="button" onClick={() => { setSuperAdminDemotionTarget(account); setSuperAdminDemotionPassword(""); setShowSuperAdminDemotionPassword(false); setSearch(""); }} disabled={!accountActive} className="inline-flex items-center justify-center rounded-xl border border-emerald-200 bg-emerald-100 px-3 py-2 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-200 disabled:opacity-50">Convert to Staff</button> : <span className={`inline-flex min-w-[120px] items-center justify-center rounded-xl border px-3 py-2 text-xs font-semibold ${actionClasses}`}>Full Access</span>) : isStaff ? <button type="button" onClick={() => openStaffAccess(account)} className={`inline-flex min-w-[120px] items-center justify-center rounded-xl border px-3 py-2 text-xs font-semibold transition ${actionClasses}`} aria-label={`Manage access for ${name}`}>Manage Access</button> : canManageAccess ? <button type="button" onClick={() => openPermissionMatrix(account)} className={`inline-flex min-w-[120px] items-center justify-center rounded-xl border px-3 py-2 text-xs font-semibold transition ${actionClasses}`} aria-label={`View permissions for ${name}`}>View Permissions</button> : <span className="px-3 py-2 text-xs text-slate-400">Read Only</span>}</div></td></tr>; })}</tbody></table></div>}
           </section>
           {!loading && displayUsers.length > 0 && (
             <div className="mt-3 space-y-3 md:hidden">
@@ -1647,6 +1765,7 @@ function Settings() {
                         <div className="min-w-0">
                           <p className={`truncate text-sm font-semibold ${darkMode ? "text-slate-100" : "text-slate-900"}`}>{name}</p>
                           <p className="break-all text-xs text-slate-500">{account.email}</p>
+                          {isStaff && <span className={`mt-1 inline-flex rounded-full border px-2.5 py-1 text-[10px] font-semibold ${darkMode ? "border-slate-700 bg-slate-800 text-slate-300" : "border-slate-200 bg-slate-100 text-slate-700"}`}>{getStaffListDesignation(staffAccess)}</span>}
                         </div>
                       </div>
                       <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-black uppercase ${getRoleBadgeClasses(account.role)}`}>
@@ -1662,9 +1781,7 @@ function Settings() {
                       <span className={`min-w-0 text-xs ${darkMode ? "text-slate-300" : "text-slate-600"}`}>{moduleAccessLabel}</span>
                     </div>
                     <div className="mt-3 flex justify-end">
-                      {accountIsAdmin ? (
-                        <span className={`inline-flex items-center justify-center rounded-xl border px-3 py-2 text-xs font-semibold ${actionClasses}`}>Full Access</span>
-                      ) : isStaff ? (
+                      {accountIsAdmin ? (account.role === "super_admin" && user?.is_primary_super_admin === true && !account.is_admin_account ? <button type="button" onClick={() => { setSuperAdminDemotionTarget(account); setSuperAdminDemotionPassword(""); setShowSuperAdminDemotionPassword(false); setSearch(""); }} disabled={!accountActive} className="inline-flex items-center justify-center rounded-xl border border-emerald-200 bg-emerald-100 px-3 py-2 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-200 disabled:opacity-50">Convert to Staff</button> : <span className={`inline-flex items-center justify-center rounded-xl border px-3 py-2 text-xs font-semibold ${actionClasses}`}>Full Access</span>) : isStaff ? (
                         <button type="button" onClick={() => openStaffAccess(account)} className={`inline-flex items-center justify-center rounded-xl border px-3 py-2 text-xs font-semibold transition ${actionClasses}`} aria-label={`Manage access for ${name}`}>Manage Access</button>
                       ) : canManageAccess ? (
                         <button type="button" onClick={() => openPermissionMatrix(account)} className={`inline-flex items-center justify-center rounded-xl border px-3 py-2 text-xs font-semibold transition ${actionClasses}`} aria-label={`View permissions for ${name}`}>View Permissions</button>
@@ -1765,7 +1882,7 @@ function Settings() {
                 </div>
               </div>
               <footer className={`flex flex-col-reverse gap-2 border-t px-6 py-4 sm:flex-row sm:items-center sm:justify-between ${darkMode ? "border-slate-800 bg-slate-800/50" : "border-slate-100 bg-slate-50"}`}>
-                {(isAdmin || canManageAccess) && permissionAccount.role === "customer" && <button type="button" onClick={() => setShowUpgradeConfirm(true)} disabled={savingId === (permissionAccount._id || permissionAccount.id)} className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-60">↑ Upgrade to Staff</button>}
+                {isAdmin && permissionAccount.role === "customer" && <button type="button" onClick={() => { setUpgradeStaffType(""); setShowUpgradeConfirm(true); }} disabled={savingId === (permissionAccount._id || permissionAccount.id)} className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-60">↑ Upgrade to Staff</button>}
                 <div className="flex justify-end gap-2"><button type="button" onClick={() => { setPermissionAccount(null); setPermissionDraft(null); }} disabled={savingId === (permissionAccount._id || permissionAccount.id)} className={`rounded-md border px-4 py-2.5 text-sm font-medium ${darkMode ? "border-slate-700 text-slate-200 hover:bg-slate-800" : "border-slate-200 text-slate-700 hover:bg-white"}`}>Cancel</button><button type="button" onClick={savePermissionMatrix} disabled={savingId === (permissionAccount._id || permissionAccount.id)} className="inline-flex min-w-28 items-center justify-center gap-2 rounded-md bg-red-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-900 disabled:opacity-60">{savingId === (permissionAccount._id || permissionAccount.id) ? <Loader2 size={15} className="animate-spin" /> : null}Save Matrix</button></div>
               </footer>
             </section>
@@ -1780,12 +1897,39 @@ function Settings() {
                 {(isOwnStaffAccount || !isAdmin) && <p role="status" className={`mx-5 mt-4 rounded-md border px-3 py-2 text-xs ${darkMode ? "border-amber-800 bg-amber-950/30 text-amber-200" : "border-amber-200 bg-amber-50 text-amber-800"}`}>{isOwnStaffAccount ? "You are currently viewing your own profile. Modifying your own permissions is disabled to prevent accidental lockout." : "Staff access is read-only here. Only a Super Admin can change staff permissions."}</p>}
                 <section className={`border-b px-5 py-4 ${darkMode ? "border-slate-800" : "border-slate-100"}`}>
                   <p className={`mb-2 text-[10px] font-black uppercase tracking-wider ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Staff Subrole Designation</p>
-                  <div className="flex flex-wrap gap-2">
-                    <select value={staffDraft.subrole} disabled={!isAdmin || isOwnStaffAccount} onChange={(event) => setStaffDraft((current) => ({ ...current, subrole: event.target.value }))} className={`h-9 rounded-md border px-2 text-sm disabled:cursor-not-allowed disabled:opacity-60 ${darkMode ? "border-slate-700 bg-slate-800 text-slate-100" : "border-slate-200 bg-white text-slate-800"}`}>
-                      {[...new Set([...STAFF_SUBROLES, ...staffDraft.custom_subroles])].map((subrole) => <option key={subrole} value={subrole}>{subrole}</option>)}
-                    </select>
-                    <input value={customSubroleInput} maxLength={40} disabled={!isAdmin || isOwnStaffAccount} onChange={(event) => setCustomSubroleInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addCustomSubrole(); } }} placeholder="Add custom subrole..." className={`h-9 min-w-[150px] flex-1 rounded-md border px-3 text-sm disabled:cursor-not-allowed disabled:opacity-60 ${darkMode ? "border-slate-700 bg-slate-800 text-slate-100 placeholder:text-slate-500" : "border-slate-200 bg-white text-slate-800 placeholder:text-slate-400"}`} />
-                    {isAdmin && !isOwnStaffAccount && <button type="button" onClick={addCustomSubrole} disabled={!customSubroleInput.trim()} className={`h-9 rounded-md border px-3 text-sm font-medium disabled:opacity-50 ${darkMode ? "border-slate-700 text-slate-200 hover:bg-slate-800" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`}>Add</button>}
+                  <div className="grid gap-3 sm:grid-cols-2 sm:items-end">
+                    <div className="relative min-w-0">
+                      <button type="button" aria-haspopup="listbox" aria-expanded={showStaffSubroleMenu} disabled={!isAdmin || isOwnStaffAccount} onClick={() => setShowStaffSubroleMenu((open) => !open)} className={`flex h-9 w-full items-center justify-between rounded-md border px-3 text-sm disabled:cursor-not-allowed disabled:opacity-60 ${darkMode ? "border-slate-700 bg-slate-800 text-slate-100" : "border-slate-200 bg-white text-slate-800"}`}>
+                        <span className="truncate">{staffDraft.custom_subroles.find((item) => typeof item === "string" && item.toLowerCase() === staffDraft.subrole?.toLowerCase()) || (staffDraft.staff_type === "skilled_worker" ? "Skilled Worker" : staffDraft.staff_type === "helper" ? "Helper" : "Select staff type")}</span>
+                        <ChevronDown size={15} className={`transition-transform ${showStaffSubroleMenu ? "rotate-180" : ""}`} aria-hidden="true" />
+                      </button>
+                      {showStaffSubroleMenu && <div role="listbox" aria-label="Staff type and custom subroles" className={`absolute left-0 right-0 top-full z-50 mt-1 max-h-64 overflow-y-auto rounded-md border py-1 shadow-xl ${darkMode ? "border-slate-700 bg-slate-900" : "border-slate-300 bg-white"}`}>
+                        {[{ value: "skilled_worker", label: "Skilled Worker" }, { value: "helper", label: "Helper" }].map((type) => <button key={type.value} type="button" role="option" aria-selected={staffDraft.staff_type === type.value} onClick={() => { setStaffDraft((current) => ({ ...current, staff_type: type.value })); setShowStaffSubroleMenu(false); }} className={`block w-full px-3 py-2 text-left text-sm ${staffDraft.staff_type === type.value ? darkMode ? "bg-blue-700 text-white" : "bg-blue-600 text-white" : darkMode ? "text-slate-200 hover:bg-slate-800" : "text-slate-800 hover:bg-slate-100"}`}>{type.label}</button>)}
+                        {staffDraft.custom_subroles.length > 0 && <div className={`mt-1 border-t pt-1 ${darkMode ? "border-slate-700" : "border-slate-200"}`}>
+                          <p className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider ${darkMode ? "text-slate-500" : "text-slate-400"}`}>Custom subroles</p>
+                          {staffDraft.custom_subroles.filter((subrole) => typeof subrole === "string" && subrole.trim()).map((subrole) => <div key={subrole} className={`flex items-center gap-1 px-2 py-1 ${darkMode ? "hover:bg-slate-800" : "hover:bg-slate-50"}`}>
+                            <button type="button" role="option" aria-selected={staffDraft.subrole?.toLowerCase() === subrole.toLowerCase()} onClick={() => { setStaffDraft((current) => ({ ...current, subrole })); setShowStaffSubroleMenu(false); }} className={`min-w-0 flex-1 truncate rounded px-1 py-1 text-left text-sm ${staffDraft.subrole?.toLowerCase() === subrole.toLowerCase() ? darkMode ? "text-sky-300" : "text-sky-700" : darkMode ? "text-slate-200" : "text-slate-700"}`}>{subrole}</button>
+                            {isAdmin && !isOwnStaffAccount && <>
+                              <button type="button" onClick={() => editCustomSubrole(subrole)} aria-label={`Edit custom subrole ${subrole}`} title="Edit subrole" className={`rounded p-1.5 ${darkMode ? "text-slate-300 hover:bg-slate-700" : "text-slate-600 hover:bg-slate-200"}`}><Pencil size={14} aria-hidden="true" /></button>
+                              <button type="button" onClick={() => deleteCustomSubrole(subrole)} aria-label={`Delete custom subrole ${subrole}`} title="Delete subrole" className={`rounded p-1.5 ${darkMode ? "text-red-300 hover:bg-red-950/60" : "text-red-700 hover:bg-red-100"}`}><Trash2 size={14} aria-hidden="true" /></button>
+                            </>}
+                          </div>)}
+                        </div>}
+                      </div>}
+                    </div>
+                    <div className="flex min-w-0 gap-2">
+                    <input
+                      type="text"
+                      value={customSubroleInput}
+                      maxLength={40}
+                      disabled={!isAdmin || isOwnStaffAccount}
+                      onChange={(event) => setCustomSubroleInput(event.target.value)}
+                      onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addCustomSubrole(); } }}
+                      placeholder="Add custom subrole..."
+                      className={`h-9 min-w-0 flex-1 rounded-md border px-3 text-sm disabled:cursor-not-allowed disabled:opacity-60 ${darkMode ? "border-slate-700 bg-slate-800 text-slate-100 placeholder:text-slate-500" : "border-slate-200 bg-white text-slate-800 placeholder:text-slate-400"}`}
+                    />
+                    {isAdmin && !isOwnStaffAccount && <button type="button" onClick={addCustomSubrole} disabled={!customSubroleInput.trim()} className={`h-9 rounded-md border px-3 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50 ${darkMode ? "border-slate-700 text-slate-200 hover:bg-slate-800" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`}>{editingCustomSubrole ? "Save" : "Add"}</button>}
+                    </div>
                   </div>
                 </section>
                 <section className="px-5 py-4">
@@ -1816,7 +1960,8 @@ function Settings() {
                 </section>
               </div>
               <footer className={`flex flex-col-reverse gap-2 border-t px-5 py-3 sm:flex-row sm:items-center sm:justify-between ${darkMode ? "border-slate-800 bg-slate-800/40" : "border-slate-100 bg-slate-50"}`}>
-                {(isAdmin || canManageAccess) && !isOwnStaffAccount && <button type="button" onClick={convertStaffToCustomer} disabled={savingId === (staffAccount._id || staffAccount.id)} className={`rounded-md border px-3 py-2 text-xs font-semibold transition disabled:opacity-50 ${darkMode ? "border-red-500 bg-red-700 text-white hover:bg-red-600" : "border-red-200 text-red-700 hover:bg-red-50"}`}>↓ Convert to Customer</button>}
+                {user?.is_super_admin === true && !isOwnStaffAccount && <button type="button" onClick={() => { setSuperAdminPromotionTarget(staffAccount); setSuperAdminPromotionPassword(""); }} disabled={activeSuperAdminCount >= 2 || savingId === (staffAccount._id || staffAccount.id)} title={activeSuperAdminCount >= 2 ? "The maximum limit of 2 Super Admin accounts has been reached." : undefined} className={`rounded-md border px-3 py-2 text-xs font-semibold transition disabled:opacity-50 ${darkMode ? "border-emerald-700 bg-emerald-950/70 text-emerald-200 hover:bg-emerald-900" : "border-emerald-200 bg-emerald-100 text-emerald-800 hover:bg-emerald-200"}`}>Promote to Super Admin</button>}
+                {(isAdmin || canManageAccess) && !isOwnStaffAccount && <button type="button" onClick={() => setShowConvertStaffConfirm(true)} disabled={savingId === (staffAccount._id || staffAccount.id)} className={`rounded-md border px-3 py-2 text-xs font-semibold transition disabled:opacity-50 ${darkMode ? "border-red-500 bg-red-700 text-white hover:bg-red-600" : "border-red-200 text-red-700 hover:bg-red-50"}`}>↓ Convert to Customer</button>}
                 <div className="flex justify-end gap-2"><button type="button" onClick={() => { setStaffAccount(null); setStaffDraft(null); }} className={`rounded-md border px-4 py-2 text-sm ${darkMode ? "border-slate-700 text-slate-200 hover:bg-slate-800" : "border-slate-200 text-slate-700 hover:bg-white"}`}>Close</button>{isAdmin && !isOwnStaffAccount && <button type="button" onClick={saveStaffAccess} disabled={savingId === (staffAccount._id || staffAccount.id)} className="inline-flex min-w-28 items-center justify-center gap-2 rounded-md bg-red-950 px-4 py-2 text-sm font-semibold text-white hover:bg-red-900 disabled:opacity-60">{savingId === (staffAccount._id || staffAccount.id) ? <Loader2 size={14} className="animate-spin" /> : null}Save Settings</button>}</div>
               </footer>
             </section>
@@ -1859,9 +2004,59 @@ function Settings() {
             <section role="alertdialog" aria-modal="true" aria-labelledby="upgrade-confirm-title" aria-describedby="upgrade-confirm-description" className={`w-full max-w-md rounded-xl border p-6 shadow-2xl ${darkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-white"}`}>
               <h2 id="upgrade-confirm-title" className={`text-lg font-bold leading-tight ${darkMode ? "text-slate-100" : "text-slate-900"}`}>Upgrade Customer to Operational Staff?</h2>
               <p id="upgrade-confirm-description" className={`mt-3 text-sm leading-6 ${darkMode ? "text-slate-300" : "text-slate-600"}`}>This will change {`${permissionAccount.first_name || "this customer"} ${permissionAccount.last_name || ""}`.trim()}'s role to Staff. You can still customize their customer portal permissions separately.</p>
+              <fieldset className="mt-5 space-y-2">
+                <legend className={`mb-2 text-xs font-bold ${darkMode ? "text-slate-300" : "text-slate-700"}`}>Staff type</legend>
+                {[{ value: "skilled_worker", label: "Skilled Worker" }, { value: "helper", label: "Helper" }].map((type) => <label key={type.value} className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 text-sm ${upgradeStaffType === type.value ? darkMode ? "border-sky-700 bg-sky-950/40 text-sky-100" : "border-sky-300 bg-sky-50 text-sky-900" : darkMode ? "border-slate-700 text-slate-300" : "border-slate-200 text-slate-700"}`}><input type="radio" name="upgrade-staff-type" value={type.value} checked={upgradeStaffType === type.value} onChange={(event) => setUpgradeStaffType(event.target.value)} />{type.label}</label>)}
+              </fieldset>
               <div className="mt-5 flex justify-end gap-2">
-                <button type="button" onClick={() => setShowUpgradeConfirm(false)} disabled={savingId === (permissionAccount._id || permissionAccount.id)} className={`rounded-md border px-4 py-2.5 text-sm font-medium ${darkMode ? "border-slate-700 text-slate-200 hover:bg-slate-800" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`}>Cancel</button>
-                <button type="button" onClick={() => { setShowUpgradeConfirm(false); upgradeCustomerToStaff(); }} disabled={savingId === (permissionAccount._id || permissionAccount.id)} className="rounded-md bg-red-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-900 disabled:cursor-not-allowed disabled:opacity-60">{savingId === (permissionAccount._id || permissionAccount.id) ? "Upgrading..." : "Confirm Upgrade"}</button>
+                <button type="button" onClick={() => { setShowUpgradeConfirm(false); setUpgradeStaffType(""); }} disabled={savingId === (permissionAccount._id || permissionAccount.id)} className={`rounded-md border px-4 py-2.5 text-sm font-medium ${darkMode ? "border-slate-700 text-slate-200 hover:bg-slate-800" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`}>Cancel</button>
+                <button type="button" onClick={upgradeCustomerToStaff} disabled={!upgradeStaffType || savingId === (permissionAccount._id || permissionAccount.id)} className="rounded-md bg-red-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-900 disabled:cursor-not-allowed disabled:opacity-60">{savingId === (permissionAccount._id || permissionAccount.id) ? "Upgrading..." : "Confirm Upgrade"}</button>
+              </div>
+            </section>
+          </div>}
+          {showConvertStaffConfirm && staffAccount && <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget && savingId !== (staffAccount._id || staffAccount.id)) setShowConvertStaffConfirm(false); }}>
+            <section role="alertdialog" aria-modal="true" aria-labelledby="convert-staff-confirm-title" aria-describedby="convert-staff-confirm-description" className={`w-full max-w-md rounded-xl border p-6 shadow-2xl ${darkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-white"}`}>
+              <h2 id="convert-staff-confirm-title" className={`text-lg font-bold leading-tight ${darkMode ? "text-slate-100" : "text-slate-900"}`}>Convert Staff to Customer?</h2>
+              <p id="convert-staff-confirm-description" className={`mt-3 text-sm leading-6 ${darkMode ? "text-slate-300" : "text-slate-600"}`}>Are you sure you want to convert {`${staffAccount.first_name || "this staff member"} ${staffAccount.last_name || ""}`.trim()} to a customer account?</p>
+              <div className="mt-6 flex justify-end gap-2">
+                <button type="button" onClick={() => setShowConvertStaffConfirm(false)} disabled={savingId === (staffAccount._id || staffAccount.id)} className={`rounded-md border px-4 py-2.5 text-sm font-medium ${darkMode ? "border-slate-700 text-slate-200 hover:bg-slate-800" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`}>Cancel</button>
+                <button type="button" onClick={convertStaffToCustomer} disabled={savingId === (staffAccount._id || staffAccount.id)} className="rounded-md bg-red-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-60">{savingId === (staffAccount._id || staffAccount.id) ? "Converting..." : "Confirm Conversion"}</button>
+              </div>
+            </section>
+          </div>}
+          {superAdminPromotionTarget && <div className="fixed inset-0 z-[150] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget && savingId !== (superAdminPromotionTarget._id || superAdminPromotionTarget.id)) { setSuperAdminPromotionTarget(null); setSuperAdminPromotionPassword(""); setShowSuperAdminPromotionPassword(false); } }}>
+            <section role="alertdialog" aria-modal="true" aria-labelledby="promote-super-admin-title" aria-describedby="promote-super-admin-description" className={`w-full max-w-lg rounded-2xl border p-6 shadow-2xl ${darkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-white"}`}>
+              <h2 id="promote-super-admin-title" className={`text-lg font-bold ${darkMode ? "text-slate-100" : "text-slate-900"}`}>Promote to Super Admin?</h2>
+              <p className={`mt-3 text-sm leading-6 ${darkMode ? "text-slate-300" : "text-slate-600"}`}>You are promoting <strong>{`${superAdminPromotionTarget.first_name || "Staff"} ${superAdminPromotionTarget.last_name || ""}`.trim()}</strong>, whose current role is Staff. This grants Super Admin privileges. The system allows a maximum of two active Super Admin accounts.</p>
+              <label className={`mt-5 grid gap-1.5 text-sm font-medium ${darkMode ? "text-slate-300" : "text-slate-700"}`}>Your current password
+                <span className="relative block">
+                  <input type={showSuperAdminPromotionPassword ? "text" : "password"} name="super-admin-promotion-confirmation" autoComplete="new-password" value={superAdminPromotionPassword} onChange={(event) => setSuperAdminPromotionPassword(event.target.value)} disabled={savingId === (superAdminPromotionTarget._id || superAdminPromotionTarget.id)} className={`h-10 w-full rounded-lg border px-3 pr-11 text-sm outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 ${darkMode ? "border-slate-700 bg-slate-950 text-slate-100" : "border-slate-200 bg-white text-slate-900"}`} />
+                  <button type="button" onClick={() => setShowSuperAdminPromotionPassword((visible) => !visible)} disabled={savingId === (superAdminPromotionTarget._id || superAdminPromotionTarget.id)} aria-label={showSuperAdminPromotionPassword ? "Hide current password" : "Show current password"} aria-pressed={showSuperAdminPromotionPassword} className={`absolute inset-y-0 right-0 inline-flex w-10 items-center justify-center ${darkMode ? "text-slate-400 hover:text-slate-200" : "text-slate-500 hover:text-slate-800"}`}>
+                    {showSuperAdminPromotionPassword ? <EyeOff size={17} aria-hidden="true" /> : <Eye size={17} aria-hidden="true" />}
+                  </button>
+                </span>
+              </label>
+              <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <button type="button" onClick={() => { setSuperAdminPromotionTarget(null); setSuperAdminPromotionPassword(""); setShowSuperAdminPromotionPassword(false); }} disabled={savingId === (superAdminPromotionTarget._id || superAdminPromotionTarget.id)} className={`rounded-lg border px-4 py-2.5 text-sm font-semibold ${darkMode ? "border-slate-700 text-slate-200 hover:bg-slate-800" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`}>Cancel</button>
+                <button type="button" onClick={promoteStaffAccountToSuperAdmin} disabled={!superAdminPromotionPassword || activeSuperAdminCount >= 2 || savingId === (superAdminPromotionTarget._id || superAdminPromotionTarget.id)} className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60">{savingId === (superAdminPromotionTarget._id || superAdminPromotionTarget.id) && <Loader2 size={15} className="animate-spin" />}{savingId === (superAdminPromotionTarget._id || superAdminPromotionTarget.id) ? "Promoting..." : "Confirm Promotion"}</button>
+              </div>
+            </section>
+          </div>}
+          {superAdminDemotionTarget && <div className="fixed inset-0 z-[155] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget && savingId !== (superAdminDemotionTarget._id || superAdminDemotionTarget.id)) { setSuperAdminDemotionTarget(null); setSuperAdminDemotionPassword(""); setShowSuperAdminDemotionPassword(false); } }}>
+            <section role="alertdialog" aria-modal="true" aria-labelledby="demote-super-admin-title" aria-describedby="demote-super-admin-description" className={`w-full max-w-lg rounded-2xl border p-6 shadow-2xl ${darkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-white"}`}>
+              <h2 id="demote-super-admin-title" className={`text-lg font-bold ${darkMode ? "text-slate-100" : "text-slate-900"}`}>Convert Super Admin to Staff?</h2>
+              <p id="demote-super-admin-description" className={`mt-3 text-sm leading-6 ${darkMode ? "text-slate-300" : "text-slate-600"}`}>You are converting <strong>{`${superAdminDemotionTarget.first_name || "Super Admin"} ${superAdminDemotionTarget.last_name || ""}`.trim()}</strong> from Super Admin to Staff. Their staff type, account history, and existing records will be preserved. The primary Super Admin will remain active.</p>
+              <label className={`mt-5 grid gap-1.5 text-sm font-medium ${darkMode ? "text-slate-300" : "text-slate-700"}`}>Your current password
+                <span className="relative block">
+                  <input type={showSuperAdminDemotionPassword ? "text" : "password"} name="super-admin-demotion-confirmation" autoComplete="new-password" value={superAdminDemotionPassword} onChange={(event) => setSuperAdminDemotionPassword(event.target.value)} disabled={savingId === (superAdminDemotionTarget._id || superAdminDemotionTarget.id)} className={`h-10 w-full rounded-lg border px-3 pr-11 text-sm outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 ${darkMode ? "border-slate-700 bg-slate-950 text-slate-100" : "border-slate-200 bg-white text-slate-900"}`} />
+                  <button type="button" onClick={() => setShowSuperAdminDemotionPassword((visible) => !visible)} disabled={savingId === (superAdminDemotionTarget._id || superAdminDemotionTarget.id)} aria-label={showSuperAdminDemotionPassword ? "Hide current password" : "Show current password"} aria-pressed={showSuperAdminDemotionPassword} className={`absolute inset-y-0 right-0 inline-flex w-10 items-center justify-center ${darkMode ? "text-slate-400 hover:text-slate-200" : "text-slate-500 hover:text-slate-800"}`}>
+                    {showSuperAdminDemotionPassword ? <EyeOff size={17} aria-hidden="true" /> : <Eye size={17} aria-hidden="true" />}
+                  </button>
+                </span>
+              </label>
+              <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <button type="button" onClick={() => { setSuperAdminDemotionTarget(null); setSuperAdminDemotionPassword(""); setShowSuperAdminDemotionPassword(false); }} disabled={savingId === (superAdminDemotionTarget._id || superAdminDemotionTarget.id)} className={`rounded-lg border px-4 py-2.5 text-sm font-semibold ${darkMode ? "border-slate-700 text-slate-200 hover:bg-slate-800" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`}>Cancel</button>
+                <button type="button" onClick={convertSecondarySuperAdminToStaff} disabled={!superAdminDemotionPassword || savingId === (superAdminDemotionTarget._id || superAdminDemotionTarget.id)} className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60">{savingId === (superAdminDemotionTarget._id || superAdminDemotionTarget.id) && <Loader2 size={15} className="animate-spin" />}{savingId === (superAdminDemotionTarget._id || superAdminDemotionTarget.id) ? "Converting..." : "Confirm Conversion"}</button>
               </div>
             </section>
           </div>}

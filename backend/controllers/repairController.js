@@ -110,6 +110,15 @@ const warrantyForItem = (order, item, now = new Date()) => {
   };
 };
 
+const redactStaffPaymentAmounts = (value) => {
+  if (Array.isArray(value)) return value.map(redactStaffPaymentAmounts);
+  if (!value || typeof value !== "object" || value instanceof Date) return value;
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [
+    key,
+    /(amount|price|cost|balance|charge|subtotal|total|rate)/i.test(key) ? null : redactStaffPaymentAmounts(item),
+  ]));
+};
+
 export const listCompletedRepairProjects = async (req, res) => {
   const orders = await Order.find({ customer: req.user?.id, status: "completed" })
     .select("tracking items createdAt updatedAt warranty_period custom_warranty_days warranty_status warranty_start_date warranty_expiry_date")
@@ -126,7 +135,7 @@ export const listRepairRequests = async (req, res) => {
     if (!repair.repairTrackingId) await repair.save();
     return repair.toObject();
   }));
-  res.json({ success: true, repairs: repairRecords });
+  res.json({ success: true, repairs: req.user?.role === "skilled_worker" && req.staffAccess?.hide_payment_amounts === true ? redactStaffPaymentAmounts(repairRecords) : repairRecords });
 };
 
 export const getAdminOrderRepairHistory = async (req, res) => {
@@ -143,7 +152,7 @@ export const getAdminOrderRepairHistory = async (req, res) => {
     ],
   };
   const repairs = await RepairRequest.find(repairFilter).sort({ createdAt: -1, _id: -1 }).lean();
-  return res.json({ success: true, repairs });
+  return res.json({ success: true, repairs: req.user?.role === "skilled_worker" && req.staffAccess?.hide_payment_amounts === true ? redactStaffPaymentAmounts(repairs) : repairs });
 };
 
 export const getAdminCustomerRepairProducts = async (req, res) => {
@@ -414,7 +423,7 @@ export const submitRepairPaymentProof = async (req, res) => {
 };
 
 export const reviewRepairPaymentProof = async (req, res) => {
-  if (!["admin", "super_admin"].includes(req.user?.role)) return res.status(403).json({ success: false, message: "Only an administrator can verify repair payment proof." });
+  if (!["admin", "super_admin", "skilled_worker"].includes(req.user?.role)) return res.status(403).json({ success: false, message: "Only an administrator can verify repair payment proof." });
   const repair = await getRepair(req.params.repairId);
   if (!repair) return res.status(404).json({ success: false, message: "Repair request not found." });
   if (repair.workflowType !== "paid" || repair.payment.proofReviewStatus !== "pending") return res.status(409).json({ success: false, message: "There is no pending repair payment proof to review." });
@@ -462,7 +471,7 @@ export const reviewRepairPaymentProof = async (req, res) => {
 };
 
 export const recordRepairPayment = async (req, res) => {
-  if (!["admin", "super_admin"].includes(req.user?.role)) return res.status(403).json({ success: false, message: "Administrator access is required to verify repair payments." });
+  if (!["admin", "super_admin", "skilled_worker"].includes(req.user?.role)) return res.status(403).json({ success: false, message: "Administrator access is required to verify repair payments." });
   const repair = await getRepair(req.params.repairId);
   if (!repair) return res.status(404).json({ success: false, message: "Repair request not found." });
   if (repair.workflowType !== "paid" || !repair.quotation?.issuedAt) return res.status(409).json({ success: false, message: "Only quoted paid repairs can receive payment." });
@@ -499,7 +508,7 @@ export const recordRepairPayment = async (req, res) => {
 };
 
 export const generateRepairReceipt = async (req, res) => {
-  if (!["admin", "super_admin"].includes(req.user?.role)) return res.status(403).json({ success: false, message: "Only an administrator can issue a repair receipt." });
+  if (!["admin", "super_admin", "skilled_worker"].includes(req.user?.role)) return res.status(403).json({ success: false, message: "Only an administrator can issue a repair receipt." });
   const repair = await getRepair(req.params.repairId);
   if (!repair) return res.status(404).json({ success: false, message: "Repair request not found." });
   const warrantyEligible = repair.workflowType === "warranty" && repair.status === "completed" && repair.payment?.status === "not_required";

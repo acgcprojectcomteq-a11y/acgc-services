@@ -54,9 +54,11 @@ router.get("/reviews/product/:productId/summary", getProductReviewSummary);
 router.get("/reviews/product/:productId", authMiddleware, permissionMiddleware("can_upload_feedback"), getProductReviews);
 
 // Admin routes
-router.get("/admin/list", authMiddleware, staffModulePermission((req) => req.query.module), getAdminOrders);
+const orderReadModules = ["dashboard", "site_inspection", "transactions", "progress_monitoring"];
+const orderReadModule = (req) => orderReadModules.includes(req.query.module || req.query.view) ? (req.query.module || req.query.view) : "";
+router.get("/admin/list", authMiddleware, staffModulePermission(orderReadModule, "view"), getAdminOrders);
 router.get("/admin/reports", authMiddleware, roleMiddleware(["admin", "super_admin"]), generateTransactionReport);
-router.get("/admin/:orderId", authMiddleware, staffModulePermission((req) => req.query.module), getAdminOrderById);
+router.get("/admin/:orderId", authMiddleware, staffModulePermission(orderReadModule, (req) => (req.query.module || req.query.view) === "dashboard" ? "view" : "view_details"), getAdminOrderById);
 router.post("/admin/create", authMiddleware, roleMiddleware("admin"), createOrderAsAdmin);
 router.put("/admin/:orderId/status", authMiddleware, roleMiddleware("admin"), updateOrderStatus);
 router.post(
@@ -75,12 +77,12 @@ router.get(
 router.delete("/admin/:orderId/review", authMiddleware, roleMiddleware("admin"), deleteOrderReview);
 router.put("/admin/:orderId/review/visibility", authMiddleware, roleMiddleware(["admin", "super_admin"]), setOrderReviewVisibility);
 router.put("/admin/:orderId/review/response", authMiddleware, roleMiddleware(["admin", "super_admin"]), respondToCustomerReview);
-router.put("/admin/:orderId/inspection", authMiddleware, roleMiddleware("admin"), updateOrderInspection);
+router.put("/admin/:orderId/inspection", authMiddleware, roleMiddleware(["admin", "super_admin", "skilled_worker"]), staffModulePermission("site_inspection", (req) => req.body?.inspection_status === "approved" || req.body?.inspection_status === "completed" ? "manual_approve" : "edit"), updateOrderInspection);
 router.put("/admin/:orderId/progress", authMiddleware, roleMiddleware(["admin", "super_admin", "skilled_worker"]), staffModulePermission("progress_monitoring", "edit"), updateOrderProgress);
 router.put("/admin/:orderId/project-delay", authMiddleware, roleMiddleware(["admin", "super_admin"]), staffModulePermission("progress_monitoring", "edit"), updateProjectDelay);
 router.put("/admin/:orderId/protected-project-notes", authMiddleware, roleMiddleware(["admin", "super_admin"]), staffModulePermission("progress_monitoring", "edit"), updateProtectedProjectNotes);
 router.post("/admin/:orderId/activity-notes", authMiddleware, roleMiddleware(["admin", "super_admin", "skilled_worker"]), staffModulePermission("progress_monitoring", "edit"), addProgressActivityNote);
-router.post("/admin/:orderId/contract", authMiddleware, roleMiddleware("admin"), generateContract);
-router.post("/admin/:orderId/send-contract-email", authMiddleware, roleMiddleware("admin"), sendWalkInApprovalEmail);
+router.post("/admin/:orderId/contract", authMiddleware, roleMiddleware(["admin", "super_admin", "skilled_worker"]), staffModulePermission("site_inspection", "generate_contract"), generateContract);
+router.post("/admin/:orderId/send-contract-email", authMiddleware, roleMiddleware(["admin", "super_admin", "skilled_worker"]), staffModulePermission("site_inspection", "send_email"), sendWalkInApprovalEmail);
 
 export default router;

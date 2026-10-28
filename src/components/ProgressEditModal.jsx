@@ -47,6 +47,8 @@ const normalizeStage = (source = {}, key, name, defaultStatus = "pending") => {
     completed,
     saved: completed,
     date: source.date ? new Date(source.date) : null,
+    completedAt: source.completedAt ? new Date(source.completedAt) : null,
+    completionNote: source.completionNote || "",
     installationStartedAt: source.installationStartedAt ? new Date(source.installationStartedAt) : null,
     installationCompletedAt: source.installationCompletedAt ? new Date(source.installationCompletedAt) : null,
     images: Array.isArray(source.images) ? source.images : [],
@@ -81,6 +83,7 @@ const normalizeStage = (source = {}, key, name, defaultStatus = "pending") => {
             status: subStatus,
             completed: Boolean(subStage.completed) || subStatus === "done",
             date: subStage.date ? new Date(subStage.date) : null,
+            completedAt: subStage.completedAt ? new Date(subStage.completedAt) : null,
             images: Array.isArray(subStage.images) ? subStage.images : [],
             newFiles: [],
             imagePreviews: Array.isArray(subStage.images) ? subStage.images : [],
@@ -150,6 +153,7 @@ const getProtectedNotesContent = (project) => project.protected_project_notes
 
 export default function ProgressEditModal({ project, onClose, onSave, canUploadProgressPhoto = true, canEditProtectedNotes = false, onProjectDelay, onSaveProtectedNotes, onAddActivityNote }) {
   const [progress, setProgress] = useState(project.progress || 0);
+  const [countdownNow, setCountdownNow] = useState(Date.now());
   const [status, setStatus] = useState(project.status || "Pending");
   const additionalNotes = project.progress_notes || project.rawOrder?.progress_notes || "";
   const [installationDate, setInstallationDate] = useState(() => {
@@ -215,8 +219,14 @@ export default function ProgressEditModal({ project, onClose, onSave, canUploadP
   });
   const [completionNote, setCompletionNote] = useState("");
   const minimumInstallationDate = getMinimumInstallationDate(inspectionDate);
+  const minimumCompletionDateTime = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
   const modalRef = useRef(null);
   const previousActiveElement = useRef(null);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => setCountdownNow(Date.now()), 1000);
+    return () => window.clearInterval(intervalId);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -333,6 +343,26 @@ export default function ProgressEditModal({ project, onClose, onSave, canUploadP
 
   const currentStageIndex = stages.findIndex((stage) => !(stage.completed && stage.saved));
   const activeStageIndex = currentStageIndex === -1 ? stages.length - 1 : currentStageIndex;
+  const progressCooldownMs = 10 * 60 * 1000;
+  const latestProgressCompletion = stages.flatMap((stage) => [
+    { value: stage.completedAt, label: stage.name },
+    ...(stage.subStages || []).map((subStage) => ({ value: subStage.completedAt, label: `${stage.name} / ${subStage.name}` })),
+  ]).reduce((latest, entry) => {
+    const at = entry.value ? new Date(entry.value).getTime() : 0;
+    return Number.isFinite(at) && at > (latest?.at || 0) ? { at, label: entry.label } : latest;
+  }, null);
+  const progressCooldownRemainingMs = latestProgressCompletion
+    ? Math.max(0, latestProgressCompletion.at + progressCooldownMs - countdownNow)
+    : 0;
+  const remainingSeconds = Math.ceil(progressCooldownRemainingMs / 1000);
+  const progressCountdownLabel = `${String(Math.floor(remainingSeconds / 60)).padStart(2, "0")}:${String(remainingSeconds % 60).padStart(2, "0")}`;
+  const renderProgressCooldownNotice = () => (
+    <div role="status" aria-live="polite" className="w-full rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+      <p className="font-semibold">Completed: {latestProgressCompletion?.label || "Progress stage"}</p>
+      <p className="mt-0.5 font-bold">Next progress available in {progressCountdownLabel}</p>
+      <p className="mt-0.5">Please wait 10 minutes before proceeding to the next progress stage.</p>
+    </div>
+  );
 
   const isStageEditable = (index) => {
     const stage = stages[index];
@@ -886,6 +916,10 @@ export default function ProgressEditModal({ project, onClose, onSave, canUploadP
   };
 
   const handleMarkSubStageDone = (stageIndex, subIndex) => {
+    if (progressCooldownRemainingMs > 0) {
+      setErrorMessage("Please wait 10 minutes before proceeding to the next progress stage.");
+      return;
+    }
     const stage = stages[stageIndex];
     const sub = stage.subStages[subIndex];
     if (!sub.name.trim()) {
@@ -905,6 +939,10 @@ export default function ProgressEditModal({ project, onClose, onSave, canUploadP
   };
 
   const handleMarkStageDone = (stageIndex) => {
+    if (progressCooldownRemainingMs > 0) {
+      setErrorMessage("Please wait 10 minutes before proceeding to the next progress stage.");
+      return;
+    }
     const stage = stages[stageIndex];
     if (!canMarkStageDone(stage, stageIndex)) {
       setErrorMessage("Only the current active stage can be marked as done.");
@@ -944,6 +982,7 @@ export default function ProgressEditModal({ project, onClose, onSave, canUploadP
         status: shouldStartInstallation ? "in_progress" : stage.status,
         completed: stage.completed,
         date: stage.date ? stage.date.toISOString() : null,
+        completedAt: stage.completedAt ? stage.completedAt.toISOString() : null,
         completionNote: stage.completionNote || "",
         installationStartedAt: stage.installationStartedAt ? stage.installationStartedAt.toISOString() : null,
         installationCompletedAt: stage.installationCompletedAt ? stage.installationCompletedAt.toISOString() : null,
@@ -988,6 +1027,7 @@ export default function ProgressEditModal({ project, onClose, onSave, canUploadP
           status: subStage.status || (subStage.completed ? "done" : "pending"),
           completed: Boolean(subStage.completed),
           date: subStage.date ? subStage.date.toISOString() : null,
+          completedAt: subStage.completedAt ? subStage.completedAt.toISOString() : null,
           completionNote: subStage.completionNote || "",
           images: Array.isArray(subStage.images) ? subStage.images : [],
         })),
@@ -1534,7 +1574,7 @@ export default function ProgressEditModal({ project, onClose, onSave, canUploadP
                         onChange={(e) => handleStageStatusChange(stageIndex, e.target.value)}
                       >
                         <option value="pending">Pending</option>
-                        <option value="in_progress">In Progress</option>
+                        <option value="in_progress" disabled={progressCooldownRemainingMs > 0 && stage.status !== "in_progress"}>In Progress</option>
                         <option value="delayed">Delayed</option>
                       </select>
                     )}
@@ -1784,8 +1824,8 @@ export default function ProgressEditModal({ project, onClose, onSave, canUploadP
                                               className="mt-2 w-full border p-2 rounded-lg"
                                             >
                                               <option value="pending">Pending</option>
-                                              <option value="in_progress">In Progress</option>
-                                              <option value="done">Done</option>
+                                              <option value="in_progress" disabled={progressCooldownRemainingMs > 0 && sub.status !== "in_progress"}>In Progress</option>
+                                              <option value="done" disabled={progressCooldownRemainingMs > 0}>Done</option>
                                               <option value="delayed">Delayed</option>
                                             </select>
                                           </label>
@@ -1856,7 +1896,7 @@ export default function ProgressEditModal({ project, onClose, onSave, canUploadP
 
                                     {/* Action Buttons */}
                                     {subEditable && !sub.completed && (
-                                      <div className="mt-4 flex justify-end gap-3">
+                                      <div className="mt-4 flex flex-wrap justify-end gap-3">
                                         <button
                                           type="button"
                                           onClick={() => openRemoveSubStageModal(stageIndex, subIndex)}
@@ -1867,13 +1907,14 @@ export default function ProgressEditModal({ project, onClose, onSave, canUploadP
                                         </button>
                                         <button
                                           type="button"
-                                          disabled={!canMarkSubStageDone(stageIndex, subIndex)}
+                                          disabled={!canMarkSubStageDone(stageIndex, subIndex) || progressCooldownRemainingMs > 0}
                                           onClick={() => handleMarkSubStageDone(stageIndex, subIndex)}
                                           className="inline-flex items-center gap-2 rounded-full bg-emerald-600 hover:bg-emerald-700 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
                                         >
                                           <CheckCircle2 size={14} />
                                           Mark as Done
                                         </button>
+                                        {progressCooldownRemainingMs > 0 && canMarkSubStageDone(stageIndex, subIndex) && subIndex === stage.subStages.findIndex((_, candidateIndex) => canMarkSubStageDone(stageIndex, candidateIndex)) && renderProgressCooldownNotice()}
                                       </div>
                                     )}
                                   </div>
@@ -1905,12 +1946,12 @@ export default function ProgressEditModal({ project, onClose, onSave, canUploadP
                       )}
                     </div>
                 
-                <div className="mt-4 flex justify-end gap-3 border-t border-slate-100 pt-3">
+                <div className="mt-4 flex flex-wrap justify-end gap-3 border-t border-slate-100 pt-3">
                   {!stage.completed && (
                     <button
                       type="button"
-                      disabled={!canMarkStageDone(stage, stageIndex)}
-                      aria-disabled={!canMarkStageDone(stage, stageIndex)}
+                      disabled={!canMarkStageDone(stage, stageIndex) || progressCooldownRemainingMs > 0}
+                      aria-disabled={!canMarkStageDone(stage, stageIndex) || progressCooldownRemainingMs > 0}
                       onClick={() => openMarkDoneConfirmation(stageIndex)}
                       className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800 transition hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
                     >
@@ -1918,6 +1959,7 @@ export default function ProgressEditModal({ project, onClose, onSave, canUploadP
                       {stage.key === "installation" ? "Mark Installation as Done" : `Mark ${stage.name} Done`}
                     </button>
                   )}
+                  {progressCooldownRemainingMs > 0 && canMarkStageDone(stage, stageIndex) && (stage.subStages || []).every((subStage) => subStage.completed || ["done", "completed"].includes(String(subStage.status || "").toLowerCase())) && renderProgressCooldownNotice()}
                 </div>
                 </div>
               </details>
@@ -1938,7 +1980,7 @@ export default function ProgressEditModal({ project, onClose, onSave, canUploadP
               <h3 id="complete-stage-title" className="text-lg font-semibold text-slate-900">Complete {stages[stagePendingCompletion]?.name}?</h3>
               <p className="mt-1 text-sm text-slate-600">Confirm the completion details. The date and note are optional.</p>
               <label className="mt-4 block text-sm font-medium text-slate-700">Completion date and time
-                <input type="datetime-local" value={completionDateTime} onChange={(event) => setCompletionDateTime(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" />
+                <input type="datetime-local" min={minimumCompletionDateTime} value={completionDateTime} onChange={(event) => setCompletionDateTime(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" />
               </label>
               <label className="mt-3 block text-sm font-medium text-slate-700">Completion note (optional)
                 <textarea value={completionNote} maxLength={1000} onChange={(event) => setCompletionNote(event.target.value)} rows={2} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" />
@@ -1946,7 +1988,7 @@ export default function ProgressEditModal({ project, onClose, onSave, canUploadP
               {markDoneValidationError && <p className="mt-2 text-sm text-red-700">{markDoneValidationError}</p>}
               <div className="mt-5 flex justify-end gap-2">
                 <button type="button" onClick={closeMarkDoneConfirmation} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium">Cancel</button>
-                <button type="button" onClick={confirmMarkStageDone} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white">Confirm completion</button>
+                <button type="button" disabled={completionDateTime < minimumCompletionDateTime} onClick={confirmMarkStageDone} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">Confirm completion</button>
               </div>
             </section>
           </div>
@@ -2013,8 +2055,8 @@ export default function ProgressEditModal({ project, onClose, onSave, canUploadP
                     onChange={(e) => setNewSubStageStatus(e.target.value)}
                   >
                     <option value="pending">Pending</option>
-                    <option value="in_progress">In Progress</option>
-                    <option value="done">Done</option>
+                    <option value="in_progress" disabled={progressCooldownRemainingMs > 0}>In Progress</option>
+                    <option value="done" disabled={progressCooldownRemainingMs > 0}>Done</option>
                   </select>
                 </label>
 

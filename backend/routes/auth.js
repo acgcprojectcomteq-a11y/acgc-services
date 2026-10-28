@@ -15,7 +15,8 @@ import AdminRecoveryAudit from "../models/AdminRecoveryAudit.js";
 import AdminRecoveryState from "../models/AdminRecoveryState.js";
 import SystemSetting from "../models/SystemSetting.js";
 import BackupOperationAudit from "../models/BackupOperationAudit.js";
-import { authMiddleware, roleMiddleware, staffModulePermission } from "../middleware/auth.js";
+import SuperAdminPromotionAudit from "../models/SuperAdminPromotionAudit.js";
+import { authMiddleware, roleMiddleware, staffModulePermission, staffModulePermissionIfStaff } from "../middleware/auth.js";
 import { sendMail } from "../config/mailer.js";
 import {
   getRecoveryRetryDelaySeconds,
@@ -45,6 +46,7 @@ import { buildCustomerEmailTemplate } from "../services/customerEmailTemplate.js
 import { runSiteInspectionReminderCheck } from "../services/siteInspectionReminders.js";
 import { runPaymentReminderCheck } from "../services/paymentReminders.js";
 import { isPasswordPolicySatisfied, PASSWORD_POLICY_MESSAGE } from "../services/passwordPolicy.js";
+import { STAFF_TYPES, createDefaultStaffAccess, normalizeStaffAccess } from "../../shared/staffPermissions.js";
 
 const backupImportUpload = multer({
   ...(process.env.VERCEL === "1" ? { storage: multer.memoryStorage() } : { dest: "backups/incoming" }),
@@ -77,74 +79,31 @@ const recordBackupOperation = async (req, action, outcome, backup, details = "")
   }
 };
 
-const STAFF_MODULE_KEYS = ["dashboard", "product_management", "site_inspection", "repair_management", "progress_monitoring", "transactions", "settings", "profile"];
-const STAFF_MODULE_ACTIONS = {
-  dashboard: ["view"],
-  product_management: ["view", "add", "edit", "delete"],
-  site_inspection: ["view", "view_details", "edit", "cancel", "generate_contract", "send_email", "download_contract", "manual_approve"],
-  repair_management: ["view", "create", "manage"],
-  progress_monitoring: ["view", "view_details", "edit", "delete_proof"],
-  transactions: ["view", "view_details", "edit", "view_contract", "download_contract", "send_email"],
-  settings: ["view", "manage_access", "back_up"],
-  profile: ["view", "edit"],
-};
-const STAFF_DEFAULT_ENABLED_ACTIONS = {
-  dashboard: ["view"],
-  product_management: ["view"],
-  site_inspection: [],
-  repair_management: ["view"],
-  progress_monitoring: ["view", "view_details"],
-  transactions: ["view", "view_details"],
-  settings: ["view", "manage_access", "back_up"],
-  profile: ["view"],
+const SUPER_ADMIN_PROMOTION_LOCK_TTL_MS = 60_000;
+const MAX_ACTIVE_SUPER_ADMINS = 2;
+
+const countActiveSuperAdmins = async () => {
+  const [adminAccounts, userAccounts] = await Promise.all([
+    Admin.find({ is_active: { $ne: false } }).select("_id email").lean(),
+    User.find({ role: { $in: ["admin", "super_admin"] }, is_active: { $ne: false } }).select("_id email").lean(),
+  ]);
+  const identities = new Set();
+  [...adminAccounts, ...userAccounts].forEach((account) => {
+    identities.add(String(account.email || account._id).trim().toLowerCase());
+  });
+  return identities.size;
 };
 
-const createDefaultStaffAccess = () => ({
-  profile_version: 2,
-  subrole: "Helper",
-  custom_subroles: [],
-  modules: Object.fromEntries(STAFF_MODULE_KEYS.map((moduleKey) => [moduleKey, {
-    enabled: moduleKey !== "site_inspection" && moduleKey !== "repair_management",
-    actions: Object.fromEntries(STAFF_MODULE_ACTIONS[moduleKey].map((actionKey) => [
-      actionKey,
-      STAFF_DEFAULT_ENABLED_ACTIONS[moduleKey].includes(actionKey),
-    ])),
-  }])),
-});
-
-const sanitizeStaffAccess = (staffAccess) => {
-  if (!staffAccess || typeof staffAccess !== "object" || Array.isArray(staffAccess)) return null;
-
-  const modules = Object.fromEntries(STAFF_MODULE_KEYS.map((moduleKey) => {
-    const moduleAccess = staffAccess.modules?.[moduleKey] || {};
-    return [moduleKey, {
-      enabled: moduleAccess.enabled === true,
-      actions: Object.fromEntries(STAFF_MODULE_ACTIONS[moduleKey].map((actionKey) => [actionKey, moduleAccess.actions?.[actionKey] === true])),
-    }];
-  }));
-
-  return {
-    profile_version: Number(staffAccess.profile_version) || 1,
-    subrole: typeof staffAccess.subrole === "string" ? staffAccess.subrole.trim().slice(0, 40) : "Helper",
-    hide_payment_amounts: staffAccess.hide_payment_amounts === true,
-    custom_subroles: Array.isArray(staffAccess.custom_subroles)
-      ? [...new Set(staffAccess.custom_subroles.filter((item) => typeof item === "string").map((item) => item.trim()).filter(Boolean))].slice(0, 20)
-      : [],
-    modules,
-  };
+const getPrimarySuperAdminId = async () => {
+  const primaryAdmin = await Admin.findOne({ is_active: { $ne: false } })
+    .sort({ createdAt: 1, _id: 1 })
+    .select("_id")
+    .lean();
+  return primaryAdmin?._id ? String(primaryAdmin._id) : null;
 };
 
-const migrateStaffAccess = (staffAccess) => {
-  const migrated = sanitizeStaffAccess(staffAccess || createDefaultStaffAccess()) || createDefaultStaffAccess();
-  if (migrated.profile_version < 2) {
-    migrated.modules.settings.enabled = true;
-    migrated.modules.settings.actions.view = true;
-    migrated.modules.settings.actions.manage_access = true;
-    migrated.modules.settings.actions.back_up = true;
-    migrated.profile_version = 2;
-  }
-  return migrated;
-};
+const sanitizeStaffAccess = (staffAccess) => staffAccess && typeof staffAccess === "object" && !Array.isArray(staffAccess) ? normalizeStaffAccess(staffAccess) : null;
+const migrateStaffAccess = (staffAccess) => normalizeStaffAccess(staffAccess || {});
 
 const normalizeAddress = (value) => {
   if (!value) return "";
@@ -692,7 +651,7 @@ const sendPasswordResetCode = async (account, code) => {
   });
 };
 
-router.get("/system-settings", authMiddleware, async (req, res) => {
+router.get("/system-settings", authMiddleware, staffModulePermissionIfStaff("settings", "view"), async (req, res) => {
   try {
     const settings = await SystemSetting.findOne({ key: "global" })
       .select("+backup_recovery_password_salt +backup_recovery_password_hash")
@@ -1190,7 +1149,7 @@ router.patch("/system-settings", authMiddleware, roleMiddleware(["admin", "super
   }
 });
 
-router.post("/system-settings/backups", authMiddleware, roleMiddleware(["admin", "super_admin"]), async (req, res) => {
+router.post("/system-settings/backups", authMiddleware, roleMiddleware(["admin", "super_admin", "skilled_worker"]), staffModulePermission("settings", "back_up"), async (req, res) => {
   try {
     const recoverySettings = await SystemSetting.findOne({ key: "global" })
       .select("+backup_recovery_password_salt +backup_recovery_password_hash")
@@ -1265,7 +1224,8 @@ router.get("/system-settings/cron-payment-reminders", async (req, res) => {
 router.post(
   "/system-settings/backups/import",
   authMiddleware,
-  roleMiddleware(["admin", "super_admin"]),
+  roleMiddleware(["admin", "super_admin", "skilled_worker"]),
+  staffModulePermission("settings", "back_up"),
   (req, res, next) => {
     backupImportUpload.single("backupFile")(req, res, (error) => {
       if (!error) return next();
@@ -1292,7 +1252,7 @@ router.post(
   }
 );
 
-router.post("/system-settings/backups/import-cloudinary", authMiddleware, roleMiddleware(["admin", "super_admin"]), async (req, res) => {
+router.post("/system-settings/backups/import-cloudinary", authMiddleware, roleMiddleware(["admin", "super_admin", "skilled_worker"]), staffModulePermission("settings", "back_up"), async (req, res) => {
   try {
     const result = await importSystemBackupFromCloudinary(req.body?.public_id, req.body?.format);
     await recordBackupOperation(req, "import", "success", result.backup, "Backup archive imported from private storage.");
@@ -1304,7 +1264,7 @@ router.post("/system-settings/backups/import-cloudinary", authMiddleware, roleMi
   }
 });
 
-router.get("/system-settings/backups/:backupId/download", authMiddleware, roleMiddleware(["admin", "super_admin"]), async (req, res) => {
+router.get("/system-settings/backups/:backupId/download", authMiddleware, roleMiddleware(["admin", "super_admin", "skilled_worker"]), staffModulePermission("settings", "back_up"), async (req, res) => {
   try {
     const { buffer, filename, remoteUrl } = await getSystemBackupDownload(req.params.backupId);
     if (remoteUrl) {
@@ -1334,7 +1294,7 @@ router.get("/system-settings/backups/:backupId/download", authMiddleware, roleMi
   }
 });
 
-router.post("/system-settings/backups/:backupId/restore", authMiddleware, roleMiddleware(["admin", "super_admin"]), async (req, res) => {
+router.post("/system-settings/backups/:backupId/restore", authMiddleware, roleMiddleware(["admin", "super_admin", "skilled_worker"]), staffModulePermission("settings", "back_up"), async (req, res) => {
   let backup;
   try {
     const settings = await SystemSetting.findOne({ key: "global" })
@@ -1367,7 +1327,7 @@ router.post("/system-settings/backups/:backupId/restore", authMiddleware, roleMi
   }
 });
 
-router.delete("/system-settings/backups/:backupId", authMiddleware, roleMiddleware(["admin", "super_admin"]), async (req, res) => {
+router.delete("/system-settings/backups/:backupId", authMiddleware, roleMiddleware(["admin", "super_admin", "skilled_worker"]), staffModulePermission("settings", "back_up"), async (req, res) => {
   try {
     const result = await deleteSystemBackup(req.params.backupId);
     res.json({ success: true, ...result });
@@ -1517,7 +1477,7 @@ router.get("/verify-email", async (req, res) => {
   }
 });
 
-router.post("/profile/email-change", authMiddleware, async (req, res) => {
+router.post("/profile/email-change", authMiddleware, staffModulePermissionIfStaff("profile", "edit"), async (req, res) => {
   try {
     const newEmail = String(req.body?.new_email || "").trim().toLowerCase();
     const currentPassword = String(req.body?.current_password || "");
@@ -1579,7 +1539,7 @@ router.post("/profile/email-change", authMiddleware, async (req, res) => {
   }
 });
 
-router.post("/profile/email-change/resend", authMiddleware, async (req, res) => {
+router.post("/profile/email-change/resend", authMiddleware, staffModulePermissionIfStaff("profile", "edit"), async (req, res) => {
   try {
     const { account, AccountModel } = await getProfileEmailChangeAccount(req);
     if (!account) {
@@ -1622,7 +1582,7 @@ router.post("/profile/email-change/resend", authMiddleware, async (req, res) => 
   }
 });
 
-router.post("/profile/email-change/verify", authMiddleware, async (req, res) => {
+router.post("/profile/email-change/verify", authMiddleware, staffModulePermissionIfStaff("profile", "edit"), async (req, res) => {
   try {
     const code = String(req.body?.code || "").trim();
     if (!/^\d{6}$/.test(code)) {
@@ -1693,7 +1653,7 @@ router.post("/profile/email-change/verify", authMiddleware, async (req, res) => 
   }
 });
 
-router.post("/profile/username-change/request-code", authMiddleware, async (req, res) => {
+router.post("/profile/username-change/request-code", authMiddleware, staffModulePermissionIfStaff("profile", "edit"), async (req, res) => {
   try {
     const currentPassword = String(req.body?.current_password || "");
     if (!currentPassword) return res.status(400).json({ success: false, message: "Current password is required." });
@@ -1741,7 +1701,7 @@ router.post("/profile/username-change/request-code", authMiddleware, async (req,
   }
 });
 
-router.post("/profile/username-change/resend", authMiddleware, async (req, res) => {
+router.post("/profile/username-change/resend", authMiddleware, staffModulePermissionIfStaff("profile", "edit"), async (req, res) => {
   try {
     const { account } = await getProfileEmailChangeAccount(req);
     if (!account) return res.status(404).json({ success: false, message: "Account not found." });
@@ -1779,7 +1739,7 @@ router.post("/profile/username-change/resend", authMiddleware, async (req, res) 
   }
 });
 
-router.post("/profile/username-change/verify", authMiddleware, async (req, res) => {
+router.post("/profile/username-change/verify", authMiddleware, staffModulePermissionIfStaff("profile", "edit"), async (req, res) => {
   try {
     const code = String(req.body?.code || "").trim();
     if (!/^\d{6}$/.test(code)) return res.status(400).json({ success: false, message: "Enter the six-digit verification code." });
@@ -1831,7 +1791,7 @@ router.post("/profile/username-change/verify", authMiddleware, async (req, res) 
   }
 });
 
-router.post("/profile/username-change/complete", authMiddleware, async (req, res) => {
+router.post("/profile/username-change/complete", authMiddleware, staffModulePermissionIfStaff("profile", "edit"), async (req, res) => {
   try {
     const username = String(req.body?.username || "").trim().toLowerCase();
     if (!/^[a-z0-9._-]{6,12}$/.test(username)) {
@@ -2225,7 +2185,7 @@ router.get("/users", authMiddleware, staffModulePermission("settings", "view"), 
         .map((account) => ({ ...account, role: "admin", is_admin_account: true })),
     ].sort((left, right) => new Date(right.createdAt || 0) - new Date(left.createdAt || 0));
 
-    if (req.user.role === "admin") {
+    if (["admin", "super_admin"].includes(req.user.role)) {
       await Promise.all(allAccounts
         .filter((account) => account.role === "skilled_worker" && Number(account.staff_access?.profile_version || 0) < 2)
         .map(async (account) => {
@@ -2265,6 +2225,307 @@ router.patch("/users/:id/unrestrict-online-ordering", authMiddleware, async (req
   }
 });
 
+router.post("/users/:id/promote-super-admin", authMiddleware, async (req, res) => {
+  const maxSuperAdminsMessage = "The maximum limit of 2 Super Admin accounts has been reached. Demote an existing Super Admin before promoting another staff member.";
+  let promotionLockId = null;
+  let auditRecord = null;
+  let promotedUser = null;
+  let promotionStarted = false;
+  let actor = null;
+  let target = null;
+  let promotionStep = "authorization";
+
+  const recordRejection = async (reason) => {
+    if (!actor || !target) return;
+    try {
+      await SuperAdminPromotionAudit.create({
+        action: "staff_promoted_to_super_admin",
+        outcome: "rejected",
+        actor_id: actor._id,
+        actor_email: actor.email,
+        target_id: target._id,
+        target_email: target.email,
+        previous_role: target.role || "unknown",
+        new_role: "super_admin",
+        reason,
+      });
+    } catch (auditError) {
+      console.error("Unable to record rejected Super Admin promotion:", auditError.message);
+    }
+  };
+
+  try {
+    const authorizedSuperAdmin = (req.user.auth_source === "admin" && req.user.role === "admin")
+      || (req.user.auth_source === "user" && ["admin", "super_admin"].includes(req.user.role));
+    if (!authorizedSuperAdmin) {
+      return res.status(403).json({ success: false, message: "Only a Super Admin can promote staff accounts." });
+    }
+
+    const password = req.body?.current_password;
+    if (typeof password !== "string" || !password) {
+      return res.status(400).json({ success: false, message: "Enter your current password to confirm this promotion." });
+    }
+    promotionStep = "verify_actor_password";
+    const ActorModel = req.user.auth_source === "admin" ? Admin : User;
+    actor = await ActorModel.findById(req.user.id).select("password email first_name last_name is_active role");
+    if (!actor || actor.is_active === false || typeof actor.password !== "string" || !await actor.comparePassword(password)) {
+      return res.status(401).json({ success: false, message: "Current password is incorrect." });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ success: false, message: "The selected staff account is invalid." });
+    }
+    promotionStep = "load_target_staff_account";
+    target = await User.findById(req.params.id).select("email username first_name last_name role is_active").lean();
+    if (!target) return res.status(404).json({ success: false, message: "Staff account not found." });
+    if (String(target._id) === String(actor._id)) {
+      await recordRejection("self_promotion_blocked");
+      return res.status(400).json({ success: false, message: "You cannot promote your own account through staff management." });
+    }
+    if (target.role !== "skilled_worker") {
+      await recordRejection(target.role === "super_admin" || target.role === "admin" ? "already_super_admin" : "target_not_staff");
+      return res.status(409).json({ success: false, message: target.role === "super_admin" || target.role === "admin" ? "This account is already a Super Admin." : "Only an existing staff account can be promoted." });
+    }
+    if (target.is_active === false) {
+      await recordRejection("target_account_inactive");
+      return res.status(409).json({ success: false, message: "An inactive staff account cannot be promoted." });
+    }
+    promotionStep = "check_duplicate_admin_account";
+    const duplicateAdmin = await Admin.findOne({ $or: [{ email: target.email }, { username: target.username }] }).select("_id").lean();
+    if (duplicateAdmin) {
+      await recordRejection("duplicate_admin_account");
+      return res.status(409).json({ success: false, message: "A Super Admin account already exists for this staff identity." });
+    }
+
+    promotionLockId = randomBytes(16).toString("hex");
+    const lockNow = new Date();
+    promotionStep = "acquire_promotion_lock";
+    try {
+      const lock = await SystemSetting.findOneAndUpdate(
+        {
+          key: "global",
+          $or: [
+            { super_admin_promotion_lock: null },
+            { "super_admin_promotion_lock.expires_at": { $lte: lockNow } },
+          ],
+        },
+        {
+          $set: { super_admin_promotion_lock: { lock_id: promotionLockId, expires_at: new Date(lockNow.getTime() + SUPER_ADMIN_PROMOTION_LOCK_TTL_MS) } },
+        },
+        // Defaults would also add super_admin_promotion_lock: null on insert,
+        // conflicting with the explicit lock value in $set.
+        { returnDocument: "after", upsert: true, setDefaultsOnInsert: false },
+      ).select("_id").lean();
+      if (!lock) return res.status(409).json({ success: false, message: "Another Super Admin promotion is being processed. Try again shortly." });
+    } catch (lockError) {
+      if (lockError?.code === 11000) return res.status(409).json({ success: false, message: "Another Super Admin promotion is being processed. Try again shortly." });
+      throw lockError;
+    }
+
+    promotionStep = "count_active_super_admins";
+    const activeSuperAdminCount = await countActiveSuperAdmins();
+    if (activeSuperAdminCount >= MAX_ACTIVE_SUPER_ADMINS) {
+      await recordRejection("active_super_admin_limit_reached");
+      return res.status(409).json({ success: false, message: maxSuperAdminsMessage });
+    }
+
+    promotionStep = "create_promotion_audit";
+    auditRecord = await SuperAdminPromotionAudit.create({
+      action: "staff_promoted_to_super_admin",
+      outcome: "initiated",
+      actor_id: actor._id,
+      actor_email: actor.email,
+      target_id: target._id,
+      target_email: target.email,
+      previous_role: target.role,
+      new_role: "super_admin",
+    });
+
+    promotionStep = "update_staff_role";
+    promotedUser = await User.findOneAndUpdate(
+      { _id: target._id, role: "skilled_worker", is_active: { $ne: false } },
+      { $set: { role: "super_admin" }, $inc: { session_version: 1 } },
+      { new: true, runValidators: true },
+    ).select("-password");
+    if (!promotedUser) {
+      await auditRecord.updateOne({ $set: { outcome: "rejected", reason: "target_changed_before_promotion" } });
+      return res.status(409).json({ success: false, message: "The staff account changed before it could be promoted. Refresh and try again." });
+    }
+    promotionStarted = true;
+
+    promotionStep = "complete_promotion_audit";
+    await auditRecord.updateOne({ $set: { outcome: "succeeded" } });
+    res.json({ success: true, user: promotedUser, message: "Staff member promoted to Super Admin." });
+  } catch (error) {
+    if (promotionStarted && promotedUser) {
+      try {
+        await User.updateOne(
+          { _id: promotedUser._id, role: "super_admin", session_version: promotedUser.session_version },
+          { $set: { role: "skilled_worker" }, $inc: { session_version: 1 } },
+        );
+      } catch (rollbackError) {
+        console.error("Unable to roll back a Super Admin promotion after an audit failure:", rollbackError.message);
+      }
+    }
+    if (auditRecord) {
+      await auditRecord.updateOne({ $set: { outcome: "rejected", reason: "promotion_update_failed" } }).catch((auditError) => {
+        console.error("Unable to record failed Super Admin promotion:", auditError.message);
+      });
+    }
+    console.error(`Promote staff to Super Admin error during ${promotionStep}:`, error);
+    const message = process.env.NODE_ENV === "production"
+      ? "Unable to promote the staff account."
+      : `Unable to promote the staff account (${promotionStep}: ${error.message}).`;
+    return res.status(500).json({ success: false, message });
+  } finally {
+    if (promotionLockId) {
+      await SystemSetting.updateOne(
+        { key: "global", "super_admin_promotion_lock.lock_id": promotionLockId },
+        { $set: { super_admin_promotion_lock: null } },
+      ).catch((error) => console.error("Unable to release Super Admin promotion lock:", error.message));
+    }
+  }
+});
+
+router.post("/users/:id/demote-super-admin", authMiddleware, async (req, res) => {
+  let lockId = null;
+  let auditRecord = null;
+  let demotedUser = null;
+  let demotionStarted = false;
+  let actor = null;
+  let target = null;
+
+  const recordRejection = async (reason) => {
+    if (!actor || !target) return;
+    try {
+      await SuperAdminPromotionAudit.create({
+        action: "super_admin_demoted_to_staff",
+        outcome: "rejected",
+        actor_id: actor._id,
+        actor_email: actor.email,
+        target_id: target._id,
+        target_email: target.email,
+        previous_role: target.role || "unknown",
+        new_role: "skilled_worker",
+        reason,
+      });
+    } catch (auditError) {
+      console.error("Unable to record rejected Super Admin demotion:", auditError.message);
+    }
+  };
+
+  try {
+    if (req.user.auth_source !== "admin" || req.user.role !== "admin") {
+      return res.status(403).json({ success: false, message: "Only the primary Super Admin can convert another Super Admin to staff." });
+    }
+    if (String(req.user.id) !== await getPrimarySuperAdminId()) {
+      return res.status(403).json({ success: false, message: "Only the primary Super Admin can convert another Super Admin to staff." });
+    }
+
+    const password = req.body?.current_password;
+    if (typeof password !== "string" || !password) {
+      return res.status(400).json({ success: false, message: "Enter your current password to confirm this role change." });
+    }
+    actor = await Admin.findById(req.user.id).select("password email first_name last_name is_active role");
+    if (!actor || actor.is_active === false || typeof actor.password !== "string" || !await actor.comparePassword(password)) {
+      return res.status(401).json({ success: false, message: "Current password is incorrect." });
+    }
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ success: false, message: "The selected Super Admin account is invalid." });
+    }
+
+    target = await User.findById(req.params.id).select("email first_name last_name role is_active").lean();
+    if (!target) return res.status(404).json({ success: false, message: "Super Admin account not found." });
+    if (String(target._id) === String(actor._id)) {
+      await recordRejection("primary_self_demotion_blocked");
+      return res.status(400).json({ success: false, message: "The primary Super Admin cannot be converted to staff here." });
+    }
+    if (target.role !== "super_admin") {
+      await recordRejection("target_not_promoted_super_admin");
+      return res.status(409).json({ success: false, message: "Only the promoted Super Admin account can be converted to staff here." });
+    }
+    if (target.is_active === false) {
+      await recordRejection("target_account_inactive");
+      return res.status(409).json({ success: false, message: "An inactive Super Admin account cannot be converted to staff." });
+    }
+
+    lockId = randomBytes(16).toString("hex");
+    const now = new Date();
+    let lock;
+    try {
+      lock = await SystemSetting.findOneAndUpdate(
+        {
+          key: "global",
+          $or: [
+            { super_admin_promotion_lock: null },
+            { "super_admin_promotion_lock.expires_at": { $lte: now } },
+          ],
+        },
+        { $set: { super_admin_promotion_lock: { lock_id: lockId, expires_at: new Date(now.getTime() + SUPER_ADMIN_PROMOTION_LOCK_TTL_MS) } } },
+        { returnDocument: "after", upsert: true, setDefaultsOnInsert: false },
+      ).select("_id").lean();
+    } catch (lockError) {
+      if (lockError?.code === 11000) {
+        return res.status(409).json({ success: false, message: "Another Super Admin role change is being processed. Try again shortly." });
+      }
+      throw lockError;
+    }
+    if (!lock) return res.status(409).json({ success: false, message: "Another Super Admin role change is being processed. Try again shortly." });
+
+    const activeSuperAdminCount = await countActiveSuperAdmins();
+    if (activeSuperAdminCount <= 1) {
+      await recordRejection("last_active_super_admin_protected");
+      return res.status(409).json({ success: false, message: "At least one active Super Admin must remain." });
+    }
+
+    auditRecord = await SuperAdminPromotionAudit.create({
+      action: "super_admin_demoted_to_staff",
+      outcome: "initiated",
+      actor_id: actor._id,
+      actor_email: actor.email,
+      target_id: target._id,
+      target_email: target.email,
+      previous_role: "super_admin",
+      new_role: "skilled_worker",
+    });
+
+    demotedUser = await User.findOneAndUpdate(
+      { _id: target._id, role: "super_admin", is_active: { $ne: false } },
+      { $set: { role: "skilled_worker" }, $inc: { session_version: 1 } },
+      { new: true, runValidators: true },
+    ).select("-password");
+    if (!demotedUser) {
+      await auditRecord.updateOne({ $set: { outcome: "rejected", reason: "target_changed_before_demotion" } });
+      return res.status(409).json({ success: false, message: "The Super Admin account changed before it could be converted. Refresh and try again." });
+    }
+    demotionStarted = true;
+
+    await auditRecord.updateOne({ $set: { outcome: "succeeded" } });
+    return res.json({ success: true, user: demotedUser, message: "Super Admin converted to staff." });
+  } catch (error) {
+    if (demotionStarted && demotedUser) {
+      await User.updateOne(
+        { _id: demotedUser._id, role: "skilled_worker", session_version: demotedUser.session_version },
+        { $set: { role: "super_admin" }, $inc: { session_version: 1 } },
+      ).catch((rollbackError) => console.error("Unable to roll back a Super Admin demotion after an audit failure:", rollbackError.message));
+    }
+    if (auditRecord) {
+      await auditRecord.updateOne({ $set: { outcome: "rejected", reason: "demotion_update_failed" } }).catch((auditError) => {
+        console.error("Unable to record failed Super Admin demotion:", auditError.message);
+      });
+    }
+    console.error("Convert promoted Super Admin to staff error:", error);
+    return res.status(500).json({ success: false, message: "Unable to convert the Super Admin account to staff." });
+  } finally {
+    if (lockId) {
+      await SystemSetting.updateOne(
+        { key: "global", "super_admin_promotion_lock.lock_id": lockId },
+        { $set: { super_admin_promotion_lock: null } },
+      ).catch((error) => console.error("Unable to release Super Admin role change lock:", error.message));
+    }
+  }
+});
+
 router.patch("/users/:id", authMiddleware, staffModulePermission("settings", "manage_access"), async (req, res) => {
   try {
     const staffPromotingCustomer = req.user.role === "skilled_worker" && req.body?.role === "skilled_worker";
@@ -2277,6 +2538,13 @@ router.patch("/users/:id", authMiddleware, staffModulePermission("settings", "ma
     }
     if (req.body?.role !== undefined && !["customer", "skilled_worker"].includes(req.body.role)) {
       return res.status(400).json({ success: false, message: "Only customer and staff role changes are allowed here." });
+    }
+    const requestedStaffType = req.body?.staff_access?.staff_type;
+    if (requestedStaffType !== undefined && !STAFF_TYPES.includes(requestedStaffType)) {
+      return res.status(400).json({ success: false, message: "Staff type must be Skilled Worker or Helper." });
+    }
+    if (req.body?.role === "skilled_worker" && !STAFF_TYPES.includes(requestedStaffType)) {
+      return res.status(400).json({ success: false, message: "Select a staff type before converting this account." });
     }
 
     const allowedFields = [
@@ -2306,14 +2574,19 @@ router.patch("/users/:id", authMiddleware, staffModulePermission("settings", "ma
       update.role = "skilled_worker";
       update.staff_access = migrateStaffAccess(
         staffPromotingCustomer
-          ? { ...req.staffAccess, subrole: "Helper" }
+          ? { ...req.staffAccess, staff_type: requestedStaffType }
           : req.body.staff_access || createDefaultStaffAccess()
       );
     }
     if (req.body?.role === "customer") update.role = "customer";
     if (update.role) update.$inc = { session_version: 1 };
     if (req.body?.staff_access && typeof req.body.staff_access === "object") {
-      update.staff_access = sanitizeStaffAccess({ ...req.body.staff_access, profile_version: 2 });
+      const existingStaff = await User.findOne({ _id: req.params.id, role: "skilled_worker" }).select("staff_access").lean();
+      update.staff_access = sanitizeStaffAccess({
+        ...(existingStaff?.staff_access || {}),
+        ...req.body.staff_access,
+        profile_version: 2,
+      });
     }
 
     const userFilter = req.user.role === "skilled_worker"
@@ -2407,6 +2680,7 @@ router.post("/login", async (req, res) => {
     }
 
     const role = source === "admin" ? "admin" : user.role;
+    const primarySuperAdminId = source === "admin" ? await getPrimarySuperAdminId() : null;
     const token = jwt.sign(
       { id: user._id, email: user.email, role, auth_source: source, session_version: user.session_version || 0 },
       process.env.JWT_SECRET || "your-secret-key",
@@ -2424,6 +2698,8 @@ router.post("/login", async (req, res) => {
         first_name: user.first_name,
         last_name: user.last_name,
         role,
+        is_super_admin: source === "admin" || user.role === "super_admin" || user.role === "admin",
+        is_primary_super_admin: Boolean(primarySuperAdminId && String(user._id) === primarySuperAdminId),
         phone: user.phone,
         street_address: user.street_address,
         city: user.city,
@@ -2455,11 +2731,18 @@ router.get("/me", authMiddleware, async (req, res) => {
   try {
     let user = null;
     let role = req.user.role;
+    let isSuperAdmin = req.user.auth_source === "admin" || role === "super_admin";
+    let isPrimarySuperAdmin = false;
 
     if (["admin", "super_admin"].includes(role)) {
       user = await Admin.findById(req.user.id);
+      if (user) {
+        isSuperAdmin = true;
+        isPrimarySuperAdmin = req.user.auth_source === "admin" && String(user._id) === await getPrimarySuperAdminId();
+      }
       if (!user) {
         user = await User.findOne({ _id: req.user.id, role: { $in: ["admin", "super_admin"] } });
+        isSuperAdmin = user?.role === "admin" || user?.role === "super_admin";
       }
     } else {
       user = await User.findById(req.user.id);
@@ -2485,6 +2768,8 @@ router.get("/me", authMiddleware, async (req, res) => {
         first_name: user.first_name,
         last_name: user.last_name,
         role,
+        is_super_admin: isSuperAdmin,
+        is_primary_super_admin: isPrimarySuperAdmin,
         phone: user.phone,
         street_address: user.street_address,
         city: user.city,
@@ -2523,7 +2808,7 @@ router.post("/logout", authMiddleware, (req, res) => {
  * PUT /api/auth/profile
  * Update user profile
  */
-router.put("/profile", authMiddleware, async (req, res) => {
+router.put("/profile", authMiddleware, staffModulePermissionIfStaff("profile", "edit"), async (req, res) => {
   try {
     const {
       first_name,

@@ -4,6 +4,7 @@ import User from "../models/User.js";
 import Admin from "../models/Admin.js";
 import SystemSetting from "../models/SystemSetting.js";
 import { isCustomerPermissionEnabled } from "../services/customerPermissions.js";
+import { STAFF_MODULE_ACTIONS } from "../../shared/staffPermissions.js";
 
 /**
  * Authentication Middleware
@@ -83,7 +84,8 @@ export const roleMiddleware = (requiredRoles) => {
       ? requiredRoles
       : [requiredRoles];
 
-    if (!roles.includes(req.user.role)) {
+    const isSuperAdminForAdminRoute = req.user.role === "super_admin" && roles.includes("admin");
+    if (!roles.includes(req.user.role) && !isSuperAdminForAdminRoute) {
       return res.status(403).json({
         success: false,
         message: "Insufficient permissions",
@@ -103,18 +105,52 @@ export const staffModulePermission = (moduleFromRequest, action = "view") => asy
     }
 
     const moduleKey = typeof moduleFromRequest === "function" ? moduleFromRequest(req) : moduleFromRequest;
-    const user = await User.findById(req.user.id).select("staff_access").lean();
+    const actionKey = typeof action === "function" ? action(req) : action;
+    if (typeof moduleKey !== "string" || !STAFF_MODULE_ACTIONS[moduleKey]?.includes(actionKey)) {
+      return res.status(403).json({ success: false, message: "This staff module or action is disabled for your account." });
+    }
+    const user = await User.findById(req.user.id).select("staff_access role is_active").lean();
+    if (!user || user.role !== "skilled_worker" || user.is_active === false) {
+      return res.status(403).json({ success: false, message: "This staff module or action is disabled for your account." });
+    }
     const moduleAccess = user?.staff_access?.modules?.[moduleKey];
-    if (!moduleAccess?.enabled || moduleAccess.actions?.[action] !== true) {
+    if (moduleAccess?.enabled !== true || moduleAccess.actions?.[actionKey] !== true) {
       return res.status(403).json({ success: false, message: "This staff module or action is disabled for your account." });
     }
 
     req.staffAccessModule = moduleKey;
+    req.staffAccessAction = actionKey;
     req.staffAccess = user.staff_access;
     next();
   } catch (error) {
     console.error("Staff module permission error:", error);
     res.status(500).json({ success: false, message: "Unable to verify staff access." });
+  }
+};
+
+export const staffModulePermissionIfStaff = (moduleKey, action = "view") => (req, res, next) => {
+  if (req.user?.role !== "skilled_worker") return next();
+  return staffModulePermission(moduleKey, action)(req, res, next);
+};
+
+export const staffModulePermissionAny = (moduleKey, actions = []) => async (req, res, next) => {
+  if (!req.user) return res.status(401).json({ success: false, message: "Not authenticated" });
+  if (["admin", "super_admin"].includes(req.user.role)) return next();
+  if (req.user.role !== "skilled_worker") return res.status(403).json({ success: false, message: "Insufficient permissions" });
+  try {
+    const user = await User.findById(req.user.id).select("staff_access role is_active").lean();
+    const moduleAccess = user?.staff_access?.modules?.[moduleKey];
+    const allowed = STAFF_MODULE_ACTIONS[moduleKey] || [];
+    if (!user || user.role !== "skilled_worker" || user.is_active === false || moduleAccess?.enabled !== true
+      || !actions.some((action) => allowed.includes(action) && moduleAccess.actions?.[action] === true)) {
+      return res.status(403).json({ success: false, message: "This staff module or action is disabled for your account." });
+    }
+    req.staffAccessModule = moduleKey;
+    req.staffAccess = user.staff_access;
+    return next();
+  } catch (error) {
+    console.error("Staff module permission error:", error);
+    return res.status(500).json({ success: false, message: "Unable to verify staff access." });
   }
 };
 

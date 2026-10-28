@@ -200,7 +200,7 @@ export function AuthProvider({ children }) {
       const response = await loginApi({ identifier, password });
       setToken(response.token);
       const userProfile = normalizeAndPersistUser(response.user);
-      if (userProfile.role === "admin") {
+      if (userProfile.role === "admin" || userProfile.role === "super_admin") {
         recordActivity(userProfile, "Logged in", "Authentication");
       }
       return { ...response, user: userProfile };

@@ -26,6 +26,7 @@ const SystemSettingSchema = new mongoose.Schema(
     backup_recovery_password_reset_lock_until: { type: Date, default: null, select: false },
     backup_restore_lock: { type: mongoose.Schema.Types.Mixed, default: null, select: false },
     backup_create_lock: { type: mongoose.Schema.Types.Mixed, default: null, select: false },
+    super_admin_promotion_lock: { type: mongoose.Schema.Types.Mixed, default: null, select: false },
   },
   { timestamps: true }
 );

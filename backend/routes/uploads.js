@@ -1,5 +1,5 @@
 import express from "express";
-import { authMiddleware, roleMiddleware, staffModulePermission } from "../middleware/auth.js";
+import { authMiddleware, roleMiddleware, staffModulePermission, staffModulePermissionAny } from "../middleware/auth.js";
 import uploadController, {
 	paymentProofUploadMiddleware,
 	productImageUploadMiddleware,
@@ -10,11 +10,26 @@ import uploadController, {
 
 const router = express.Router();
 
-router.post("/cloudinary-signature", authMiddleware, uploadController.createCloudinaryUploadSignature);
+const cloudinaryStaffPermission = (req, res, next) => {
+	if (req.user?.role !== "skilled_worker") return next();
+	const permissionByPurpose = {
+		"product-images": ["product_management", ["add", "edit"]],
+		"progress-media": ["progress_monitoring", ["upload_progress_photo"]],
+		contracts: ["site_inspection", ["generate_contract"]],
+		"repair-evidence": ["repair_management", ["manage"]],
+		"backup-import": ["settings", ["back_up"]],
+	};
+	const requirement = permissionByPurpose[req.body?.purpose];
+	if (!requirement) return res.status(403).json({ success: false, message: "This staff upload purpose is disabled for your account." });
+	return staffModulePermissionAny(requirement[0], requirement[1])(req, res, next);
+};
+
+router.post("/cloudinary-signature", authMiddleware, cloudinaryStaffPermission, uploadController.createCloudinaryUploadSignature);
 router.post(
 	"/product-images",
 	authMiddleware,
-	roleMiddleware("admin"),
+	roleMiddleware(["admin", "super_admin", "skilled_worker"]),
+	staffModulePermissionAny("product_management", ["add", "edit"]),
 	productImageUploadMiddleware,
 	uploadController.uploadProductImages
 );
@@ -40,6 +55,6 @@ router.post(
 	progressMediaUploadMiddleware,
 	uploadController.uploadProgressMedia
 );
-router.post("/", uploadMiddleware.any(), uploadController.uploadImages);
+router.post("/", authMiddleware, roleMiddleware(["admin", "super_admin"]), uploadMiddleware.any(), uploadController.uploadImages);
 
 export default router;

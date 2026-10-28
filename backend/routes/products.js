@@ -1,5 +1,5 @@
 import express from "express";
-import { authMiddleware, roleMiddleware } from "../middleware/auth.js";
+import { authMiddleware, roleMiddleware, staffModulePermission } from "../middleware/auth.js";
 import {
   listProducts,
   getProduct,
@@ -12,8 +12,8 @@ const router = express.Router();
 
 router.get("/", listProducts);
 router.get("/:id", authMiddleware, getProduct);
-router.post("/", authMiddleware, roleMiddleware("admin"), createProduct);
-router.put("/:id", authMiddleware, roleMiddleware("admin"), updateProduct);
-router.delete("/:id", authMiddleware, roleMiddleware("admin"), deleteProduct);
+router.post("/", authMiddleware, roleMiddleware(["admin", "super_admin", "skilled_worker"]), staffModulePermission("product_management", "add"), createProduct);
+router.put("/:id", authMiddleware, roleMiddleware(["admin", "super_admin", "skilled_worker"]), staffModulePermission("product_management", "edit"), updateProduct);
+router.delete("/:id", authMiddleware, roleMiddleware(["admin", "super_admin", "skilled_worker"]), staffModulePermission("product_management", "delete"), deleteProduct);
 
 export default router;

@@ -18,6 +18,18 @@ export const updateAdminUserAccess = (userId, payload) =>
     body: JSON.stringify(payload),
   });
 
+export const promoteStaffToSuperAdmin = (userId, currentPassword) =>
+  apiFetch(`/auth/users/${userId}/promote-super-admin`, {
+    method: "POST",
+    body: JSON.stringify({ current_password: currentPassword }),
+  });
+
+export const demoteSuperAdminToStaff = (userId, currentPassword) =>
+  apiFetch(`/auth/users/${userId}/demote-super-admin`, {
+    method: "POST",
+    body: JSON.stringify({ current_password: currentPassword }),
+  });
+
 export const unrestrictCustomerOnlineOrdering = (userId) =>
   apiFetch(`/auth/users/${userId}/unrestrict-online-ordering`, {
     method: "PATCH",

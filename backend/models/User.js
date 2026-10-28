@@ -86,7 +86,7 @@ const UserSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ["customer", "skilled_worker", "admin"],
+      enum: ["customer", "skilled_worker", "admin", "super_admin"],
       default: "customer",
     },
     session_version: {

@@ -7076,13 +7076,13 @@ function CustomerDashboard() {
 
             {showDeliveryConfirmModal && canRequestOrders && (
               <div className="customer-modal-overlay mobile-fullscreen-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-2 backdrop-blur-sm sm:p-4">
-                <div className={`mobile-fullscreen-dialog order-flow-modal flex max-h-[calc(100dvh-1rem)] w-full max-w-4xl flex-col overflow-hidden rounded-3xl shadow-2xl sm:max-h-[88vh] ${darkMode ? "order-flow-modal-dark bg-slate-900" : "bg-white"}`}>
-                  <div className={`flex-shrink-0 border-b px-4 py-3 sm:px-5 ${darkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-white"}`}>
+                <div className={`mobile-fullscreen-dialog order-flow-modal flex max-h-[calc(100dvh-1rem)] w-full ${isConfirmBladeProduct ? "max-w-7xl" : "max-w-4xl"} flex-col overflow-hidden rounded-3xl shadow-2xl sm:max-h-[88vh] ${darkMode ? "order-flow-modal-dark bg-slate-900" : "bg-white"}`}>
+                  <div className={`flex-shrink-0 border-b px-4 py-2 sm:px-5 sm:py-2.5 ${darkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-white"}`}>
                     <div className="flex items-center justify-between gap-4">
                       <button
                         type="button"
                         onClick={handleCancelDeliveryConfirm}
-                        className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm font-semibold transition ${darkMode ? "text-slate-200 hover:bg-slate-800" : "text-slate-700 hover:bg-slate-100"}`}
+                        className={`inline-flex items-center gap-2 rounded-full px-2.5 py-1.5 text-xs font-semibold transition ${darkMode ? "text-slate-200 hover:bg-slate-800" : "text-slate-700 hover:bg-slate-100"}`}
                       >
                         <ArrowLeft size={15} />
                         Back to Product
@@ -7090,15 +7090,15 @@ function CustomerDashboard() {
                       <button
                         type="button"
                         onClick={handleCancelDeliveryConfirm}
-                        className={`rounded-full border p-2 transition ${darkMode ? "border-slate-600 text-slate-300 hover:bg-slate-800" : "border-slate-200 text-slate-500 hover:bg-slate-100"}`}
+                        className={`rounded-full border p-1.5 transition ${darkMode ? "border-slate-600 text-slate-300 hover:bg-slate-800" : "border-slate-200 text-slate-500 hover:bg-slate-100"}`}
                         aria-label="Close place order request"
                       >
-                        <X size={18} />
+                        <X size={16} />
                       </button>
                     </div>
-                    <div className="mt-1">
-                      <h3 className={`text-2xl font-bold ${darkMode ? "text-white" : "text-slate-900"}`}>Place Order Request</h3>
-                      <p className={`mt-1 text-sm ${darkMode ? "text-slate-300" : "text-slate-600"}`}>Review your details and submit your request.</p>
+                    <div className="mt-0.5">
+                      <h3 className={`text-xl font-bold ${darkMode ? "text-white" : "text-slate-900"}`}>Place Order Request</h3>
+                      <p className={`mt-0.5 text-xs ${darkMode ? "text-slate-300" : "text-slate-600"}`}>Review your details and submit your request.</p>
                     </div>
                   </div>
 
@@ -7120,8 +7120,8 @@ function CustomerDashboard() {
                         </button>
                       </div>
                     )}
-                    <div className={`grid gap-5 p-5 min-h-0 lg:grid-cols-[1.2fr_0.9fr] ${darkMode ? "bg-slate-950" : "bg-slate-50"}`}>
-                      <div className={`space-y-4 rounded-3xl border p-5 shadow-sm ${darkMode ? "border-slate-700 bg-slate-900" : "border-gray-200 bg-white"}`}>
+                    <div className={`grid min-h-0 gap-6 p-5 sm:p-6 ${isConfirmBladeProduct ? "lg:grid-cols-[minmax(0,1fr)_minmax(520px,0.9fr)]" : "lg:grid-cols-[1.2fr_0.9fr]"} ${darkMode ? "bg-slate-950" : "bg-slate-50"}`}>
+                      <div className={`space-y-4 rounded-3xl border ${isConfirmBladeProduct ? "p-6" : "p-5"} shadow-sm ${darkMode ? "border-slate-700 bg-slate-900" : "border-gray-200 bg-white"}`}>
                         <div className="flex items-center justify-between gap-4">
                           <div>
                             <h4 className={`text-lg font-semibold ${darkMode ? "text-white" : "text-gray-900"}`}>Customer Information</h4>
@@ -7178,9 +7178,19 @@ function CustomerDashboard() {
                             value={deliveryConfirmNotes}
                             onChange={(event) => setDeliveryConfirmNotes(event.target.value)}
                             placeholder="Add notes about structure elevations, framing colors, glass thickness preferences, etc."
-                            className={`mt-2 min-h-[92px] w-full resize-none rounded-2xl border px-4 py-3 outline-none focus:border-red-500 focus:ring-2 focus:ring-red-100 ${darkMode ? "border-slate-700 bg-slate-900 text-white placeholder:text-slate-500" : "border-gray-300 bg-white text-gray-900"}`}
+                            className={`mt-2 min-h-[92px] w-full resize-y rounded-2xl border px-4 py-3 outline-none focus:border-red-500 focus:ring-2 focus:ring-red-100 ${darkMode ? "border-slate-700 bg-slate-900 text-white placeholder:text-slate-500" : "border-gray-300 bg-white text-gray-900"}`}
                           />
                         </div>
+
+                        {deliveryConfirmMode === "estimate" && isConfirmBladeProduct && (
+                          <ProductPriceEstimator
+                            product={confirmProduct}
+                            form={estimateForm}
+                            onFormChange={setEstimateForm}
+                            darkMode={darkMode}
+                            formatCurrency={formatCurrency}
+                          />
+                        )}
 
                         {deliveryConfirmError && (
                           <div className={`rounded-2xl border p-4 text-sm ${darkMode ? "border-red-800 bg-red-950/40 text-red-200" : "border-red-300 bg-red-50 text-red-700"}`}>
@@ -7189,7 +7199,7 @@ function CustomerDashboard() {
                         )}
                       </div>
 
-                      <div className={`rounded-3xl border p-5 shadow-sm ${darkMode ? "border-slate-700 bg-slate-900" : "border-gray-200 bg-white"}`}>
+                        <div className={`rounded-3xl border ${isConfirmBladeProduct ? "p-6" : "p-5"} shadow-sm ${darkMode ? "border-slate-700 bg-slate-900" : "border-gray-200 bg-white"}`}>
                         <div className="flex items-start gap-4">
                           <div className="h-24 w-24 overflow-hidden rounded-3xl border border-gray-200 bg-gray-100">
                             <img
@@ -7264,7 +7274,7 @@ function CustomerDashboard() {
                             </div>
                           </div>
 
-                          {deliveryConfirmMode === "estimate" && (
+                          {deliveryConfirmMode === "estimate" && !isConfirmBladeProduct && (
                             <ProductPriceEstimator
                               product={confirmProduct}
                               form={estimateForm}

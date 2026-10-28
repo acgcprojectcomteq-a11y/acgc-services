@@ -852,7 +852,7 @@ export const listOrders = async (req, res) => {
   try {
     const filter = {};
 
-    if (req.user.role !== "admin") {
+    if (!["admin", "super_admin"].includes(req.user.role)) {
       filter.customer = req.user.id;
     }
 
@@ -1265,7 +1265,7 @@ export const trackOrder = async (req, res) => {
     }
 
 
-    if (req.user && req.user.role !== "admin" && order.customer._id.toString() !== req.user.id) {
+    if (req.user && !["admin", "super_admin"].includes(req.user.role) && order.customer._id.toString() !== req.user.id) {
       return res.status(403).json({ success: false, message: "Not authorized to view this order" });
     }
 
@@ -1287,6 +1287,32 @@ export const trackOrder = async (req, res) => {
     console.error("Track order error:", error);
     res.status(500).json({ success: false, message: "Unable to track order", error: error.message });
   }
+};
+
+const redactStaffPaymentAmounts = (value) => {
+  if (Array.isArray(value)) return value.map(redactStaffPaymentAmounts);
+  if (!value || typeof value !== "object" || value instanceof Date) return value;
+  const output = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (/(amount|price|cost|balance|charge|subtotal|total|rate)/i.test(key)) output[key] = null;
+    else output[key] = redactStaffPaymentAmounts(item);
+  }
+  return output;
+};
+
+const sanitizeStaffContractAccess = (value, staffAccess, moduleKey) => {
+  if (Array.isArray(value)) return value.map((item) => sanitizeStaffContractAccess(item, staffAccess, moduleKey));
+  if (!value || typeof value !== "object" || value instanceof Date) return value;
+  const moduleAccess = staffAccess?.modules?.[moduleKey];
+  const canViewContract = moduleAccess?.enabled === true && moduleAccess.actions?.view_contract === true;
+  const canDownloadContract = moduleAccess?.enabled === true && moduleAccess.actions?.download_contract === true;
+  const contractFields = new Set(["contractId", "contractVersion", "currentContractVersion", "contractGeneratedAt", "contractGenerated", "contractNeedsRegeneration", "contractSentAt", "contract_email_status", "contract_email_error", "contractDeclineReason", "contractDeclinedAt", "contract_number", "contract_signed_date", "contract_terms", "contract_snapshot"]);
+  const output = {};
+  for (const [key, item] of Object.entries(value)) {
+    if ((!canViewContract && contractFields.has(key)) || ((key === "signed_contract_url" || /contract.*(url|download)/i.test(key)) && !canDownloadContract)) continue;
+    output[key] = sanitizeStaffContractAccess(item, staffAccess, moduleKey);
+  }
+  return output;
 };
 
 export const getAdminOrders = async (req, res) => {
@@ -1355,12 +1381,24 @@ export const getAdminOrders = async (req, res) => {
         "customer customer_name customer_email customer_phone items total_amount final_project_cost",
         "status cancellation_reason customer_cancellation_count_at_cancel order_type contract_status contractStatus contractSentAt payment_status payment_records payment_proof_amount payment_proof_submitted_at tracking inspection_status inspection_date inspection_time estimated_installation_date estimated_installation_time createdAt updatedAt",
       ].join(" "),
-      transactions: baseFields,
-      site_inspection: baseFields,
-      progress_monitoring: baseFields,
-      profile: baseFields,
+      transactions: [
+        "customer customer_name customer_email customer_phone shipping_address has_account_on_website items project_additional_charges total_amount estimated_cost final_project_cost manual_override",
+        "payment_terms downpayment_amount required_downpayment_amount amount_paid payment_status payment_records payment_proof_amount payment_proof_submitted_at payment_proof_confirmed_at payment_proof_file_name payment_proof_file_url payment_method transaction_number",
+        "status cancellation_reason order_type contract_status contractStatus contractGenerated contractId contractVersion currentContractVersion contractGeneratedAt contractNeedsRegeneration contractSentAt contract_email_status contract_email_error contractDeclineReason contractDeclinedAt acceptedByCustomer acceptedAt acceptanceMethod transactionCreated transactionCreatedAt transaction_approved tracking warranty_period warranty_status signed_contract_url contract_number contract_signed_date createdAt updatedAt",
+      ].join(" "),
+      site_inspection: [
+        "customer customer_name customer_email customer_phone items project_additional_charges total_amount estimated_cost final_project_cost manual_override",
+        "status cancellation_reason order_type contract_status contractStatus contractGenerated contractId contractVersion currentContractVersion contractGeneratedAt contractNeedsRegeneration contractSentAt contract_email_status contractDeclineReason acceptedByCustomer acceptedAt transactionCreated tracking",
+        "inspection_status inspection_completed_at inspection_date inspection_time inspection_duration_minutes inspection_travel_minutes estimated_installation_date estimated_installation_time installation_duration_minutes inspection_notes issues_found shipping_address warranty_period warranty_status createdAt updatedAt",
+      ].join(" "),
+      progress_monitoring: [
+        "customer customer_name customer_email customer_phone items status tracking progress progress_stages progress_notes progress_audit progress_activity_notes project_delay attachments",
+        "estimated_installation_date estimated_installation_time installation_duration_minutes inspection_date inspection_time inspection_duration_minutes inspection_travel_minutes createdAt updatedAt",
+      ].join(" "),
     };
-    const selectedFields = moduleFields[view || module] || baseFields;
+    const selectedFields = req.user.role === "skilled_worker"
+      ? moduleFields[req.staffAccessModule] || "_id"
+      : moduleFields[view || module] || baseFields;
 
     const query = Order.find(filter)
       .select(selectedFields)
@@ -1378,10 +1416,16 @@ export const getAdminOrders = async (req, res) => {
     ]);
 
     orders.forEach(attachOrderScheduleOverdue);
+    const responseOrders = req.user.role === "skilled_worker"
+      ? orders.map((order) => {
+        const contractSafeOrder = sanitizeStaffContractAccess(order, req.staffAccess, req.staffAccessModule);
+        return req.staffAccess?.hide_payment_amounts === true ? redactStaffPaymentAmounts(contractSafeOrder) : contractSafeOrder;
+      })
+      : orders;
 
     res.json({
       success: true,
-      orders,
+      orders: responseOrders,
       pagination: limitValue
         ? { page: pageValue, limit: limitValue, total, totalPages: Math.max(1, Math.ceil(total / limitValue)) }
         : undefined,
@@ -1399,7 +1443,18 @@ export const getAdminOrderById = async (req, res) => {
     }
 
     const { orderId } = req.params;
-    const order = await Order.findById(orderId)
+    const isStaff = req.user.role === "skilled_worker";
+    const detailModule = req.staffAccessModule;
+    const staffFields = {
+      dashboard: "customer customer_name customer_email customer_phone items status is_rush_order contract_status contractStatus contractSentAt contractDeclineReason acceptedByCustomer acceptedAt transactionCreated tracking createdAt updatedAt",
+      site_inspection: "customer customer_name customer_email customer_phone items status contract_status contractStatus tracking inspection_status inspection_completed_at inspection_date inspection_time inspection_duration_minutes inspection_travel_minutes estimated_installation_date estimated_installation_time installation_duration_minutes inspection_notes issues_found shipping_address warranty_period warranty_status createdAt updatedAt",
+      transactions: "customer customer_name customer_email customer_phone items project_additional_charges total_amount estimated_cost final_project_cost manual_override payment_terms downpayment_amount required_downpayment_amount amount_paid payment_status payment_records payment_proof_amount payment_proof_submitted_at payment_proof_confirmed_at payment_proof_file_name payment_proof_file_url payment_method transaction_number status contract_status contractStatus contractGenerated contractId contractVersion currentContractVersion contractGeneratedAt contractNeedsRegeneration contractSentAt contract_email_status contractDeclineReason acceptedByCustomer acceptedAt transactionCreated tracking warranty_period warranty_status createdAt updatedAt",
+      progress_monitoring: "customer customer_name customer_email customer_phone items status tracking progress progress_stages progress_notes progress_audit progress_activity_notes project_delay attachments estimated_installation_date estimated_installation_time installation_duration_minutes createdAt updatedAt",
+    };
+    if (isStaff && !staffFields[detailModule]) return res.status(403).json({ success: false, message: "This staff module or action is disabled for your account." });
+    const orderQuery = Order.findById(orderId);
+    if (isStaff) orderQuery.select(staffFields[detailModule]);
+    const order = await orderQuery
       .populate("customer", "first_name last_name email phone street_address city province zip_code customer_cancellation_count online_order_cooldown_until")
       .populate("items.product_id", "image_url image images name category product_type width height measurement_unit standard_size");
 
@@ -1407,7 +1462,9 @@ export const getAdminOrderById = async (req, res) => {
       return res.status(404).json({ success: false, message: "Order not found" });
     }
 
-    res.json({ success: true, order: attachOrderScheduleOverdue(order) });
+    const responseOrder = attachOrderScheduleOverdue(order);
+    const contractSafeOrder = isStaff ? sanitizeStaffContractAccess(responseOrder.toObject?.() || responseOrder, req.staffAccess, detailModule) : responseOrder;
+    res.json({ success: true, order: isStaff && req.staffAccess?.hide_payment_amounts === true ? redactStaffPaymentAmounts(contractSafeOrder) : contractSafeOrder });
   } catch (error) {
     console.error("Get admin order error:", error);
     res.status(500).json({ success: false, message: "Unable to fetch order", error: error.message });
@@ -1416,7 +1473,7 @@ export const getAdminOrderById = async (req, res) => {
 
 export const updateOrderStatus = async (req, res) => {
   try {
-    if (req.user.role !== "admin") {
+    if (!["admin", "super_admin"].includes(req.user.role)) {
       return res.status(403).json({ success: false, message: "Admin access required" });
     }
 
@@ -2858,7 +2915,7 @@ export const respondToInstallationSchedule = async (req, res) => {
     };
 
     const isCustomer = order.customer && order.customer.toString() === req.user.id;
-    const isAdmin = req.user.role === "admin";
+    const isAdmin = ["admin", "super_admin"].includes(req.user.role);
 
     // Accept preferred requires admin, other actions require customer
     if (action === "accept_preferred") {
@@ -2931,6 +2988,7 @@ export const respondToInstallationSchedule = async (req, res) => {
       scheduleStage.customerPreferredInstallationDate = null;
       scheduleStage.customerPreferredInstallationTime = "";
       scheduleStage.customerRescheduleNotes = "";
+      scheduleStage.completedAt = scheduleStage.completed ? scheduleStage.completedAt || new Date() : new Date();
       scheduleStage.completed = true;
       scheduleStage.status = "done";
       scheduleStage.date = new Date();
@@ -2942,21 +3000,6 @@ export const respondToInstallationSchedule = async (req, res) => {
         scheduleStage.completed &&
         (scheduleStage.customerPreferredInstallationDate || scheduleStage.customerPreferredInstallationTime);
       if (alreadyAcceptedPreferred) {
-        const installationStage = Array.isArray(order.progress_stages)
-          ? order.progress_stages.find((stage) => {
-              const stageKey = (stage.key || stage.name || "").toString().toLowerCase().replace(/\s+/g, "_");
-              return stageKey === "installation" || stageKey.startsWith("installation_");
-            })
-          : null;
-        if (installationStage && !installationStage.completed && installationStage.status !== "in_progress") {
-          installationStage.status = "in_progress";
-          order.progress_stages = applyInstallationNotificationTimestamps(
-            previousProgressStages,
-            order.progress_stages.map((stage) => stage.toObject?.() || { ...stage })
-          );
-          await order.save();
-          await persistInstallationNotifications(order, order.progress_stages, null, "", { includeCompletion: false });
-        }
         return res.json({
           success: true,
           order: await orderWithCustomerNotifications(order),
@@ -2985,18 +3028,10 @@ export const respondToInstallationSchedule = async (req, res) => {
       scheduleStage.proposedInstallationTime = scheduleStage.customerPreferredInstallationTime || "";
       scheduleStage.customerResponse = "accepted";
       scheduleStage.customerResponseAt = new Date();
+      scheduleStage.completedAt = scheduleStage.completed ? scheduleStage.completedAt || new Date() : new Date();
       scheduleStage.completed = true;
       scheduleStage.status = "done";
       scheduleStage.date = new Date();
-      const installationStage = Array.isArray(order.progress_stages)
-        ? order.progress_stages.find((stage) => {
-            const stageKey = (stage.key || stage.name || "").toString().toLowerCase().replace(/\s+/g, "_");
-            return stageKey === "installation" || stageKey.startsWith("installation_");
-          })
-        : null;
-      if (installationStage && !installationStage.completed) {
-        installationStage.status = "in_progress";
-      }
       order.status = order.status === "contract_accepted" ? "contract_accepted" : order.status;
     } else {
       if (!reason || !preferredInstallationDate || !preferredInstallationTime) {
@@ -3043,7 +3078,7 @@ export const updateOrderInspection = async (req, res) => {
   let updateData = {};
 
   try {
-    if (req.user.role !== "admin") {
+    if (!["admin", "super_admin", "skilled_worker"].includes(req.user.role)) {
       return res.status(403).json({ success: false, message: "Admin access required" });
     }
 
@@ -3530,6 +3565,28 @@ export const updateOrderProgress = async (req, res) => {
     const previousStages = isItemProgressUpdate && order.items[itemIndex].progress_stages?.length
       ? order.items[itemIndex].progress_stages
       : order.progress_stages || [];
+    if (req.user.role === "skilled_worker") {
+      const staffActions = req.staffAccess?.modules?.progress_monitoring;
+      const allowed = (action) => staffActions?.enabled === true && staffActions.actions?.[action] === true;
+      const hasRemovedPhoto = (before = [], after = []) => before.some((photo) => !after.includes(photo));
+      const hasAddedPhoto = (before = [], after = []) => after.some((photo) => !before.includes(photo));
+      let removesProof = false;
+      let addsProof = Array.isArray(proof_images) && proof_images.length > 0;
+      if (Array.isArray(stages)) {
+        stages.forEach((stage, index) => {
+          const prior = previousStages.find((entry, priorIndex) => String(entry.key || entry.name || priorIndex) === String(stage.key || stage.name || index));
+          removesProof ||= hasRemovedPhoto(prior?.images, stage.images);
+          addsProof ||= hasAddedPhoto(prior?.images, stage.images);
+          (stage.subStages || []).forEach((sub) => {
+            const priorSub = (prior?.subStages || []).find((entry) => entry.name === sub.name);
+            removesProof ||= hasRemovedPhoto(priorSub?.images, sub.images);
+            addsProof ||= hasAddedPhoto(priorSub?.images, sub.images);
+          });
+        });
+      }
+      if (removesProof && !allowed("delete_proof")) return res.status(403).json({ success: false, message: "Deleting progress proof is disabled for your account." });
+      if (addsProof && !allowed("upload_progress_photo")) return res.status(403).json({ success: false, message: "Uploading progress photos is disabled for your account." });
+    }
     if (req.body.expectedUpdatedAt && order.updatedAt
       && new Date(req.body.expectedUpdatedAt).getTime() !== new Date(order.updatedAt).getTime()) {
       return res.status(409).json({ success: false, message: "This project was updated by someone else. Reload it and review the latest progress before saving." });
@@ -3538,6 +3595,16 @@ export const updateOrderProgress = async (req, res) => {
     const auditEvents = [];
     const actor = req.user || {};
     const actorName = [actor.first_name, actor.last_name].filter(Boolean).join(" ") || actor.name || actor.email || "Staff";
+    const progressCooldownMs = 10 * 60 * 1000;
+    const progressRequestTime = new Date();
+    const newlyCompletedTargets = [];
+    const latestSavedCompletion = previousStages.flatMap((stage) => [
+      stage.completedAt,
+      ...(stage.subStages || []).map((sub) => sub.completedAt),
+    ]).map((value) => value ? new Date(value).getTime() : 0).filter(Number.isFinite).reduce((latest, value) => Math.max(latest, value), 0);
+    const cooldownRemainingMs = latestSavedCompletion
+      ? Math.max(0, progressCooldownMs - (progressRequestTime.getTime() - latestSavedCompletion))
+      : 0;
     // Notes are managed by dedicated permission-checked endpoints.
     if (Array.isArray(stages)) {
       const wasDone = (stage) => Boolean(stage?.completed) || ["done", "completed"].includes(String(stage?.status || "").toLowerCase());
@@ -3559,6 +3626,7 @@ export const updateOrderProgress = async (req, res) => {
         const identity = String(nextStage.key || nextStage.name || index);
         const prior = oldByIdentity.get(identity);
         const nowDone = wasDone(nextStage);
+        if (nowDone && !wasDone(prior)) newlyCompletedTargets.push({ type: "stage", name: nextStage.name || "Stage" });
         if (wasDone(prior) && nowDone && (
           !sameDate(prior.date, nextStage.date) ||
           String(prior.completionNote || "") !== String(nextStage.completionNote || "") ||
@@ -3591,12 +3659,27 @@ export const updateOrderProgress = async (req, res) => {
             !sameList(previousSub.images, sub.images)
           )) return res.status(409).json({ success: false, message: "Saved sub-stage completion dates, notes, and proof photos are locked." });
           if (wasDone(sub) && !wasDone(previousSub)) {
+            newlyCompletedTargets.push({ type: "sub-stage", name: sub.name || "Sub-stage" });
             if (!(sub.images || []).length) return res.status(400).json({ success: false, message: `Add proof photos before completing ${sub.name || "the sub-stage"}.` });
             auditEvents.push({ type: "substage_completed", stageKey: identity, stageName: nextStage.name || "Stage", subStageName: sub.name || "Sub-stage", note: sub.completionNote || "", at: new Date(), by: actor._id || null, byName: actorName });
           }
           if (!wasDone(sub) && wasDone(previousSub)) {
             return res.status(409).json({ success: false, message: "Completed sub-stages cannot be reverted through normal progress updates." });
           }
+        }
+      }
+      if (newlyCompletedTargets.length > 1) {
+        return res.status(409).json({ success: false, code: "PROGRESS_COOLDOWN", message: "Complete and save one progress stage or sub-stage at a time before proceeding." });
+      }
+      if (newlyCompletedTargets.length === 1) {
+        if (cooldownRemainingMs > 0) {
+          return res.status(409).json({
+            success: false,
+            code: "PROGRESS_COOLDOWN",
+            message: "Please wait 10 minutes before proceeding to the next progress stage.",
+            retryAt: new Date(latestSavedCompletion + progressCooldownMs).toISOString(),
+            remainingMs: cooldownRemainingMs,
+          });
         }
       }
     }
@@ -3640,12 +3723,19 @@ export const updateOrderProgress = async (req, res) => {
     if (!isItemProgressUpdate && estimated_installation_time !== undefined) order.estimated_installation_time = String(estimated_installation_time || "");
 
     if (Array.isArray(stages)) {
-      const normalizedStages = stages.map((s) => ({
+      const previousStagesByIdentity = new Map(previousStages.map((stage, index) => [String(stage.key || stage.name || index), stage]));
+      const isProgressUnitDone = (unit) => Boolean(unit?.completed) || ["done", "completed"].includes(String(unit?.status || "").toLowerCase());
+      const normalizedStages = stages.map((s, stageIndex) => {
+        const identity = String(s.key || s.name || stageIndex);
+        const priorStage = previousStagesByIdentity.get(identity);
+        const stageCompleted = isProgressUnitDone(s);
+        return ({
         key: s.key || (s.name || "").toString().toLowerCase().replace(/\s+/g, "_"),
         name: s.name || "",
-        status: ["pending", "in_progress", "done", "delayed", "on_hold"].includes(s.status) ? s.status : s.completed ? "done" : "pending",
-        completed: !!s.completed,
+        status: ["pending", "in_progress", "done", "delayed", "on_hold"].includes(s.status) ? s.status : stageCompleted ? "done" : "pending",
+        completed: stageCompleted,
         date: s.date ? new Date(s.date) : null,
+        completedAt: stageCompleted ? priorStage?.completedAt || (!isProgressUnitDone(priorStage) ? progressRequestTime : null) : null,
         completionNote: String(s.completionNote || "").slice(0, 1000),
         delayReason: s.delayReason || "",
         delayExpectedResolution: s.delayExpectedResolution ? new Date(s.delayExpectedResolution) : null,
@@ -3677,21 +3767,27 @@ export const updateOrderProgress = async (req, res) => {
         customerPreferredInstallationTime: s.customerPreferredInstallationTime ? s.customerPreferredInstallationTime : "",
         customerRescheduleNotes: s.customerRescheduleNotes ? s.customerRescheduleNotes : "",
         subStages: Array.isArray(s.subStages)
-          ? s.subStages.map((sub) => ({
+          ? s.subStages.map((sub) => {
+              const priorSubStage = (priorStage?.subStages || []).find((entry) => entry.name === sub.name);
+              const subStageCompleted = isProgressUnitDone(sub);
+              return ({
               name: sub.name || "",
               description: sub.description || "",
               status: ["pending", "in_progress", "done", "delayed", "on_hold"].includes(sub.status)
                 ? sub.status
-                : sub.completed
+                : subStageCompleted
                 ? "done"
                 : "pending",
-              completed: !!sub.completed,
+              completed: subStageCompleted,
               date: sub.date ? new Date(sub.date) : null,
+              completedAt: subStageCompleted ? priorSubStage?.completedAt || (!isProgressUnitDone(priorSubStage) ? progressRequestTime : null) : null,
               completionNote: String(sub.completionNote || "").slice(0, 1000),
               images: Array.isArray(sub.images) ? sub.images : [],
-            }))
+              });
+            })
           : [],
-      }));
+      });
+      });
 
       const delayReporter = req.user?.email || "";
       let targetStages = normalizedStages.map((stage) => {
@@ -3717,6 +3813,31 @@ export const updateOrderProgress = async (req, res) => {
         };
       });
       targetStages = applyInstallationNotificationTimestamps(previousStages, targetStages);
+
+      const previousStageByIdentity = new Map(previousStages.map((stage, index) => [String(stage.key || stage.name || index), stage]));
+      const newlyStartedTargets = [];
+      targetStages.forEach((stage, stageIndex) => {
+        const identity = String(stage.key || stage.name || stageIndex);
+        const priorStage = previousStageByIdentity.get(identity);
+        const wasInProgress = (unit) => ["in_progress", "in-progress", "active", "current"].includes(String(unit?.status || "").toLowerCase());
+        if (wasInProgress(stage) && !wasInProgress(priorStage)) newlyStartedTargets.push(stage.name || "Stage");
+        const priorSubStages = new Map((priorStage?.subStages || []).map((sub) => [sub.name, sub]));
+        (stage.subStages || []).forEach((sub) => {
+          if (wasInProgress(sub) && !wasInProgress(priorSubStages.get(sub.name))) newlyStartedTargets.push(sub.name || "Sub-stage");
+        });
+      });
+      if (newlyStartedTargets.length > 1 || (newlyStartedTargets.length > 0 && newlyCompletedTargets.length > 0)) {
+        return res.status(409).json({ success: false, code: "PROGRESS_COOLDOWN", message: "Complete and save one progress stage or sub-stage at a time before proceeding." });
+      }
+      if (newlyStartedTargets.length > 0 && cooldownRemainingMs > 0) {
+        return res.status(409).json({
+          success: false,
+          code: "PROGRESS_COOLDOWN",
+          message: "Please wait 10 minutes before proceeding to the next progress stage.",
+          retryAt: new Date(latestSavedCompletion + progressCooldownMs).toISOString(),
+          remainingMs: cooldownRemainingMs,
+        });
+      }
 
       const requestedInstallationDate = !isItemProgressUpdate && estimated_installation_date
         ? new Date(estimated_installation_date)
@@ -3955,7 +4076,7 @@ export const updateOrderProgress = async (req, res) => {
 
 export const generateContract = async (req, res) => {
   try {
-    if (req.user.role !== "admin") {
+    if (!["admin", "super_admin", "skilled_worker"].includes(req.user.role)) {
       return res.status(403).json({ success: false, message: "Admin access required" });
     }
 
@@ -4049,7 +4170,7 @@ export const generateContract = async (req, res) => {
 
 export const sendWalkInApprovalEmail = async (req, res) => {
   try {
-    if (req.user.role !== "admin") {
+    if (!["admin", "super_admin", "skilled_worker"].includes(req.user.role)) {
       return res.status(403).json({ success: false, message: "Admin access required" });
     }
 
@@ -4161,3 +4282,4 @@ export const sendWalkInApprovalEmail = async (req, res) => {
     res.status(500).json({ success: false, message: "Unable to send email", error: error.message });
   }
 };
+

@@ -486,10 +486,10 @@ const SIGNED_UPLOAD_PURPOSES = {
   "review-photos": { roles: ["customer", "admin", "super_admin"], resourceType: "image" },
   "payment-proofs": { roles: ["customer", "admin", "super_admin"], resourceType: "image" },
   "progress-media": { roles: ["admin", "super_admin", "skilled_worker"], resourceType: "auto" },
-  "repair-evidence": { roles: ["admin", "super_admin"], resourceType: "image" },
+  "repair-evidence": { roles: ["admin", "super_admin", "skilled_worker"], resourceType: "image" },
   "repair-media": { roles: ["customer"], resourceType: "auto" },
   contracts: { roles: ["admin", "super_admin", "skilled_worker"], resourceType: "auto" },
-  "backup-import": { roles: ["admin", "super_admin"], resourceType: "raw", type: "authenticated" },
+  "backup-import": { roles: ["admin", "super_admin", "skilled_worker"], resourceType: "raw", type: "authenticated" },
 };
 
 export const createCloudinaryUploadSignature = (req, res) => {
