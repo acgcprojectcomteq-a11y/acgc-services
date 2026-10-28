@@ -1041,6 +1041,7 @@ function SiteInspection() {
   const [customerSearchError, setCustomerSearchError] = useState("");
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [showContractModal, setShowContractModal] = useState(false);
+  const [showContractGenerationProgress, setShowContractGenerationProgress] = useState(false);
   const [contractData, setContractData] = useState(null);
   const [contractInspection, setContractInspection] = useState(null);
   const [contractNeedsRegeneration, setContractNeedsRegeneration] = useState(false);
@@ -2985,12 +2986,14 @@ function SiteInspection() {
       setContractData({ ...generatedContract, contractNeedsRegeneration: false });
       setContractNeedsRegeneration(false);
       setShowContractModal(true);
+      setShowContractGenerationProgress(false);
       toast.success("Contract generated successfully. Use Send to customer when ready.");
     } catch (err) {
       console.error("Generate contract failed", err);
       toast.error(err?.data?.message || err?.message || "Failed to generate contract.");
     } finally {
       setGeneratingId(null);
+      setShowContractGenerationProgress(false);
     }
   };
 
@@ -3409,6 +3412,14 @@ function SiteInspection() {
     const orderId = inspection?._id || inspection?.id;
     if (!orderId) return;
 
+    // New contracts need confirmation first. Use the already loaded inspection
+    // row so the confirmation appears immediately instead of waiting on a
+    // detail request that is repeated again after the user confirms.
+    if (!hasExistingContract(inspection)) {
+      requestGenerateContract(orderId);
+      return;
+    }
+
     try {
       const { order } = await getAdminOrder(orderId, "site_inspection");
       if (!order) {
@@ -3509,6 +3520,7 @@ function SiteInspection() {
   const handleConfirmGenerateContract = async () => {
     const orderId = contractConfirm.id;
     setContractConfirm({ open: false, id: null });
+    setShowContractGenerationProgress(true);
     await handleGenerateContract(orderId);
   };
 
@@ -4123,6 +4135,18 @@ function SiteInspection() {
                   >
                     {generatingId === contractConfirm.id ? 'Generating...' : 'Confirm'}
                   </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {showContractGenerationProgress && (
+            <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/35 p-4" role="status" aria-live="polite">
+              <div className="flex w-full max-w-sm items-center gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl">
+                <span className="h-8 w-8 shrink-0 animate-spin rounded-full border-4 border-slate-200 border-t-emerald-600" aria-hidden="true" />
+                <div>
+                  <p className="font-semibold text-slate-900">Generating contract</p>
+                  <p className="mt-1 text-sm text-slate-600">Saving contract details. This may take a moment.</p>
                 </div>
               </div>
             </div>
