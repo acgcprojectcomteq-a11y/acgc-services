@@ -153,8 +153,6 @@ function Settings() {
   const [requestingRecoveryPasswordCode, setRequestingRecoveryPasswordCode] = useState(false);
   const [showScheduleTimeModal, setShowScheduleTimeModal] = useState(false);
   const [scheduleTimeDraft, setScheduleTimeDraft] = useState("00:00");
-  const [businessHours, setBusinessHours] = useState({ open: "08:00", close: "18:00" });
-  const [savingBusinessHours, setSavingBusinessHours] = useState(false);
 
   useEffect(() => {
     if (!recoveryPasswordResetMode || !/^\d{6}$/.test(recoveryPasswordResetCode)) {
@@ -267,7 +265,6 @@ function Settings() {
   const settingsTabs = [
     { key: "user-management", label: "User Management" },
     ...(isAdmin ? [{ key: "ordering-restriction", label: "Ordering Restriction" }] : []),
-    ...(isAdmin ? [{ key: "scheduling", label: "Scheduling" }] : []),
     { key: "backup-recovery", label: "Backup & Recovery" },
   ];
   const isOwnStaffAccount = Boolean(
@@ -286,7 +283,6 @@ function Settings() {
         const response = await getSystemSettings();
         if (!active) return;
         setMaintenanceMode(response.maintenance_mode === true);
-        setBusinessHours(response.business_hours || { open: "08:00", close: "18:00" });
         if (response.global_permissions) {
           setGlobalPermissions(normalizeGlobalCustomerPermissions(response.global_permissions));
         }
@@ -1358,17 +1354,6 @@ function Settings() {
     }
   };
 
-  const handleBusinessHoursSave = async () => {
-    setSavingBusinessHours(true);
-    try {
-      const response = await updateSystemSettings({ business_hours: { ...businessHours, timezone: "Asia/Manila" } });
-      setBusinessHours(response.business_hours || businessHours);
-      toast.success("Business hours updated.");
-    } catch (error) {
-      toast.error(error?.data?.message || error?.message || "Unable to update business hours.");
-    } finally { setSavingBusinessHours(false); }
-  };
-
   const handleSaveBackupRecoveryPassword = async (event) => {
     event.preventDefault();
     if (savingRecoveryPassword) return;
@@ -1851,21 +1836,6 @@ function Settings() {
                 </div>
               )}
               {renderListPagination(filteredRestrictedCustomers.length, currentOrderingRestrictionPage, orderingRestrictionPageCount, setOrderingRestrictionPage)}
-            </section>
-          )}
-
-          {activeSettingsTab === "scheduling" && isAdmin && (
-            <section className={`mt-7 overflow-hidden rounded-[22px] border shadow-[0_18px_45px_-28px_rgba(15,23,42,0.45)] ${darkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-white"}`}>
-              <header className={`border-b px-5 py-5 sm:px-6 ${darkMode ? "border-slate-700" : "border-slate-100"}`}>
-                <h2 className="text-[19px] font-medium text-foreground">Scheduling business hours</h2>
-                <p className="mt-2 text-sm text-muted-foreground">Appointments must fit within this window. Times use Asia/Manila.</p>
-              </header>
-              <div className="grid gap-4 px-5 py-5 sm:grid-cols-2 sm:px-6">
-                <label className="text-sm font-medium text-foreground">Opening time<input type="time" value={businessHours.open || "08:00"} onChange={(event) => setBusinessHours((current) => ({ ...current, open: event.target.value }))} className="mt-1.5 h-10 w-full rounded-lg border border-border bg-background px-3 text-sm dark:border-slate-700 dark:bg-slate-950" /></label>
-                <label className="text-sm font-medium text-foreground">Closing time<input type="time" value={businessHours.close || "18:00"} onChange={(event) => setBusinessHours((current) => ({ ...current, close: event.target.value }))} className="mt-1.5 h-10 w-full rounded-lg border border-border bg-background px-3 text-sm dark:border-slate-700 dark:bg-slate-950" /></label>
-                <p className="text-xs text-muted-foreground sm:col-span-2">A 30-minute appointment may start at 5:30 PM when closing time is 6:00 PM.</p>
-                <button type="button" onClick={handleBusinessHoursSave} disabled={savingBusinessHours} className="h-10 rounded-lg bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60 sm:col-span-2">{savingBusinessHours ? "Saving…" : "Save business hours"}</button>
-              </div>
             </section>
           )}
 

@@ -2792,7 +2792,7 @@ function Transactions() {
                     <h2 id="downpayment-exception-title" className="text-base font-black">Confirm Lower Downpayment</h2>
                     <div className="mt-2 flex items-start gap-2 text-sm font-semibold text-amber-700 dark:text-amber-200">
                       <TriangleAlert size={18} className="mt-0.5 shrink-0 text-amber-500" aria-hidden="true" />
-                      <p>Warning: Payment is below the required downpayment amount. Please contact the seller to confirm whether this lower payment can be accepted before proceeding.</p>
+                      <p>Admin review required: The entered payment is below the required downpayment amount. Confirm that the seller or an authorized approver has accepted this amount, then record the approval details before proceeding.</p>
                     </div>
                   </div>
                   <div className="space-y-3 px-5 py-4 text-sm">

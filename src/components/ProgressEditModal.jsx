@@ -1378,16 +1378,8 @@ export default function ProgressEditModal({ project, onClose, onSave, canUploadP
           <div className="space-y-3">
           <section className="space-y-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
             <div>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="text-sm font-semibold text-slate-800">Protected Project Notes</h3>
-                {canEditProtectedNotes && <button type="button" onClick={() => { setProtectedNotesDraft(getProtectedNotesContent(project)); setNotesError(""); setShowProtectedNotesModal(true); }} className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700">Edit protected notes</button>}
-              </div>
-              <p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">{getProtectedNotesContent(project) || "No protected project notes yet."}</p>
-              {project.protected_project_notes?.authorName && <p className="mt-1 text-xs text-slate-500">Added by {project.protected_project_notes.authorName} ({project.protected_project_notes.authorRole || "staff"}) · {project.protected_project_notes.createdAt ? new Date(project.protected_project_notes.createdAt).toLocaleString() : ""}{project.protected_project_notes.updatedAt && project.protected_project_notes.updatedAt !== project.protected_project_notes.createdAt ? ` · Updated ${new Date(project.protected_project_notes.updatedAt).toLocaleString()}` : ""}</p>}
-            </div>
-            <div className="border-t border-amber-200 pt-3">
               <div className="flex items-center justify-between gap-2"><h3 className="text-sm font-semibold text-slate-800">Staff Activity Notes</h3><button type="button" onClick={() => { setActivityNoteDraft(""); setNotesError(""); setShowActivityNoteModal(true); }} className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700">Add Note</button></div>
-              {Array.isArray(project.progress_activity_notes) && project.progress_activity_notes.length > 0 ? <ol className="mt-2 max-h-56 space-y-2 overflow-y-auto">{[...project.progress_activity_notes].reverse().map((note) => <li key={note.id || note._id || note.createdAt} className="rounded-lg border border-amber-100 bg-white p-3"><p className="whitespace-pre-wrap text-sm text-slate-700">{note.content}</p><p className="mt-1 text-xs text-slate-500">{note.authorName || "Staff"} ({note.authorRole || "staff"}) · {note.createdAt ? new Date(note.createdAt).toLocaleString() : ""}</p></li>)}</ol> : <p className="mt-2 text-xs text-slate-600">No activity notes yet.</p>}
+              {Array.isArray(project.progress_activity_notes) && project.progress_activity_notes.length > 0 ? <ol className="mt-2 max-h-56 space-y-2 overflow-y-auto">{[...project.progress_activity_notes].reverse().map((note) => <li key={note.id || note._id || note.createdAt} className="rounded-lg border border-amber-100 bg-white p-3"><p className="whitespace-pre-wrap text-sm font-bold text-red-500">{note.content}</p><p className="mt-1 text-xs font-bold text-slate-500">{note.authorName || "Staff"} ({note.authorRole || "staff"}) · {note.createdAt ? new Date(note.createdAt).toLocaleString() : ""}</p></li>)}</ol> : <p className="mt-2 text-xs text-slate-600">No activity notes yet.</p>}
             </div>
             {(project.progress_audit || []).length > 0 && (
               <details className="mt-3 border-t border-amber-200 pt-2">
