@@ -1,6 +1,11 @@
 import Product from "../models/Product.js";
 
 const trimText = (value) => String(value ?? "").trim();
+const isJalousiePerBladeProduct = (product = {}) => {
+  const name = String(product.product_name || product.name || "");
+  const method = String(product.pricing_method || (/jalousie/i.test(name) ? "blade" : "")).trim().toLowerCase();
+  return ["blade", "per_blade"].includes(method) && /jalousie/i.test(name);
+};
 const toNonNegativeNumber = (value) => {
   const number = Number(value);
   return Number.isFinite(number) && number > 0 ? number : 0;
@@ -22,6 +27,16 @@ const validateProductPayload = (payload, existingProduct = null) => {
   const productType = trimText(merged.product_type);
   const category = trimText(merged.category);
   const pricingMethod = trimText(merged.pricing_method);
+  const isJalousieBlade = isJalousiePerBladeProduct(merged);
+  const allowCustomFrameSize = !isJalousieBlade && Boolean(merged.allow_custom_frame_size);
+  const frameTypes = Array.isArray(merged.blade_frame_types) ? merged.blade_frame_types : [];
+  const sellWithFrame = Boolean(merged.sell_with_frame) && (!isJalousieBlade || frameTypes.length > 0);
+  const defaultSaleMode = isJalousieBlade
+    && merged.default_sale_mode === "frame"
+    && !frameTypes.some((frame) => frame.name === merged.default_frame_type)
+    && merged.sell_blades_only !== false
+    ? "blades_only"
+    : merged.default_sale_mode;
   const image_url = payload.image_url !== undefined ? payload.image_url : merged.image_url;
   const images = payload.images !== undefined ? payload.images : merged.images;
 
@@ -56,17 +71,16 @@ const validateProductPayload = (payload, existingProduct = null) => {
     if (glassTypes.some((glass) => !trimText(glass?.name) || toNonNegativeNumber(glass?.price_per_blade) <= 0)) {
       return "Each glass type needs a name and a price per blade greater than zero.";
     }
-    if (!merged.sell_blades_only && !merged.sell_with_frame) {
+    if (!merged.sell_blades_only && !sellWithFrame) {
       return "Enable at least one selling option: blades only or blades with frame.";
     }
-    const frameTypes = Array.isArray(merged.blade_frame_types) ? merged.blade_frame_types : [];
-    if (merged.sell_with_frame && !frameTypes.length && !merged.allow_custom_frame_size) {
+    if (sellWithFrame && !frameTypes.length && !allowCustomFrameSize) {
       return "Add at least one frame type or enable custom frame size.";
     }
     if (frameTypes.some((frame) => !trimText(frame?.name) || toNonNegativeNumber(frame?.blade_count) <= 0 || !Number.isFinite(Number(frame?.price)) || Number(frame.price) < 0)) {
       return "Each frame type needs a name, blade count, and valid frame price.";
     }
-    if (merged.allow_custom_frame_size && toNonNegativeNumber(merged.custom_frame_price) <= 0) {
+    if (allowCustomFrameSize && toNonNegativeNumber(merged.custom_frame_price) <= 0) {
       return "Custom frame price must be greater than zero.";
     }
     const minimumBlades = Math.max(1, Number(merged.minimum_blades) || 1);
@@ -81,16 +95,16 @@ const validateProductPayload = (payload, existingProduct = null) => {
     if (glassTypes.length && !glassTypes.some((glass) => glass.name === merged.default_blade_glass_type)) {
       return "Choose a default glass type from the configured glass types.";
     }
-    if (merged.default_sale_mode === "frame" && !merged.sell_with_frame) {
+    if (defaultSaleMode === "frame" && !sellWithFrame) {
       return "The default sale mode must be one of the enabled selling options.";
     }
-    if (merged.default_sale_mode === "blades_only" && !merged.sell_blades_only) {
+    if (defaultSaleMode === "blades_only" && !merged.sell_blades_only) {
       return "The default sale mode must be one of the enabled selling options.";
     }
-    if (merged.default_sale_mode === "frame" && frameTypes.length && !frameTypes.some((frame) => frame.name === merged.default_frame_type)) {
+    if (defaultSaleMode === "frame" && frameTypes.length && !frameTypes.some((frame) => frame.name === merged.default_frame_type)) {
       return "Choose a default frame type from the configured frame types.";
     }
-    if (merged.default_sale_mode === "frame" && !frameTypes.length && !merged.allow_custom_frame_size) {
+    if (defaultSaleMode === "frame" && !frameTypes.length && !allowCustomFrameSize) {
       return "Choose a default frame type or enable custom frame size.";
     }
   }
@@ -231,6 +245,15 @@ export const createProduct = async (req, res) => {
 
     const categoryValue = String(category || "other").trim().toLowerCase();
     const productNameValue = trimText(product_name || name);
+    const isJalousieBlade = isJalousiePerBladeProduct({ product_name: productNameValue, pricing_method });
+    const frameTypes = Array.isArray(blade_frame_types) ? blade_frame_types : [];
+    const normalizedSellWithFrame = Boolean(sell_with_frame) && (!isJalousieBlade || frameTypes.length > 0);
+    const normalizedDefaultSaleMode = isJalousieBlade
+      && default_sale_mode === "frame"
+      && !frameTypes.some((frame) => frame.name === default_frame_type)
+      && sell_blades_only !== false
+      ? "blades_only"
+      : default_sale_mode || (normalizedSellWithFrame && sell_blades_only === false ? "frame" : "blades_only");
 
     const product = new Product({
       name: productNameValue,
@@ -255,23 +278,23 @@ export const createProduct = async (req, res) => {
       customization: Boolean(customization),
       customization_fee: Number(customization_fee) || 0,
       extra_charges: Array.isArray(extra_charges) ? extra_charges : [],
-      size_limits: size_limits || {},
-      standard_size: standard_size || "",
-      width: Number(width) || 0,
-      height: Number(height) || 0,
+      size_limits: isJalousieBlade ? {} : size_limits || {},
+      standard_size: isJalousieBlade ? "" : standard_size || "",
+      width: isJalousieBlade ? 0 : Number(width) || 0,
+      height: isJalousieBlade ? 0 : Number(height) || 0,
       blade_count: Number(blade_count) || 0,
       blade_glass_types: Array.isArray(blade_glass_types) ? blade_glass_types : [],
       sell_blades_only: sell_blades_only !== false,
-      sell_with_frame: Boolean(sell_with_frame),
+      sell_with_frame: normalizedSellWithFrame,
       blade_frame_types: Array.isArray(blade_frame_types) ? blade_frame_types : [],
-      allow_custom_frame_size: Boolean(allow_custom_frame_size),
+      allow_custom_frame_size: !isJalousieBlade && Boolean(allow_custom_frame_size),
       custom_frame_size_unit: custom_frame_size_unit || measurement_unit || "in",
-      custom_frame_price: Number(custom_frame_price) || 0,
+      custom_frame_price: isJalousieBlade ? 0 : Number(custom_frame_price) || 0,
       minimum_blades: Math.max(1, Number(minimum_blades) || 1),
       maximum_blades: Number(maximum_blades) || 0,
       customer_can_choose_blade_count: Boolean(customer_can_choose_blade_count),
       default_blade_glass_type: default_blade_glass_type || "",
-      default_sale_mode: default_sale_mode || (sell_blades_only === false ? "frame" : "blades_only"),
+      default_sale_mode: normalizedDefaultSaleMode,
       default_frame_type: default_frame_type || "",
       show_price_per_blade: show_price_per_blade !== false,
       estimated_area: Number(estimated_area) || 0,
@@ -302,6 +325,20 @@ export const updateProduct = async (req, res) => {
     }
 
     const updatedName = trimText(req.body.product_name ?? req.body.name ?? product.product_name ?? product.name);
+    const updatedPricingMethod = req.body.pricing_method ?? product.pricing_method;
+    const updatedBladeFrameTypes = req.body.blade_frame_types ?? product.blade_frame_types ?? [];
+    const updatedDefaultFrameType = req.body.default_frame_type ?? product.default_frame_type;
+    const updatedSellBladesOnly = req.body.sell_blades_only != null ? Boolean(req.body.sell_blades_only) : product.sell_blades_only;
+    const isJalousieBlade = isJalousiePerBladeProduct({ product_name: updatedName, pricing_method: updatedPricingMethod });
+    const requestedSellWithFrame = req.body.sell_with_frame != null ? Boolean(req.body.sell_with_frame) : Boolean(product.sell_with_frame);
+    const normalizedSellWithFrame = requestedSellWithFrame && (!isJalousieBlade || updatedBladeFrameTypes.length > 0);
+    const updatedDefaultSaleMode = req.body.default_sale_mode ?? product.default_sale_mode;
+    const normalizedDefaultSaleMode = isJalousieBlade
+      && updatedDefaultSaleMode === "frame"
+      && !updatedBladeFrameTypes.some((frame) => frame.name === updatedDefaultFrameType)
+      && updatedSellBladesOnly
+      ? "blades_only"
+      : updatedDefaultSaleMode || (normalizedSellWithFrame && !updatedSellBladesOnly ? "frame" : "blades_only");
     const updates = {
       name: updatedName,
       sku: req.body.sku ?? product.sku,
@@ -316,7 +353,7 @@ export const updateProduct = async (req, res) => {
       // ERP fields
       product_type: trimText(req.body.product_type ?? product.product_type),
       product_name: updatedName,
-      pricing_method: req.body.pricing_method ?? product.pricing_method,
+      pricing_method: updatedPricingMethod,
       variant: req.body.variant ?? product.variant,
       base_price: req.body.base_price != null ? Number(req.body.base_price) : product.base_price,
       price_per_sqft: req.body.price_per_sqft != null ? Number(req.body.price_per_sqft) : product.price_per_sqft,
@@ -324,23 +361,23 @@ export const updateProduct = async (req, res) => {
       customization: req.body.customization != null ? Boolean(req.body.customization) : product.customization,
       customization_fee: req.body.customization_fee != null ? Number(req.body.customization_fee) : product.customization_fee,
       extra_charges: req.body.extra_charges != null ? req.body.extra_charges : product.extra_charges,
-      size_limits: req.body.size_limits != null ? req.body.size_limits : product.size_limits,
-      standard_size: req.body.standard_size != null ? String(req.body.standard_size) : product.standard_size,
-      width: req.body.width != null ? Number(req.body.width) : product.width,
-      height: req.body.height != null ? Number(req.body.height) : product.height,
+      size_limits: isJalousieBlade ? {} : req.body.size_limits != null ? req.body.size_limits : product.size_limits,
+      standard_size: isJalousieBlade ? "" : req.body.standard_size != null ? String(req.body.standard_size) : product.standard_size,
+      width: isJalousieBlade ? 0 : req.body.width != null ? Number(req.body.width) : product.width,
+      height: isJalousieBlade ? 0 : req.body.height != null ? Number(req.body.height) : product.height,
       blade_count: req.body.blade_count != null ? Number(req.body.blade_count) : product.blade_count,
       blade_glass_types: req.body.blade_glass_types != null ? req.body.blade_glass_types : product.blade_glass_types,
       sell_blades_only: req.body.sell_blades_only != null ? Boolean(req.body.sell_blades_only) : product.sell_blades_only,
-      sell_with_frame: req.body.sell_with_frame != null ? Boolean(req.body.sell_with_frame) : product.sell_with_frame,
+      sell_with_frame: normalizedSellWithFrame,
       blade_frame_types: req.body.blade_frame_types != null ? req.body.blade_frame_types : product.blade_frame_types,
-      allow_custom_frame_size: req.body.allow_custom_frame_size != null ? Boolean(req.body.allow_custom_frame_size) : product.allow_custom_frame_size,
+      allow_custom_frame_size: isJalousieBlade ? false : req.body.allow_custom_frame_size != null ? Boolean(req.body.allow_custom_frame_size) : product.allow_custom_frame_size,
       custom_frame_size_unit: req.body.custom_frame_size_unit ?? product.custom_frame_size_unit,
-      custom_frame_price: req.body.custom_frame_price != null ? Number(req.body.custom_frame_price) : product.custom_frame_price,
+      custom_frame_price: isJalousieBlade ? 0 : req.body.custom_frame_price != null ? Number(req.body.custom_frame_price) : product.custom_frame_price,
       minimum_blades: req.body.minimum_blades != null ? Number(req.body.minimum_blades) : product.minimum_blades,
       maximum_blades: req.body.maximum_blades != null ? Number(req.body.maximum_blades) : product.maximum_blades,
       customer_can_choose_blade_count: req.body.customer_can_choose_blade_count != null ? Boolean(req.body.customer_can_choose_blade_count) : product.customer_can_choose_blade_count,
       default_blade_glass_type: req.body.default_blade_glass_type ?? product.default_blade_glass_type,
-      default_sale_mode: req.body.default_sale_mode ?? product.default_sale_mode,
+      default_sale_mode: normalizedDefaultSaleMode,
       default_frame_type: req.body.default_frame_type ?? product.default_frame_type,
       show_price_per_blade: req.body.show_price_per_blade != null ? Boolean(req.body.show_price_per_blade) : product.show_price_per_blade,
       estimated_area: req.body.estimated_area != null ? Number(req.body.estimated_area) : product.estimated_area,

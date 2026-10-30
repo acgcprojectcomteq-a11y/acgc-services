@@ -22,6 +22,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { isPasswordPolicySatisfied, PASSWORD_POLICY_HINT, PASSWORD_POLICY_MESSAGE } from "@/lib/passwordStrength";
 import { getPhilippinePhoneError, isValidPhilippinePhone, normalizePhoneInput } from "@/lib/phoneValidation";
 import { getActivityStorageKey, readActivityLog } from "@/lib/activityLog";
+import FullAddressField from "@/components/FullAddressField";
+import { getFullAddressError, isValidFullAddress, normalizeFullAddress } from "@/lib/fullAddressValidation";
 import { getAdminOrder } from "@/api/orders";
 import { requestEmailChange, resendEmailChangeCode, verifyEmailChangeCode } from "@/api/auth";
 import { formatDateTimeToMMMDDYYYY } from "@/lib/dateUtils";
@@ -360,6 +362,12 @@ function AdminProfile() {
   const performSave = async ({ showErrorInModal = false } = {}) => {
     const setSaveError = showErrorInModal ? setPasswordModalError : setError;
 
+    const addressChanged = normalizeFullAddress(profile.street_address) !== normalizeFullAddress(user?.street_address);
+    if (addressChanged && !isValidFullAddress(profile.street_address)) {
+      setSaveError(getFullAddressError(profile.street_address));
+      return false;
+    }
+
     if (profile.phone.trim() && !isValidPhilippinePhone(profile.phone)) {
       setSaveError(getPhilippinePhoneError(profile.phone));
       return false;
@@ -398,7 +406,7 @@ function AdminProfile() {
         first_name: profile.first_name,
         last_name: profile.last_name,
         phone: profile.phone,
-        street_address: profile.street_address,
+        street_address: normalizeFullAddress(profile.street_address),
         current_password: profile.current_password,
       };
 
@@ -738,7 +746,17 @@ function AdminProfile() {
                       </div>
                       <AdminProfileTextField label="Phone Number" icon={Phone} darkMode={darkMode} type="tel" inputMode="tel" maxLength={13} name="phone" value={profile.phone} onChange={handleChange} placeholder="+639171234567 or 09171234567" />
                       <div className="md:col-span-2">
-                        <AdminProfileTextField label="Address" icon={MapPin} darkMode={darkMode} type="text" name="street_address" value={profile.street_address} onChange={handleChange} placeholder="Business address" />
+                      <FullAddressField
+                        label="Full Address"
+                        icon={MapPin}
+                        name="street_address"
+                        value={profile.street_address}
+                        onChange={handleChange}
+                        placeholder="Business address"
+                        showError={normalizeFullAddress(profile.street_address) !== normalizeFullAddress(user?.street_address)}
+                        labelClassName={darkMode ? "text-slate-300" : "text-slate-700"}
+                        className={`w-full rounded-xl border py-2.5 pr-4 outline-none transition focus:border-red-500 focus:ring-4 focus:ring-red-500/10 ${darkMode ? "border-slate-700 bg-slate-900 text-white placeholder:text-slate-400" : "border-gray-300 bg-white text-slate-900 placeholder:text-gray-400"}`}
+                      />
                       </div>
                     </div>
                   ) : activeTab === "security" ? (

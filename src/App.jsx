@@ -359,6 +359,10 @@ function AppRoutes() {
       <Suspense fallback={null}>
       <PublicPageRoutes />
       <Routes>
+          <Route path="/" element={null} />
+          <Route path="/login" element={null} />
+          <Route path="/signup" element={null} />
+          <Route path="/forgot-password" element={null} />
           <Route path="/verify-email" element={<VerifyEmail />} />
           <Route path="/admin-recovery" element={<AdminRecovery />} />
           <Route path="/track-order" element={<TrackOrder />} />

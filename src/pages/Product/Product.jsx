@@ -322,6 +322,8 @@ function ProductFormModal({
   const angleImages = uploaderSections.filter(([key]) => key !== "main");
   const imageName = (key) => newProduct.imageFiles?.[key]?.name || newProduct.images?.[key]?.split("/").pop() || "";
   const pricingMethodValue = newProduct.pricing_method || "";
+  const isJalousiePerBladeProduct = pricingMethodValue === "blade"
+    && /jalousie/i.test(newProduct.product_name || newProduct.name || "");
   const extraCharges = Array.isArray(newProduct.extra_charges) ? newProduct.extra_charges : [];
   const sizeLimits = newProduct.size_limits || {};
 
@@ -474,13 +476,18 @@ function ProductFormModal({
     sell_blades_only: newProduct.sell_blades_only !== false,
     sell_with_frame: Boolean(newProduct.sell_with_frame),
     blade_frame_types: newProduct.blade_frame_types || [],
-    allow_custom_frame_size: Boolean(newProduct.allow_custom_frame_size),
+    allow_custom_frame_size: !isJalousiePerBladeProduct && Boolean(newProduct.allow_custom_frame_size),
     custom_frame_price: Number(newProduct.custom_frame_price) || 0,
     minimum_blades: Number(newProduct.minimum_blades) || 1,
     maximum_blades: Number(newProduct.maximum_blades) || 0,
     customer_can_choose_blade_count: Boolean(newProduct.customer_can_choose_blade_count),
     default_blade_glass_type: newProduct.default_blade_glass_type || "",
-    default_sale_mode: newProduct.default_sale_mode || "blades_only",
+    default_sale_mode: isJalousiePerBladeProduct
+      && newProduct.default_sale_mode === "frame"
+      && !(newProduct.blade_frame_types || []).some((frame) => frame.name === newProduct.default_frame_type)
+      && newProduct.sell_blades_only
+      ? "blades_only"
+      : newProduct.default_sale_mode || "blades_only",
     default_frame_type: newProduct.default_frame_type || "",
     show_price_per_blade: newProduct.show_price_per_blade !== false,
     estimated_price_override: Number(newProduct.estimated_price_override) || 0,
@@ -497,7 +504,7 @@ function ProductFormModal({
   const defaultSoldAs = newProduct.default_sale_mode === "frame"
     ? defaultFrameType
       ? `frame:${defaultFrameType.name}`
-      : newProduct.allow_custom_frame_size
+      : newProduct.allow_custom_frame_size && !isJalousiePerBladeProduct
         ? "custom_frame"
         : "blades_only"
     : "blades_only";
@@ -508,11 +515,16 @@ function ProductFormModal({
     quantity: 1,
     customized: true,
     blade_glass_type: defaultGlassType,
-    sale_mode: newProduct.default_sale_mode || "blades_only",
+    sale_mode: isJalousiePerBladeProduct
+      && newProduct.default_sale_mode === "frame"
+      && !defaultFrameType
+      && newProduct.sell_blades_only
+      ? "blades_only"
+      : newProduct.default_sale_mode || "blades_only",
     frame_type: defaultFrameType?.name || "",
-    custom_frame_size: newProduct.default_sale_mode === "frame" && !defaultFrameType && Boolean(newProduct.allow_custom_frame_size),
+    custom_frame_size: !isJalousiePerBladeProduct && newProduct.default_sale_mode === "frame" && !defaultFrameType && Boolean(newProduct.allow_custom_frame_size),
     extra_charges: defaultExtraCharges,
-    blade_count: newProduct.default_sale_mode === "frame"
+    blade_count: newProduct.default_sale_mode === "frame" && !isJalousiePerBladeProduct
       ? Number(newProduct.blade_frame_types?.find((frame) => frame.name === (newProduct.default_frame_type || newProduct.blade_frame_types?.[0]?.name))?.blade_count) || Number(newProduct.minimum_blades) || 1
       : Number(newProduct.minimum_blades) || 1,
   };
@@ -563,14 +575,19 @@ function ProductFormModal({
   const configuredFrameTypes = newProduct.blade_frame_types || [];
   const minimumBlades = Math.max(1, Number(newProduct.minimum_blades) || 1);
   const maximumBlades = Number(newProduct.maximum_blades) || 0;
-  const defaultSaleMode = newProduct.default_sale_mode || (newProduct.sell_blades_only ? "blades_only" : "frame");
+  const defaultSaleMode = isJalousiePerBladeProduct
+    && newProduct.default_sale_mode === "frame"
+    && !(newProduct.blade_frame_types || []).some((frame) => frame.name === newProduct.default_frame_type)
+    && newProduct.sell_blades_only
+    ? "blades_only"
+    : newProduct.default_sale_mode || (newProduct.sell_blades_only ? "blades_only" : "frame");
   const defaultGlassIsValid = configuredGlassTypes.some((glass) => glass.name === (newProduct.default_blade_glass_type || configuredGlassTypes[0]?.name));
   const bladeConfigurationIsValid = configuredGlassTypes.length > 0
     && configuredGlassTypes.every((glass) => String(glass.name || "").trim() && Number(glass.price_per_blade) > 0)
     && (newProduct.sell_blades_only || newProduct.sell_with_frame)
-    && (!newProduct.sell_with_frame || configuredFrameTypes.length > 0 || newProduct.allow_custom_frame_size)
+    && (!newProduct.sell_with_frame || configuredFrameTypes.length > 0 || (!isJalousiePerBladeProduct && newProduct.allow_custom_frame_size))
     && configuredFrameTypes.every((frame) => String(frame.name || "").trim() && Number(frame.blade_count) >= 1 && Number.isFinite(Number(frame.price)) && Number(frame.price) >= 0)
-    && (!newProduct.allow_custom_frame_size || Number(newProduct.custom_frame_price) > 0)
+    && (isJalousiePerBladeProduct || !newProduct.allow_custom_frame_size || Number(newProduct.custom_frame_price) > 0)
     && (!maximumBlades || maximumBlades >= minimumBlades)
     && (!maximumBlades || Math.max(0, ...configuredFrameTypes.map((frame) => Number(frame.blade_count) || 0)) <= maximumBlades)
     && defaultGlassIsValid
@@ -709,12 +726,30 @@ function ProductFormModal({
                   disabled={!newProduct.product_type}
                   onChange={(event) => {
                     const value = event.target.value;
-                    setNewProduct((product) => ({
-                      ...product,
-                      product_name: value,
-                      pricing_method: pricingMethodByName[value] || "",
-                      variant: "",
-                    }));
+                    setNewProduct((product) => {
+                      const pricing_method = pricingMethodByName[value] || "";
+                      const jalousieBlade = pricing_method === "blade" && /jalousie/i.test(value);
+                      const hasConfiguredFrame = (product.blade_frame_types || []).some((frame) => String(frame.name || "").trim());
+                      const sellBladesOnly = jalousieBlade && !hasConfiguredFrame ? true : product.sell_blades_only;
+                      return {
+                        ...product,
+                        product_name: value,
+                        pricing_method,
+                        variant: "",
+                        ...(jalousieBlade ? {
+                          width: "",
+                          height: "",
+                          standard_size: "",
+                          size_limits: { min_width: "", max_width: "", min_height: "", max_height: "", unit: product.unit || "in" },
+                          allow_custom_frame_size: false,
+                          custom_frame_price: "",
+                          sell_blades_only: sellBladesOnly,
+                          sell_with_frame: hasConfiguredFrame && product.sell_with_frame,
+                          default_sale_mode: sellBladesOnly ? "blades_only" : hasConfiguredFrame ? "frame" : "",
+                          default_frame_type: hasConfiguredFrame ? product.default_frame_type || product.blade_frame_types.find((frame) => String(frame.name || "").trim())?.name || "" : "",
+                        } : {}),
+                      };
+                    });
                   }}
                   placeholder="Type product name"
                   className={fieldClass}
@@ -752,7 +787,7 @@ function ProductFormModal({
           </section>
 
           <section>
-            {sectionHeading("Price & Size")}
+            {sectionHeading(pricingMethodValue === "blade" ? "Pricing & Blade Options" : "Price & Size")}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {pricingMethodCards.map((method) => {
                 const selected = pricingMethodValue === method.key;
@@ -845,7 +880,7 @@ function ProductFormModal({
                       {sectionHeading("Blades with Frame")}
                       <p className={`-mt-2 mb-3 text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Set the frame types customers can choose. Each frame includes a blade count and frame price.</p>
                       <div className={`space-y-3 rounded-xl border p-3 ${darkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-white"}`}>
-                        <label className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 ${darkMode ? "border-slate-700 bg-slate-800" : "border-slate-200 bg-slate-50"}`}>
+                        {!isJalousiePerBladeProduct && <label className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 ${darkMode ? "border-slate-700 bg-slate-800" : "border-slate-200 bg-slate-50"}`}>
                           <input
                             type="checkbox"
                             checked={Boolean(newProduct.allow_custom_frame_size)}
@@ -860,8 +895,8 @@ function ProductFormModal({
                             className="mt-1 accent-red-700"
                           />
                           <span><span className={`block text-sm font-bold ${darkMode ? "text-slate-100" : "text-slate-900"}`}>Allow custom frame size</span><span className={`mt-0.5 block text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Customers can enter their own width and height. Use one flat frame price.</span></span>
-                        </label>
-                        {newProduct.allow_custom_frame_size && (
+                        </label>}
+                        {newProduct.allow_custom_frame_size && !isJalousiePerBladeProduct && (
                           <div className="grid gap-3 sm:grid-cols-2">
                             <div>
                               <label htmlFor="custom-frame-unit" className={labelClass}>Frame size unit</label>
@@ -1008,7 +1043,7 @@ function ProductFormModal({
               )}
             </div>
 
-            <div className={`mt-3 overflow-hidden rounded-xl border ${darkMode ? "border-slate-700" : "border-slate-200"}`}>
+            {!isJalousiePerBladeProduct && <div className={`mt-3 overflow-hidden rounded-xl border ${darkMode ? "border-slate-700" : "border-slate-200"}`}>
               <button type="button" aria-expanded={sizeLimitsOpen} onClick={() => setSizeLimitsOpen((open) => !open)} className={`flex w-full items-center justify-between px-4 py-3 text-left text-sm font-semibold ${darkMode ? "bg-slate-800 text-slate-100" : "bg-white text-slate-900"}`}>
                 <span>Size Limits <span className="font-normal text-slate-400">(optional · warns customers)</span></span>
                 <ChevronDown size={16} className={`transition ${sizeLimitsOpen ? "rotate-180" : ""}`} />
@@ -1029,7 +1064,7 @@ function ProductFormModal({
                   </div>
                 </div>
               )}
-            </div>
+            </div>}
 
             <div className={`mt-3 rounded-xl border px-4 py-3 ${darkMode ? "border-red-900 bg-red-950/40" : "border-rose-300 bg-rose-50"}`}>
               <p className={`text-sm font-bold ${darkMode ? "text-red-300" : "text-red-950"}`}>
@@ -1937,12 +1972,23 @@ function Products() {
           : Number(product.price_per_blade || product.unit_price) > 0
             ? [{ name: "Standard", price_per_blade: Number(product.price_per_blade || product.unit_price) }]
             : [];
+        const editPricingMethod = product.pricing_method === "per_piece" ? "fixed" : product.pricing_method || PRICING_METHOD[safeProduct.product_name || safeProduct.name] || "";
+        const editJalousieBlade = editPricingMethod === "blade" && /jalousie/i.test(safeProduct.product_name || safeProduct.name || "");
+        const editFrameTypes = Array.isArray(product.blade_frame_types) ? product.blade_frame_types.map((frame) => ({ ...frame })) : [];
+        const editSellWithFrame = Boolean(product.sell_with_frame) && (!editJalousieBlade || editFrameTypes.some((frame) => String(frame.name || "").trim()));
+        const editSellBladesOnly = product.sell_blades_only !== false || (editJalousieBlade && !editFrameTypes.some((frame) => String(frame.name || "").trim()));
+        const editDefaultSaleMode = editJalousieBlade
+          && product.default_sale_mode === "frame"
+          && !editFrameTypes.some((frame) => frame.name === product.default_frame_type)
+          && editSellBladesOnly
+          ? "blades_only"
+          : product.default_sale_mode || "blades_only";
         setEditingProduct(product);
         setNewProduct({
           name: safeProduct.name || "",
           product_type: safeProduct.product_type || safeProduct.type || "",
           product_name: safeProduct.product_name || safeProduct.name || "",
-          pricing_method: product.pricing_method === "per_piece" ? "fixed" : product.pricing_method || PRICING_METHOD[safeProduct.product_name || safeProduct.name] || "",
+          pricing_method: editPricingMethod,
           category: product.category || "",
           variant: safeProduct.variant || "",
           base_price: product.base_price || (product.pricing_method === "per_meter" ? "" : product.unit_price) || "",
@@ -1950,26 +1996,28 @@ function Products() {
           price_per_sqft: product.price_per_sqft ?? "",
           price_per_blade: product.price_per_blade ?? "",
           blade_glass_types: bladeGlassTypes,
-          sell_blades_only: product.sell_blades_only !== false,
-          sell_with_frame: Boolean(product.sell_with_frame),
-          blade_frame_types: Array.isArray(product.blade_frame_types) ? product.blade_frame_types.map((frame) => ({ ...frame })) : [],
-          allow_custom_frame_size: Boolean(product.allow_custom_frame_size),
+          sell_blades_only: editSellBladesOnly,
+          sell_with_frame: editSellWithFrame,
+          blade_frame_types: editFrameTypes,
+          allow_custom_frame_size: !editJalousieBlade && Boolean(product.allow_custom_frame_size),
           custom_frame_size_unit: product.custom_frame_size_unit || "in",
-          custom_frame_price: product.custom_frame_price ?? "",
+          custom_frame_price: editJalousieBlade ? "" : product.custom_frame_price ?? "",
           minimum_blades: product.minimum_blades ?? 1,
           maximum_blades: product.maximum_blades ?? "",
           customer_can_choose_blade_count: Boolean(product.customer_can_choose_blade_count),
           default_blade_glass_type: product.default_blade_glass_type || bladeGlassTypes[0]?.name || "",
-          default_sale_mode: product.default_sale_mode || "blades_only",
+          default_sale_mode: editDefaultSaleMode,
           default_frame_type: product.default_frame_type || "",
           show_price_per_blade: product.show_price_per_blade !== false,
           customization: product.customization || false,
           customization_fee: product.customization_fee ?? 0,
           extra_charges: Array.isArray(product.extra_charges) ? product.extra_charges.map((charge) => ({ ...charge })) : [],
-          size_limits: { min_width: "", max_width: "", min_height: "", max_height: "", unit: product.measurement_unit || "in", ...(product.size_limits || {}) },
-          standard_size: product.standard_size || "",
-          width: product.width ?? "",
-          height: product.height ?? "",
+          size_limits: editJalousieBlade
+            ? { min_width: "", max_width: "", min_height: "", max_height: "", unit: product.measurement_unit || "in" }
+            : { min_width: "", max_width: "", min_height: "", max_height: "", unit: product.measurement_unit || "in", ...(product.size_limits || {}) },
+          standard_size: editJalousieBlade ? "" : product.standard_size || "",
+          width: editJalousieBlade ? "" : product.width ?? "",
+          height: editJalousieBlade ? "" : product.height ?? "",
           unit: product.measurement_unit || "in",
           blade_count: product.blade_count ?? "",
           estimated_area: product.estimated_area ?? 0,
@@ -2118,7 +2166,7 @@ function Products() {
         setModalError("Enable at least one selling option: blades only or blades with frame.");
         return;
       }
-      if (newProduct.sell_with_frame && !newProduct.blade_frame_types?.length && !newProduct.allow_custom_frame_size) {
+      if (newProduct.sell_with_frame && !newProduct.blade_frame_types?.length && (isJalousiePerBladeProduct || !newProduct.allow_custom_frame_size)) {
         setModalError("Add a frame type or enable custom frame size.");
         return;
       }
@@ -2126,7 +2174,7 @@ function Products() {
         setModalError("Each frame type needs a name, blade count, and valid frame price.");
         return;
       }
-      if (newProduct.allow_custom_frame_size && Number(newProduct.custom_frame_price) <= 0) {
+      if (!isJalousiePerBladeProduct && newProduct.allow_custom_frame_size && Number(newProduct.custom_frame_price) <= 0) {
         setModalError("Custom frame price must be greater than zero.");
         return;
       }
@@ -2142,7 +2190,12 @@ function Products() {
         return;
       }
       const defaultGlass = newProduct.default_blade_glass_type || glassTypes[0]?.name;
-      const defaultSaleMode = newProduct.default_sale_mode || (newProduct.sell_blades_only ? "blades_only" : "frame");
+  const defaultSaleMode = isJalousiePerBladeProduct
+    && newProduct.default_sale_mode === "frame"
+    && !(newProduct.blade_frame_types || []).some((frame) => frame.name === newProduct.default_frame_type)
+    && newProduct.sell_blades_only
+    ? "blades_only"
+    : newProduct.default_sale_mode || (newProduct.sell_blades_only ? "blades_only" : "frame");
       if (!glassTypes.some((glass) => glass.name === defaultGlass)) {
         setModalError("Choose a default glass type from the configured glass types.");
         return;
@@ -2155,7 +2208,7 @@ function Products() {
         setModalError("Choose a default frame type from the configured frame types.");
         return;
       }
-      if (defaultSaleMode === "frame" && !newProduct.blade_frame_types.length && !newProduct.allow_custom_frame_size) {
+      if (defaultSaleMode === "frame" && !newProduct.blade_frame_types.length && (isJalousiePerBladeProduct || !newProduct.allow_custom_frame_size)) {
         setModalError("Choose a default frame type or enable custom frame size.");
         return;
       }
@@ -2180,8 +2233,9 @@ function Products() {
     }
 
     const limits = newProduct.size_limits || {};
-    if ((Number(limits.min_width) > 0 && Number(limits.max_width) > 0 && Number(limits.min_width) > Number(limits.max_width))
-      || (Number(limits.min_height) > 0 && Number(limits.max_height) > 0 && Number(limits.min_height) > Number(limits.max_height))) {
+    const hasInvalidSizeLimits = (Number(limits.min_width) > 0 && Number(limits.max_width) > 0 && Number(limits.min_width) > Number(limits.max_width))
+      || (Number(limits.min_height) > 0 && Number(limits.max_height) > 0 && Number(limits.min_height) > Number(limits.max_height));
+    if (!isJalousiePerBladeProduct && hasInvalidSizeLimits) {
       setModalError("A minimum size cannot be greater than its maximum.");
       return;
     }
@@ -2238,29 +2292,29 @@ function Products() {
           is_optional: Boolean(charge.is_optional),
           is_default_selected: false,
         })),
-        size_limits: {
+        size_limits: isJalousiePerBladeProduct ? {} : {
           min_width: Number(newProduct.size_limits?.min_width) || 0,
           max_width: Number(newProduct.size_limits?.max_width) || 0,
           min_height: Number(newProduct.size_limits?.min_height) || 0,
           max_height: Number(newProduct.size_limits?.max_height) || 0,
           unit: newProduct.size_limits?.unit || newProduct.unit || "in",
         },
-        standard_size: newProduct.standard_size || "",
-        width: numberIfEntered(newProduct.width),
-        height: numberIfEntered(newProduct.height),
+        standard_size: isJalousiePerBladeProduct ? "" : newProduct.standard_size || "",
+        width: isJalousiePerBladeProduct ? 0 : numberIfEntered(newProduct.width),
+        height: isJalousiePerBladeProduct ? 0 : numberIfEntered(newProduct.height),
         blade_count: numberIfEntered(newProduct.blade_count),
         blade_glass_types: (newProduct.blade_glass_types || []).map((glass) => ({ name: String(glass.name || "").trim(), price_per_blade: Number(glass.price_per_blade) || 0 })),
         sell_blades_only: Boolean(newProduct.sell_blades_only),
         sell_with_frame: Boolean(newProduct.sell_with_frame),
         blade_frame_types: (newProduct.blade_frame_types || []).map((frame) => ({ name: String(frame.name || "").trim(), blade_count: Number(frame.blade_count) || 0, price: Number(frame.price) || 0 })),
-        allow_custom_frame_size: Boolean(newProduct.allow_custom_frame_size),
+        allow_custom_frame_size: !isJalousiePerBladeProduct && Boolean(newProduct.allow_custom_frame_size),
         custom_frame_size_unit: newProduct.custom_frame_size_unit || newProduct.unit || "in",
-        custom_frame_price: Number(newProduct.custom_frame_price) || 0,
+        custom_frame_price: isJalousiePerBladeProduct ? 0 : Number(newProduct.custom_frame_price) || 0,
         minimum_blades: Math.max(1, Number(newProduct.minimum_blades) || 1),
         maximum_blades: Number(newProduct.maximum_blades) || 0,
         customer_can_choose_blade_count: Boolean(newProduct.customer_can_choose_blade_count),
         default_blade_glass_type: newProduct.default_blade_glass_type || newProduct.blade_glass_types?.[0]?.name || "",
-        default_sale_mode: newProduct.default_sale_mode || (newProduct.sell_blades_only ? "blades_only" : "frame"),
+        default_sale_mode: defaultSaleMode,
         default_frame_type: newProduct.default_frame_type || "",
         show_price_per_blade: newProduct.show_price_per_blade !== false,
         estimated_area: Number(newProduct.estimated_area) || 0,
@@ -2483,7 +2537,9 @@ function Products() {
                       const unitPriceLabel = pricingMethod === "sqft" && productAreaSqft > 0 && estimatedCost > 0
                         ? `₱${(Number(product.price_per_sqft) || estimatedCost / productAreaSqft).toLocaleString("en-PH", { maximumFractionDigits: 2 })} / sq ft`
                         : getProductPriceLabel(product);
-                      const productDimensions = pricingMethod === "per_meter" && productWidth > 0
+                      const productDimensions = pricingMethod === "blade"
+                        ? ""
+                        : pricingMethod === "per_meter" && productWidth > 0
                         ? `${productWidth.toLocaleString()} ${product.measurement_unit || "m"}`
                         : productWidth > 0 && productHeight > 0
                         ? `${productWidth.toLocaleString()} × ${productHeight.toLocaleString()} ${product.measurement_unit || "in"}`

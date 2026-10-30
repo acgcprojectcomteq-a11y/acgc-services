@@ -37,6 +37,8 @@ import { getProducts } from "@/api/products";
 import { toSquareFeet } from "@/lib/estimator";
 import { getMeasuredProductLineTotal, getProductLineBreakdown, getProductSizeLimitWarnings } from "@/lib/productPricing";
 import UnsavedChangesDialog from "@/components/UnsavedChangesDialog";
+import FullAddressField from "@/components/FullAddressField";
+import { getFullAddressError, isValidFullAddress, normalizeFullAddress } from "@/lib/fullAddressValidation";
 import { createUnsavedSnapshot } from "@/lib/unsavedSnapshot";
 import { getSystemSettings, searchCustomers } from "@/api/users";
 import { uploadFiles } from "@/api/uploads";
@@ -692,13 +694,16 @@ const createContractPrintClone = (element) => {
   return { wrapper, clone };
 };
 
-export const validateInspectionPayload = (payload = {}, { requireScheduleTimes = false } = {}) => {
+export const validateInspectionPayload = (payload = {}, { requireScheduleTimes = false, validateSiteAddress = true } = {}) => {
   const nextErrors = {};
 
   if (!payload.customerName?.trim()) nextErrors.customerName = "Client name is required.";
   if (!payload.phone?.trim()) nextErrors.phone = "Phone number is required.";
   else if (!isValidPhilippinePhone(payload.phone)) nextErrors.phone = getPhilippinePhoneError(payload.phone);
-  if (!payload.siteAddress?.trim()) nextErrors.siteAddress = "Site address is required.";
+  if (validateSiteAddress) {
+    if (!payload.siteAddress?.trim()) nextErrors.siteAddress = "Site address is required.";
+    else if (!isValidFullAddress(payload.siteAddress)) nextErrors.siteAddress = getFullAddressError(payload.siteAddress);
+  }
   if (!payload.inspection_date) nextErrors.inspection_date = "Inspection date is required.";
   if (!Number.isFinite(Number(payload.inspection_duration_minutes)) || Number(payload.inspection_duration_minutes) < 30) nextErrors.inspection_duration_minutes = "Inspection duration must be at least 30 minutes.";
   if (!Number.isFinite(Number(payload.installation_duration_minutes)) || Number(payload.installation_duration_minutes) < 1) nextErrors.installation_duration_minutes = "Installation duration must be at least 1 minute.";
@@ -988,6 +993,7 @@ function SiteInspection() {
   const [exitConfirmation, setExitConfirmation] = useState(null);
   const newInspectionBaselineRef = useRef("");
   const editInspectionBaselineRef = useRef("");
+  const editInspectionAddressBaselineRef = useRef("");
   const [newInspectionStep, setNewInspectionStep] = useState(1);
   const newInspectionBodyRef = useRef(null);
   const [inspections, setInspections] = useState([]);
@@ -3276,12 +3282,14 @@ function SiteInspection() {
         payment_method: paymentProof.paymentMethod,
         transaction_number: paymentProof.transactionNumber,
       };
+      editInspectionAddressBaselineRef.current = nextEditInspection.siteAddress || "";
       editInspectionBaselineRef.current = createUnsavedSnapshot(nextEditInspection);
       setManualOverrideLocked(true);
       setEditInspection(nextEditInspection);
     } else {
       // fallback: open an empty editor
       const nextEditInspection = { id: orderId, inspection_date: "", inspection_time: "", is_rush_order: false, inspection_notes: "", issues_found: "", inspection_status: "pending", estimated_installation_date: "", estimated_installation_time: "" };
+      editInspectionAddressBaselineRef.current = "";
       editInspectionBaselineRef.current = createUnsavedSnapshot(nextEditInspection);
       setManualOverrideLocked(true);
       setEditInspection(nextEditInspection);
@@ -3657,7 +3665,9 @@ function SiteInspection() {
         return;
       }
     }
-    const validationErrors = validateInspectionPayload(editInspection);
+    const validationErrors = validateInspectionPayload(editInspection, {
+      validateSiteAddress: normalizeFullAddress(editInspection.siteAddress) !== normalizeFullAddress(editInspectionAddressBaselineRef.current),
+    });
     if (Object.keys(validationErrors).length > 0) {
       setErrors(validationErrors);
       if (["customerName", "phone", "siteAddress", "inspection_date", "estimated_installation_date", "customerId"].some((field) => validationErrors[field])) {
@@ -3681,11 +3691,13 @@ function SiteInspection() {
           customer_name: editInspection.customerName || undefined,
           customer_email: editInspection.customerEmail || undefined,
           customer_phone: editInspection.phone || undefined,
-          shipping_address: editInspection.siteAddress || undefined,
           has_account_on_website: Boolean(editInspection.has_account_on_website),
         } : {
           has_account_on_website: true,
         }),
+        ...(normalizeFullAddress(editInspection.siteAddress) !== normalizeFullAddress(editInspectionAddressBaselineRef.current)
+          ? { shipping_address: normalizeFullAddress(editInspection.siteAddress) }
+          : {}),
         manual_override: editInspection.manual_override || "",
         inspection_date: toApiDate(editInspection.inspection_date),
         inspection_time: editInspection.inspection_time || "",
@@ -4659,15 +4671,18 @@ function SiteInspection() {
                       </div>
 
                       <div className="md:col-span-1">
-                        <label className={`mb-2 block text-[14px] font-bold ${labelClass}`}>Site Address <span className="text-red-400">*</span></label>
-                        <input
+                        <FullAddressField
+                          as="input"
                           type="text"
+                          name="new-site-address"
+                          label="Site Address *"
                           placeholder="e.g. 45 Magsaysay Dr."
                           className={fieldClass}
+                          labelClassName={`mb-2 text-[14px] font-bold ${labelClass}`}
+                          helperClassName={darkMode ? "text-slate-400" : "text-slate-500"}
                           value={newInspection.siteAddress}
                           onChange={(e) => handleInspectionFieldChange("siteAddress", e.target.value)}
                         />
-                        {errors.siteAddress && <p className="mt-2 text-xs text-red-400">{errors.siteAddress}</p>}
                       </div>
                     </div>
 
@@ -5850,12 +5865,17 @@ function SiteInspection() {
                       </div>
 
                       <div>
-                        <label className={`mb-2 block text-[14px] font-bold ${labelClass}`}>Site Address</label>
-                        <input
+                        <FullAddressField
+                          as="input"
                           type="text"
+                          name="edit-site-address"
+                          label="Site Address"
                           className={fieldClass}
+                          labelClassName={`mb-2 text-[14px] font-bold ${labelClass}`}
+                          helperClassName={darkMode ? "text-slate-400" : "text-slate-500"}
                           value={editInspection.siteAddress || ""}
                           onChange={(e) => handleEditChange("siteAddress", e.target.value)}
+                          showError={normalizeFullAddress(editInspection.siteAddress) !== normalizeFullAddress(editInspectionAddressBaselineRef.current)}
                         />
                       </div>
                     </div>

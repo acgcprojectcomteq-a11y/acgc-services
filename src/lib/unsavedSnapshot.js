@@ -1,6 +1,10 @@
 const numericFieldPattern = /^(width|height|area|.*_(width|height|area)|qty|quantity|progress|rating|amount|.*_amount|price|.*_price(?:_override)?|cost|.*_cost|total|.*_total|count|.*_count|days|.*_days|blade_count|rate|.*_rate|fee|.*_fee|manual_override|minimum_blades|maximum_blades|custom_warranty_days)$/i;
 
 const normalizeSnapshotValue = (value, fieldName = "") => {
+  // Optional form values are often loaded as null but rendered and kept as
+  // empty strings. Treat both as the same saved value so merely opening and
+  // closing a form does not trigger the discard confirmation.
+  if (value === null || value === undefined || value === "") return "";
   if (numericFieldPattern.test(fieldName) && typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value))) {
     return Number(value);
   }

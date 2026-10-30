@@ -1,1 +1,0 @@
-var e=e=>{let t=String(e??``).trimStart(),n=t.replace(/\D/g,``);return`${t.startsWith(`+`)?`+`:``}${n}`},t=e=>/^(?:09\d{9}|\+639\d{9}|639\d{9})$/.test(String(e??``).trim()),n=e=>t(e)?``:`Enter an 11-digit PH mobile number (09XXXXXXXXX) or +63 format (+639XXXXXXXXX).`;export{t as n,e as r,n as t};

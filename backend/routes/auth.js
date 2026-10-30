@@ -16,6 +16,7 @@ import AdminRecoveryState from "../models/AdminRecoveryState.js";
 import SystemSetting from "../models/SystemSetting.js";
 import BackupOperationAudit from "../models/BackupOperationAudit.js";
 import SuperAdminPromotionAudit from "../models/SuperAdminPromotionAudit.js";
+import { getFullAddressError, normalizeFullAddress } from "../utils/fullAddressValidation.js";
 import { authMiddleware, roleMiddleware, staffModulePermission, staffModulePermissionIfStaff } from "../middleware/auth.js";
 import { sendMail } from "../config/mailer.js";
 import {
@@ -104,63 +105,6 @@ const getPrimarySuperAdminId = async () => {
 
 const sanitizeStaffAccess = (staffAccess) => staffAccess && typeof staffAccess === "object" && !Array.isArray(staffAccess) ? normalizeStaffAccess(staffAccess) : null;
 const migrateStaffAccess = (staffAccess) => normalizeStaffAccess(staffAccess || {});
-
-const normalizeAddress = (value) => {
-  if (!value) return "";
-  const cleaned = value
-    .trim()
-    .replace(/\s+/g, " ")
-    .replace(/[,;]+/g, ",")
-    .replace(/\s*[.,]\s*/g, ", ")
-    .replace(/\s*,\s*$/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  const canonical = (text) =>
-    text
-      .toLowerCase()
-      .replace(/[^a-z0-9 ]+/g, " ")
-      .replace(/\b(city|province|zip|code|street|st|road|rd)\b/g, "")
-      .replace(/\s+/g, " ")
-      .trim();
-
-  const parts = cleaned
-    .split(",")
-    .map((part) => part.trim())
-    .filter(Boolean);
-
-  const normalizedParts = [];
-  const seen = [];
-
-  for (const part of parts) {
-    const key = canonical(part);
-    if (!key) {
-      normalizedParts.push(part);
-      continue;
-    }
-    const isDuplicate = seen.some(
-      (existing) => existing === key || existing.includes(key) || key.includes(existing)
-    );
-    if (!isDuplicate) {
-      seen.push(key);
-      normalizedParts.push(part);
-    }
-  }
-
-  return normalizedParts.join(", ");
-};
-
-const buildAddressFromRequest = (reqBody) => {
-  if (!reqBody) return "";
-  const address = reqBody.address || reqBody.street_address || "";
-  const parts = [address];
-
-  if (reqBody.city) parts.push(reqBody.city);
-  if (reqBody.province) parts.push(reqBody.province);
-  if (reqBody.zip_code) parts.push(reqBody.zip_code);
-
-  return normalizeAddress(parts.filter(Boolean).join(", "));
-};
 
 const router = express.Router();
 const ADMIN_RECOVERY_STATE_KEY = "primary-administrator";
@@ -1364,6 +1308,10 @@ router.post("/register", async (req, res) => {
       });
     }
 
+    const normalizedStreetAddress = normalizeFullAddress(street_address);
+    const addressError = getFullAddressError(normalizedStreetAddress);
+    if (addressError) return res.status(400).json({ success: false, message: addressError });
+
     if (!/^[a-zA-Z0-9._-]{6,12}$/.test(String(username).trim())) {
       return res.status(400).json({
         success: false,
@@ -1405,7 +1353,7 @@ router.post("/register", async (req, res) => {
       first_name,
       last_name,
       phone: phone || "",
-      street_address: street_address || "",
+      street_address: normalizedStreetAddress,
       city: city || "",
       province: province || "",
       zip_code: zip_code || "",
@@ -2867,8 +2815,16 @@ router.put("/profile", authMiddleware, staffModulePermissionIfStaff("profile", "
     if (first_name) user.first_name = first_name;
     if (last_name) user.last_name = last_name;
     if (phone) user.phone = phone;
-    const normalizedAddress = buildAddressFromRequest({ address, street_address, city, province, zip_code });
-    if (normalizedAddress) user.street_address = normalizedAddress;
+    const addressWasSubmitted = address !== undefined || street_address !== undefined;
+    if (addressWasSubmitted) {
+      const submittedAddress = normalizeFullAddress(street_address ?? address);
+      const addressChanged = submittedAddress !== normalizeFullAddress(user.street_address);
+      if (addressChanged) {
+        const addressError = getFullAddressError(submittedAddress);
+        if (addressError) return res.status(400).json({ success: false, message: addressError });
+        user.street_address = submittedAddress;
+      }
+    }
     if (city) user.city = city;
     if (province) user.province = province;
     if (zip_code) user.zip_code = zip_code;

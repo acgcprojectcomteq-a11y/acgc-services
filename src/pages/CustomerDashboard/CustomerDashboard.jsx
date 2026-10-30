@@ -76,11 +76,14 @@ import {
 import { uploadFiles } from "@/api/uploads";
 import ContractModal from "../../components/ContractModal";
 import UnsavedChangesDialog from "@/components/UnsavedChangesDialog";
+import FullAddressField from "@/components/FullAddressField";
 import { createUnsavedSnapshot } from "@/lib/unsavedSnapshot";
+import { getFullAddressError, isValidFullAddress, normalizeFullAddress } from "@/lib/fullAddressValidation";
 import AboutBusinessContent from "@/components/AboutBusinessContent";
 import FilterDropdown from "@/components/FilterDropdown";
 import OtpCodeInput from "@/components/OtpCodeInput";
 import ProductPriceEstimator, { getProductEstimatorState } from "@/components/ProductPriceEstimator";
+import { getProductEstimatorQuantityError, MAX_PRODUCT_ESTIMATOR_QUANTITY } from "@/lib/productEstimatorQuantity";
 import { formatOrderItemMeasurements } from "@/components/OrderProgressTimeline";
 import OrderTimelineModal from "@/components/OrderTimelineModal";
 import { calculateEstimate } from "@/lib/estimator";
@@ -266,6 +269,10 @@ const buildFullAddress = (user) => {
   const addressParts = [user.street_address, user.city, user.province, user.zip_code].filter(Boolean);
   return normalizeAddress(addressParts.join(", "));
 };
+
+const buildDeliveryAddress = (address = {}) => normalizeAddress(
+  [address.street_address, address.city, address.province, address.zip_code].filter(Boolean).join(", ")
+);
 
 const renderRatingStars = (rating = 0, size = 18) => {
   const normalizedRating = Number(rating) || 0;
@@ -571,8 +578,24 @@ function CustomerDashboard() {
   const batchOrderBaselineRef = useRef("");
   const paymentProofBaselineRef = useRef("");
   const productDetailsBaselineRef = useRef("");
+  const productDetailsDirtyRef = useRef(false);
   const [showOrderSuccessModal, setShowOrderSuccessModal] = useState(false);
   const [orderSuccessData, setOrderSuccessData] = useState(null);
+
+  const getProductDetailsDraftSnapshot = (form = {}) => createUnsavedSnapshot({
+    unit: form.unit,
+    width: form.width,
+    height: form.height,
+    // The estimator treats an empty/invalid quantity as 1, so match that
+    // calculation here and avoid marking a cleared "1" input as a change.
+    quantity: Math.max(1, Number(form.quantity) || 1),
+    blade_glass_type: form.blade_glass_type,
+    sale_mode: form.sale_mode,
+    frame_type: form.frame_type,
+    custom_frame_size: form.custom_frame_size,
+    blade_count: form.blade_count,
+    extra_charges: form.extra_charges,
+  });
 
   useEffect(() => {
     if (showCartDecisionModal) estimateFormBaselineRef.current = createUnsavedSnapshot(estimateForm);
@@ -2734,6 +2757,11 @@ function CustomerDashboard() {
 
   const handleEstimateAddToCart = async () => {
     if (!cartDecisionProduct) return;
+    const quantityError = getProductEstimatorQuantityError(estimateForm.quantity);
+    if (quantityError) {
+      setCartActionError(quantityError);
+      return;
+    }
     if (!estimateForm.width || !estimateForm.height) {
       setCartActionError("Please enter width and height to estimate.");
       return;
@@ -2773,6 +2801,11 @@ function CustomerDashboard() {
       return;
     }
     if (!cartDecisionProduct) return;
+    const quantityError = getProductEstimatorQuantityError(estimateForm.quantity);
+    if (quantityError) {
+      setCartActionError(quantityError);
+      return;
+    }
     const bladeCountError = getProductEstimatorState(cartDecisionProduct, estimateForm).bladeCountError;
     if (bladeCountError) {
       setCartActionError(bladeCountError);
@@ -2801,6 +2834,11 @@ function CustomerDashboard() {
     }
     if (!canRequestOrders) {
       setCartActionError("Your estimate is ready, but order requests are disabled for your account.");
+      return;
+    }
+    const quantityError = getProductEstimatorQuantityError(estimateForm.quantity);
+    if (quantityError) {
+      setCartActionError(quantityError);
       return;
     }
     const bladeCountError = getProductEstimatorState(cartDecisionProduct, estimateForm).bladeCountError;
@@ -2857,6 +2895,11 @@ function CustomerDashboard() {
       setDeliveryConfirmError("Please complete your delivery information before proceeding.");
       return false;
     }
+    const addressError = getFullAddressError(buildDeliveryAddress(deliveryConfirmForm));
+    if (addressError) {
+      setDeliveryConfirmError(addressError);
+      return false;
+    }
     if (!isValidPhilippinePhone(deliveryConfirmForm.phone)) {
       setDeliveryConfirmError(getPhilippinePhoneError(deliveryConfirmForm.phone));
       return false;
@@ -2871,6 +2914,11 @@ function CustomerDashboard() {
       return;
     }
     if (deliveryConfirmMode === "estimate") {
+      const quantityError = getProductEstimatorQuantityError(estimateForm.quantity);
+      if (quantityError) {
+        setDeliveryConfirmError(quantityError);
+        return;
+      }
       const bladeCountError = getProductEstimatorState(cartDecisionProduct, estimateForm).bladeCountError;
       if (bladeCountError) {
         setDeliveryConfirmError(bladeCountError);
@@ -2916,6 +2964,13 @@ function CustomerDashboard() {
   };
 
   const handleSubmitOrderRequest = async () => {
+    if (reviewOrderMode === "estimate") {
+      const quantityError = getProductEstimatorQuantityError(estimateForm.quantity);
+      if (quantityError) {
+        setCartActionError(quantityError);
+        return;
+      }
+    }
     if (onlineOrderCooldownUntil && onlineOrderCooldownUntil.getTime() > Date.now()) {
       setCartActionError(onlineOrderCooldownMessage);
       return;
@@ -2930,6 +2985,12 @@ function CustomerDashboard() {
         setCartActionError(bladeCountError);
         return;
       }
+    }
+
+    const currentShippingAddress = buildDeliveryAddress(deliveryConfirmForm) || buildFullAddress(user);
+    if (!isValidFullAddress(currentShippingAddress)) {
+      setCartActionError(getFullAddressError(currentShippingAddress));
+      return;
     }
 
     setCartActionError("");
@@ -3188,11 +3249,13 @@ function CustomerDashboard() {
       unit: defaultDimensions.unit || product?.custom_frame_size_unit || "in",
       width: defaultDimensions.width > 0 ? String(defaultDimensions.width) : "0",
       height: defaultDimensions.height > 0 ? String(defaultDimensions.height) : "0",
+      quantity: 1,
       extra_charges: getDefaultExtraChargeSelections(product),
       ...getDefaultBladeSelections(product),
     };
     setProductEstimatorForm(initialEstimatorForm);
-    productDetailsBaselineRef.current = createUnsavedSnapshot(initialEstimatorForm);
+    productDetailsBaselineRef.current = getProductDetailsDraftSnapshot(initialEstimatorForm);
+    productDetailsDirtyRef.current = false;
     setShowAboutProduct(false);
   };
 
@@ -3207,8 +3270,13 @@ function CustomerDashboard() {
     setShowAboutProduct(false);
   };
 
+  const updateProductDetailsEstimatorForm = (nextForm) => {
+    setProductEstimatorForm(nextForm);
+    productDetailsDirtyRef.current = getProductDetailsDraftSnapshot(nextForm) !== productDetailsBaselineRef.current;
+  };
+
   const requestCloseProductModal = () => requestCustomerExit(
-    createUnsavedSnapshot(productEstimatorForm) !== productDetailsBaselineRef.current,
+    productDetailsDirtyRef.current,
     closeProductModal,
   );
 
@@ -3393,7 +3461,9 @@ function CustomerDashboard() {
       setShowOrderNowModal(false);
       setOrderNowProduct(null);
     } else if (deliveryConfirmMode === "estimate") {
-      setProductEstimatorForm((current) => ({ ...current, ...estimateForm }));
+      const nextForm = { ...productEstimatorForm, ...estimateForm };
+      setProductEstimatorForm(nextForm);
+      productDetailsDirtyRef.current = getProductDetailsDraftSnapshot(nextForm) !== productDetailsBaselineRef.current;
       setSelectedProduct(cartDecisionProduct);
       setCartDecisionProduct(null);
     }
@@ -3506,6 +3576,12 @@ function CustomerDashboard() {
       return false;
     }
 
+    const addressChanged = normalizeFullAddress(profileForm.street_address) !== normalizeFullAddress(user?.street_address);
+    if (addressChanged && !isValidFullAddress(profileForm.street_address)) {
+      setSaveError(getFullAddressError(profileForm.street_address));
+      return false;
+    }
+
     if (profileForm.new_password || profileForm.confirm_password) {
       if (!profileForm.new_password) {
         setSaveError("Please enter a new password.");
@@ -3529,7 +3605,7 @@ function CustomerDashboard() {
         first_name: profileForm.first_name.trim(),
         last_name: profileForm.last_name.trim(),
         phone: profileForm.phone.trim(),
-        street_address: normalizeAddress(profileForm.street_address || ""),
+        street_address: normalizeFullAddress(profileForm.street_address),
         city: profileForm.city.trim(),
         province: profileForm.province.trim(),
         zip_code: profileForm.zip_code.trim(),
@@ -4024,6 +4100,11 @@ function CustomerDashboard() {
       return;
     }
     if (!batchOrderAgreed) return;
+    const checkoutAddress = normalizeFullAddress(batchOrderForm.shipping_address || buildFullAddress(user));
+    if (!isValidFullAddress(checkoutAddress)) {
+      setCheckoutError(getFullAddressError(checkoutAddress));
+      return;
+    }
     if (!isValidPhilippinePhone(batchOrderForm.phone)) {
       setCheckoutError(getPhilippinePhoneError(batchOrderForm.phone));
       return;
@@ -4066,7 +4147,7 @@ function CustomerDashboard() {
       const response = await createOrder({
         items: orderItems,
         cart_item_ids: checkedOutCartIds,
-        shipping_address: normalizeAddress(batchOrderForm.shipping_address || buildFullAddress(user)),
+        shipping_address: normalizeFullAddress(batchOrderForm.shipping_address || buildFullAddress(user)),
         customer_phone: batchOrderForm.phone.trim(),
       });
 
@@ -4850,14 +4931,15 @@ function CustomerDashboard() {
 
   const estimateWidth = Number(estimateForm.width) || 0;
   const estimateHeight = Number(estimateForm.height) || 0;
-  const estimateQuantity = Math.max(1, Number(estimateForm.quantity) || 1);
+  const estimateQuantityError = getProductEstimatorQuantityError(estimateForm.quantity);
+  const estimateQuantity = estimateQuantityError ? 0 : Number(estimateForm.quantity);
   const selectedUnitLabel = estimateForm.unit === 'in' ? 'in' : estimateForm.unit === 'ft' ? 'ft' : estimateForm.unit === 'cm' ? 'cm' : 'm';
   const selectedAreaUnitLabel = estimateForm.unit === 'in' ? 'in²' : estimateForm.unit === 'ft' ? 'ft²' : estimateForm.unit === 'cm' ? 'cm²' : 'm²';
   const estimateAreaSelectedUnit = estimateWidth && estimateHeight ? estimateWidth * estimateHeight : 0;
   const estimateTotalAreaSelectedUnit = estimateAreaSelectedUnit * estimateQuantity;
   
   // Use comprehensive calculateEstimate like admin does
-  const rawEstimateResult = cartDecisionProduct ? calculateEstimate({
+  const rawEstimateResult = cartDecisionProduct && !estimateQuantityError ? calculateEstimate({
     productName: cartDecisionProduct.product_name || cartDecisionProduct.name,
     categoryKey: cartDecisionProduct.product_type || cartDecisionProduct.category,
     variantName: cartDecisionProduct.variant,
@@ -4874,7 +4956,7 @@ function CustomerDashboard() {
   const estimateResult = cartDecisionProduct
     ? {
         ...rawEstimateResult,
-        estimated_price: getProductLineTotal(cartDecisionProduct, {
+        estimated_price: estimateQuantityError ? 0 : getProductLineTotal(cartDecisionProduct, {
           width: estimateWidth,
           height: estimateHeight,
           measurement_unit: estimateForm.unit,
@@ -4892,6 +4974,11 @@ function CustomerDashboard() {
 
   const productEstimatorWidth = Number(productEstimatorForm.width) || 0;
   const productEstimatorHeight = Number(productEstimatorForm.height) || 0;
+  const productEstimatorState = selectedProduct
+    ? getProductEstimatorState(selectedProduct, productEstimatorForm)
+    : null;
+  const productEstimatorDimensionError = productEstimatorState?.dimensionError || "";
+  const productEstimatorQuantityError = productEstimatorState?.quantityError || "";
   const isBladeEstimator = selectedProduct?.pricing_method === "blade";
   const isMeterEstimator = selectedProduct?.pricing_method === "per_meter" || selectedProduct?.unit === "per_meter";
   const isPieceEstimator = ["per_piece", "per_set", "piece", "set"].includes(String(selectedProduct?.pricing_method || selectedProduct?.unit || "").toLowerCase());
@@ -4903,7 +4990,7 @@ function CustomerDashboard() {
     ? Number(selectedBladeFrame?.blade_count) || Number(productEstimatorForm.blade_count) || 0
     : Number(productEstimatorForm.blade_count) || Number(selectedProduct?.minimum_blades) || 1;
   const productEstimatorNeedsDimensions = (!isBladeEstimator && !isPieceEstimator) || (productEstimatorForm.sale_mode === "frame" && productEstimatorForm.custom_frame_size);
-  const rawProductEstimatorResult = selectedProduct ? calculateEstimate({
+  const rawProductEstimatorResult = selectedProduct && !productEstimatorDimensionError && !productEstimatorQuantityError ? calculateEstimate({
     productName: selectedProduct.product_name || selectedProduct.name,
     categoryKey: selectedProduct.product_type || selectedProduct.category,
     variantName: selectedProduct.variant,
@@ -4920,7 +5007,7 @@ function CustomerDashboard() {
   const productEstimatorResult = selectedProduct
     ? {
         ...rawProductEstimatorResult,
-        estimated_price: getProductLineTotal(selectedProduct, {
+        estimated_price: productEstimatorDimensionError || productEstimatorQuantityError ? 0 : getProductLineTotal(selectedProduct, {
           width: productEstimatorWidth,
           height: productEstimatorHeight,
           measurement_unit: productEstimatorForm.unit,
@@ -4954,14 +5041,15 @@ function CustomerDashboard() {
         : Boolean(selectedBladeFrame))) &&
     Number(productEstimatorResult?.estimated_price) > 0
   );
-  const hasProductEstimatorEstimate = isBladeEstimator
+  const hasProductEstimatorEstimate = !productEstimatorDimensionError && !productEstimatorQuantityError && (isBladeEstimator
     ? hasBladeEstimate
     : isMeterEstimator
       ? productEstimatorWidth > 0 && Number(productEstimatorResult?.estimated_price) > 0
       : isPieceEstimator
         ? Number(productEstimatorResult?.estimated_price) > 0
-      : productEstimatorWidth > 0 && productEstimatorHeight > 0 && Number(productEstimatorResult?.estimated_price) > 0;
-  const productEstimatorBladeCountError = getProductEstimatorState(selectedProduct, productEstimatorForm).bladeCountError;
+      : productEstimatorWidth > 0 && productEstimatorHeight > 0 && Number(productEstimatorResult?.estimated_price) > 0);
+  const productEstimatorBladeCountError = productEstimatorState?.bladeCountError || "";
+  const productEstimatorInputsInvalid = Boolean(productEstimatorDimensionError || productEstimatorQuantityError || productEstimatorBladeCountError);
 
   const estimateArea = estimateResult.estimated_area || 0;
   const estimateTotalArea = estimateArea;
@@ -5083,8 +5171,10 @@ function CustomerDashboard() {
     : [];
   const isDeliveryConfirmValid = Boolean(
     deliveryConfirmForm.phone.trim() &&
-    deliveryConfirmForm.street_address.trim()
+    deliveryConfirmForm.street_address.trim() &&
+    isValidFullAddress(buildDeliveryAddress(deliveryConfirmForm))
   );
+  const isBatchOrderAddressValid = isValidFullAddress(batchOrderForm.shipping_address || buildFullAddress(user));
 
   const cartQuantity = cartItems.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
   const showFeaturedSection = activeTab === "home";
@@ -6058,33 +6148,26 @@ function CustomerDashboard() {
                           )}
 
                           {String(product.pricing_method || product.unit).toLowerCase() === "blade" && product.sell_with_frame && product.blade_frame_types?.length > 0 && (
-                            <p className={`truncate text-[12px] font-medium ${darkMode ? "text-slate-300" : "text-slate-600"}`} title={`With frame: ${product.blade_frame_types.map((frame) => frame.name).join(" / ")}`}>
-                              With frame: {product.blade_frame_types.map((frame) => frame.name).join(" / ")}
+                            <p className={`flex flex-wrap items-baseline gap-x-1 text-sm leading-5 max-md:text-xs ${darkMode ? "text-slate-200" : "text-slate-800"}`} title={`With frame: ${product.blade_frame_types.map((frame) => frame.name).join(" / ")}`}>
+                              <span className={`font-semibold ${darkMode ? "text-slate-300" : "text-slate-600"}`}>With frame:</span>
+                              <span className="font-bold">{product.blade_frame_types.map((frame) => frame.name).join(" / ")}</span>
                             </p>
                           )}
 
                           {String(product.pricing_method || product.unit).toLowerCase() !== "blade" && (
                           <div className={`grid gap-2 rounded-2xl border px-3 py-2.5 max-md:gap-1 max-md:rounded-lg max-md:px-2 max-md:py-1.5 ${darkMode ? "border-slate-700 bg-slate-900/75" : "border-slate-200 bg-slate-50"}`}>
-                            {product.dimensions ? (
-                              <p className="flex items-center justify-between gap-2 text-[11px] max-md:text-[9px]">
-                                <span className={darkMode ? "text-slate-400" : "text-slate-500"}>Dimensions</span>
-                                <span className={`truncate font-semibold ${darkMode ? "text-slate-100" : "text-slate-700"}`}>{formatProductDimensionLabel(product.dimensions)}</span>
+                            {!isBladePricingProduct(product) && (getProductDefaultDimensions(product).width > 0 || getProductDefaultDimensions(product).height > 0) && <>
+                              <p className="flex items-center justify-between gap-2 text-sm max-md:text-xs">
+                                <span className={darkMode ? "shrink-0 font-medium text-slate-300" : "shrink-0 font-medium text-slate-600"}>Width × Height</span>
+                                <span className={`truncate text-right font-bold ${darkMode ? "text-white" : "text-slate-900"}`}>
+                                  {getProductDefaultDimensions(product).width || "N/A"} × {getProductDefaultDimensions(product).height || "N/A"}
+                                </span>
                               </p>
-                            ) : product.standard_size ? (
-                              <p className="flex items-center justify-between gap-2 text-[11px] max-md:text-[9px]">
-                                <span className={darkMode ? "text-slate-400" : "text-slate-500"}>Dimensions</span>
-                                <span className={`truncate font-semibold ${darkMode ? "text-slate-100" : "text-slate-700"}`}>{formatProductDimensionLabel(product.standard_size)}</span>
-                              </p>
-                            ) : product.width && product.height ? (
-                              <p className="flex items-center justify-between gap-2 text-[11px]">
-                                <span className={darkMode ? "text-slate-400" : "text-slate-500"}>Dimensions</span>
-                                <span className={`truncate font-semibold ${darkMode ? "text-slate-100" : "text-slate-700"}`}>{product.width}  x {product.height}</span>
-                              </p>
-                            ) : null}
+                            </>}
 
-                            <p className="flex items-center justify-between gap-2 text-[11px] max-md:text-[9px]">
-                              <span className={darkMode ? "text-slate-400" : "text-slate-500"}>Unit rate</span>
-                              <span className={`font-semibold ${darkMode ? "text-slate-100" : "text-slate-700"}`}>{getProductUnitRate(product)}</span>
+                            <p className="flex items-center justify-between gap-2 text-sm max-md:text-xs">
+                              <span className={darkMode ? "font-medium text-slate-300" : "font-medium text-slate-600"}>Unit rate</span>
+                              <span className={`font-bold ${darkMode ? "text-white" : "text-slate-900"}`}>{getProductUnitRate(product)}</span>
                             </p>
                           </div>
                           )}
@@ -6214,15 +6297,15 @@ function CustomerDashboard() {
                 <div className={`mobile-fullscreen-dialog order-flow-modal relative flex w-full flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ${!isProductModalReadOnly && isBladePricingProduct(selectedProduct) ? "max-h-[92vh] max-w-7xl" : "max-h-[88vh] max-w-5xl"} ${darkMode ? "order-flow-modal-dark" : ""}`}>
                   {/* Header with cleaner elevated styling */}
                   {!isProductModalReadOnly && (
-                    <div className="flex-shrink-0 border-b border-red-500/30 bg-gradient-to-r from-red-600 via-red-600 to-red-700 px-4 py-1.5 shadow-[0_8px_18px_rgba(220,38,38,0.16)] sm:px-5 sm:py-2">
+                    <div className="flex-shrink-0 border-b border-red-500/30 bg-gradient-to-r from-red-700 via-red-600 to-red-600 px-4 py-2.5 shadow-[0_8px_18px_rgba(220,38,38,0.16)] sm:px-5 sm:py-3">
                       <div className="flex min-w-0 items-center justify-between gap-4">
                         <div className="flex min-w-0 items-center gap-2.5 text-white">
-                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/12 ring-1 ring-white/20 backdrop-blur-sm sm:h-9 sm:w-9">
-                            <Package size={16} aria-hidden="true" />
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/12 ring-1 ring-white/20">
+                            <Package size={18} aria-hidden="true" />
                           </div>
                           <div className="min-w-0">
-                            <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-red-100/90">Product details</p>
-                            <h3 className="truncate text-base font-black sm:text-lg">{selectedProduct.name}</h3>
+                            <p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-red-100">Product details</p>
+                            <h3 className="truncate text-base font-bold leading-tight sm:text-lg">{selectedProduct.name}</h3>
                           </div>
                         </div>
                         <button
@@ -6234,11 +6317,11 @@ function CustomerDashboard() {
                           <X size={20} aria-hidden="true" />
                         </button>
                       </div>
-                      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                        <span className="rounded-full border border-white/25 bg-white/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.12em] text-red-50">
+                      <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                        <span className="rounded-full border border-white/30 bg-white/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.1em] text-white">
                           {selectedProduct.category || selectedProduct.product_type || "General"}
                         </span>
-                        <span className="text-xs text-red-100/90">Ready for inquiry</span>
+                        <span className="flex items-center gap-1.5 text-xs font-medium text-red-50"><span className="h-1.5 w-1.5 rounded-full bg-emerald-300" aria-hidden="true" />Ready for inquiry</span>
                       </div>
                     </div>
                   )}
@@ -6313,18 +6396,23 @@ function CustomerDashboard() {
                             <p className={`text-[10px] font-semibold uppercase tracking-[0.14em] ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Type</p>
                             <p className={`mt-1 truncate text-sm font-bold ${darkMode ? "text-white" : "text-slate-900"}`}>{selectedProduct.type || selectedProduct.product_type || "N/A"}</p>
                           </div>
-                          <div className={`min-w-0 rounded-xl border p-3 ${darkMode ? "border-slate-700 bg-slate-800" : "border-slate-300 bg-white"}`}>
-                            <p className={`text-[10px] font-semibold uppercase tracking-[0.14em] ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Dimensions</p>
-                            <p className={`mt-1 truncate text-sm font-bold ${darkMode ? "text-white" : "text-slate-900"}`}>
-                              {selectedProduct.dimensions
-                                ? selectedProduct.dimensions
-                                : selectedProduct.standard_size
-                                ? selectedProduct.standard_size
-                                : selectedProduct.width > 0 || selectedProduct.height > 0
-                                ? `${selectedProduct.width || 0}" x ${selectedProduct.height || 0}"`
-                                : "N/A"}
-                            </p>
-                          </div>
+                          {!isBladePricingProduct(selectedProduct) && <div className={`min-w-0 rounded-xl border p-3 ${darkMode ? "border-slate-700 bg-slate-800" : "border-slate-300 bg-white"}`}>
+                            <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-end gap-2 text-center">
+                              <div className="min-w-0 text-center">
+                                <p className={`text-[10px] font-semibold uppercase tracking-[0.14em] ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Width</p>
+                                <p className={`mt-1 truncate text-sm font-bold ${darkMode ? "text-white" : "text-slate-900"}`}>
+                                  {getProductDefaultDimensions(selectedProduct).width > 0 ? getProductDefaultDimensions(selectedProduct).width : "N/A"}
+                                </p>
+                              </div>
+                              <span className={`pb-0.5 text-base font-bold ${darkMode ? "text-slate-300" : "text-slate-700"}`} aria-hidden="true">×</span>
+                              <div className="min-w-0 text-center">
+                                <p className={`text-[10px] font-semibold uppercase tracking-[0.14em] ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Height</p>
+                                <p className={`mt-1 truncate text-sm font-bold ${darkMode ? "text-white" : "text-slate-900"}`}>
+                                  {getProductDefaultDimensions(selectedProduct).height > 0 ? getProductDefaultDimensions(selectedProduct).height : "N/A"}
+                                </p>
+                              </div>
+                            </div>
+                          </div>}
                           <div className={`min-w-0 rounded-xl border p-3 ${darkMode ? "border-slate-700 bg-slate-800" : "border-slate-300 bg-white"}`}>
                             <p className={`text-[10px] font-semibold uppercase tracking-[0.14em] ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Unit Rate</p>
                             <p className={`mt-1 truncate text-sm font-bold ${darkMode ? "text-white" : "text-slate-900"}`}>{getProductUnitRate(selectedProduct)}</p>
@@ -6378,7 +6466,7 @@ function CustomerDashboard() {
                           <ProductPriceEstimator
                             product={selectedProduct}
                             form={productEstimatorForm}
-                            onFormChange={setProductEstimatorForm}
+                            onFormChange={updateProductDetailsEstimatorForm}
                             darkMode={darkMode}
                             formatCurrency={formatCurrency}
                             defaultMeasurements={(() => {
@@ -6570,6 +6658,7 @@ function CustomerDashboard() {
                         <button
                           type="button"
                           onClick={() => {
+                            if (productEstimatorInputsInvalid) return;
                             if (productEstimatorBladeCountError) {
                               toast.error(productEstimatorBladeCountError);
                               return;
@@ -6581,7 +6670,7 @@ function CustomerDashboard() {
                             }
                             closeProductModal();
                           }}
-                          disabled={onlineOrderCooldownActive}
+                          disabled={onlineOrderCooldownActive || productEstimatorInputsInvalid}
                           className="flex w-full items-center justify-center gap-2 rounded-xl bg-red-600 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           <Package size={20} />
@@ -6591,6 +6680,7 @@ function CustomerDashboard() {
                         <button
                           type="button"
                           onClick={async () => {
+                            if (productEstimatorInputsInvalid) return;
                             if (productEstimatorBladeCountError) {
                               toast.error(productEstimatorBladeCountError);
                               return;
@@ -6633,7 +6723,7 @@ function CustomerDashboard() {
                             }
                             if (addedToCart) closeProductModal();
                           }}
-                          disabled={onlineOrderCooldownActive}
+                          disabled={onlineOrderCooldownActive || productEstimatorInputsInvalid}
                           className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#101114] py-3 text-sm font-bold text-white shadow-sm transition hover:bg-[#050608] disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           <ShoppingCart size={20} />
@@ -6907,9 +6997,14 @@ function CustomerDashboard() {
                                   name="quantity"
                                   value={estimateForm.quantity}
                                   min="1"
+                                  max={MAX_PRODUCT_ESTIMATOR_QUANTITY}
+                                  step="1"
+                                  aria-invalid={Boolean(estimateQuantityError)}
+                                  aria-describedby={estimateQuantityError ? "customer-estimate-quantity-error" : undefined}
                                   onChange={handleEstimateFormChange}
                                   className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 focus:outline-none focus:border-red-500 focus:ring-2 focus:ring-red-200 transition text-lg"
                                 />
+                                {estimateQuantityError && <p id="customer-estimate-quantity-error" role="alert" className="mt-2 text-sm font-semibold text-red-600">{estimateQuantityError}</p>}
                               </label>
                             </div>
 
@@ -7139,12 +7234,14 @@ function CustomerDashboard() {
                               />
                             </div>
                             <div className="sm:col-span-2">
-                              <label className={`text-xs font-semibold uppercase tracking-[0.2em] ${darkMode ? "text-slate-400" : "text-gray-500"}`}>Street Address <span className="text-red-600">*</span></label>
-                              <input
+                              <FullAddressField
+                                label="Full Address *"
                                 name="street_address"
-                                type="text"
                                 value={deliveryConfirmForm.street_address}
                                 onChange={handleDeliveryConfirmChange}
+                                validationValue={buildDeliveryAddress(deliveryConfirmForm)}
+                                labelClassName={`text-xs font-semibold uppercase tracking-[0.2em] ${darkMode ? "text-slate-400" : "text-gray-500"}`}
+                                helperClassName={darkMode ? "text-slate-400" : "text-gray-500"}
                                 className={`mt-2 w-full rounded-2xl border px-4 py-3 outline-none focus:border-red-500 focus:ring-2 focus:ring-red-100 ${darkMode ? "border-slate-700 bg-slate-900 text-white" : "border-gray-300 bg-white text-gray-900"}`}
                               />
                             </div>
@@ -7161,19 +7258,9 @@ function CustomerDashboard() {
                           />
                         </div>
 
-                        {deliveryConfirmMode === "estimate" && isConfirmBladeProduct && (
-                          <ProductPriceEstimator
-                            product={confirmProduct}
-                            form={estimateForm}
-                            onFormChange={setEstimateForm}
-                            darkMode={darkMode}
-                            formatCurrency={formatCurrency}
-                          />
-                        )}
-
                         {deliveryConfirmError && (
                           <div className={`rounded-2xl border p-4 text-sm ${darkMode ? "border-red-800 bg-red-950/40 text-red-200" : "border-red-300 bg-red-50 text-red-700"}`}>
-                            Please complete your delivery information before proceeding.
+                            {deliveryConfirmError}
                           </div>
                         )}
                       </div>
@@ -7253,16 +7340,6 @@ function CustomerDashboard() {
                             </div>
                           </div>
 
-                          {deliveryConfirmMode === "estimate" && !isConfirmBladeProduct && (
-                            <ProductPriceEstimator
-                              product={confirmProduct}
-                              form={estimateForm}
-                              onFormChange={setEstimateForm}
-                              darkMode={darkMode}
-                              formatCurrency={formatCurrency}
-                            />
-                          )}
-
                           <div className={`rounded-3xl p-4 border ${darkMode ? "border-slate-700 bg-slate-800" : "bg-slate-50 border-slate-200"}`}>
                             <p className={`text-sm font-semibold mb-3 ${darkMode ? "text-slate-200" : "text-gray-700"}`}>Pricing Breakdown</p>
                             <div className={`space-y-3 text-sm ${darkMode ? "text-slate-300" : "text-gray-700"}`}>
@@ -7318,7 +7395,7 @@ function CustomerDashboard() {
                   <div className={`sticky bottom-0 z-10 flex flex-col-reverse gap-2 border-t px-4 py-3 sm:flex-row sm:justify-end sm:gap-3 sm:px-5 ${darkMode ? "border-slate-700 bg-slate-900" : "border-gray-200 bg-gray-50"}`}>
                     <button
                       type="button"
-                      onClick={handleCancelDeliveryConfirm}
+                      onClick={performCancelDeliveryConfirm}
                       className={`w-full rounded-xl border px-5 py-3 text-sm font-semibold transition sm:w-auto ${darkMode ? "border-slate-600 bg-slate-800 text-slate-200 hover:bg-slate-700" : "border-gray-300 bg-white text-gray-700 hover:bg-gray-100"}`}
                     >
                       Cancel
@@ -7573,11 +7650,13 @@ function CustomerDashboard() {
                               />
                             </div>
                             <div>
-                              <label className={`mb-2 block text-sm font-medium ${darkMode ? "text-slate-300" : "text-slate-600"}`}>Complete Installation Address *</label>
-                              <input
+                              <FullAddressField
+                                label="Complete Installation Address *"
                                 name="shipping_address"
                                 value={batchOrderForm.shipping_address}
                                 onChange={(event) => setBatchOrderForm((current) => ({ ...current, shipping_address: event.target.value }))}
+                                labelClassName={`mb-2 text-sm font-medium ${darkMode ? "text-slate-300" : "text-slate-600"}`}
+                                helperClassName={darkMode ? "text-slate-400" : "text-slate-500"}
                                 className={`w-full rounded-xl border px-3 py-3 outline-none focus:border-red-500 focus:ring-2 focus:ring-red-100 ${darkMode ? "border-slate-700 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-800"}`}
                               />
                             </div>
@@ -7773,7 +7852,7 @@ function CustomerDashboard() {
                     <button
                       type="button"
                       onClick={handleConfirmBatchOrder}
-                      disabled={checkoutLoading || !batchOrderAgreed}
+                      disabled={checkoutLoading || !batchOrderAgreed || !isBatchOrderAddressValid}
                       className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-red-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                     >
                       <CheckCircle size={16} />
@@ -7969,7 +8048,7 @@ function CustomerDashboard() {
                     <button
                       type="button"
                       onClick={handleSubmitOrderRequest}
-                      disabled={!orderReviewAgreed || orderRequestLoading}
+                      disabled={!orderReviewAgreed || orderRequestLoading || !isValidFullAddress(buildDeliveryAddress(deliveryConfirmForm))}
                       className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-red-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                     >
                       <CheckCircle size={16} />
@@ -9993,15 +10072,16 @@ function CustomerDashboard() {
                         )}
                       />
                       <div className="md:col-span-2">
-                        <ProfileTextField
-                          label="Street Address"
+                        <FullAddressField
+                          label="Full Address"
                           icon={MapPin}
-                          darkMode={darkMode}
-                          type="text"
                           name="street_address"
                           value={profileForm.street_address}
                           onChange={handleProfileChange}
-                          placeholder="Street address"
+                          placeholder="Enter your full address"
+                          showError={normalizeFullAddress(profileForm.street_address) !== normalizeFullAddress(user?.street_address)}
+                          labelClassName={darkMode ? "text-slate-300" : "text-slate-700"}
+                          className={`w-full rounded-xl border py-2.5 pr-4 outline-none transition focus:border-red-500 focus:ring-4 focus:ring-red-500/10 disabled:cursor-not-allowed ${darkMode ? "border-slate-700 bg-slate-900 text-white placeholder:text-slate-400" : "border-gray-300 bg-white text-slate-900 placeholder:text-gray-400"}`}
                         />
                       </div>
                       <ProfileTextField

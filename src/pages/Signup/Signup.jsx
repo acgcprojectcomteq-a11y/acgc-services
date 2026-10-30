@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { preservePendingProductRedirect } from "@/lib/pendingProductAction";
+import FullAddressField from "@/components/FullAddressField";
+import { isValidFullAddress, normalizeFullAddress } from "@/lib/fullAddressValidation";
 import { getPasswordStrength, isPasswordPolicySatisfied, PASSWORD_POLICY_HINT, PASSWORD_POLICY_MESSAGE } from "@/lib/passwordStrength";
 import { getPhilippinePhoneError, isValidPhilippinePhone, normalizePhoneInput } from "@/lib/phoneValidation";
 import logo from "../../assets/images/ACGCLOGO1.png";
@@ -165,6 +167,11 @@ function Signup() {
       return;
     }
 
+    if (!isValidFullAddress(formData.street_address)) {
+      setError("Full address must contain 50–100 characters.");
+      return;
+    }
+
     if (formData.password !== formData.confirmPassword) {
       setError("Passwords do not match.");
       return;
@@ -182,7 +189,7 @@ function Signup() {
         last_name: formData.last_name,
         email: formData.email,
         username: formData.username,
-        street_address: formData.street_address,
+        street_address: normalizeFullAddress(formData.street_address),
         city: formData.city,
         province: formData.province,
         zip_code: formData.zip_code,
@@ -237,7 +244,7 @@ function Signup() {
                 <Field icon={AtSign} label="Username *" name="username" minLength={6} maxLength={12} pattern="[A-Za-z0-9._-]{6,12}" title="Use 6-12 letters, numbers, dots, underscores, or hyphens." value={formData.username} onChange={handleChange} placeholder="Choose a username" inputClass={inputClass} />
               </div>
 
-              <div className="mt-1.5"><Field icon={MapPin} label="Address *" name="street_address" value={formData.street_address} onChange={handleChange} placeholder="Enter your street address" inputClass={inputClass} /></div>
+              <div className="mt-1.5"><FullAddressField icon={MapPin} label="Full Address *" name="street_address" value={formData.street_address} onChange={handleChange} placeholder="Enter your full address" className={inputClass} /></div>
               <div className="mt-1.5 grid gap-1.5 md:grid-cols-2">
                 <Field icon={Building2} label="City *" name="city" value={formData.city} onChange={handleChange} placeholder="Enter your city" inputClass={inputClass} />
                 <Field icon={MapPin} label="Province *" name="province" value={formData.province} onChange={handleChange} placeholder="Enter your province" inputClass={inputClass} />

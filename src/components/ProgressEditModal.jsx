@@ -269,7 +269,10 @@ export default function ProgressEditModal({ project, onClose, onSave, canUploadP
     setInstallationTime(initialInstallationTime);
     setProtectedNotesDraft(getProtectedNotesContent(project));
     initialProgressSnapshot.current = createUnsavedSnapshot({
-      progress: project.progress || 0,
+      // Progress is recalculated from the normalized stages after this effect.
+      // Use that same value for the baseline so opening a project with a stale
+      // stored progress percentage does not look like an unsaved edit.
+      progress: calculateProjectProgressFromStages(nextStages),
       status: project.status || "Pending",
       installationDate: initialInstallationDate,
       installationTime: initialInstallationTime,

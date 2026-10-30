@@ -24,6 +24,8 @@ import {
 import { buildProductPriceSnapshot, getMeasuredProductLineTotal } from "../../src/lib/productPricing.js";
 import { calculateRequiredDownpayment, getFinalProjectCost, isProjectPriceLocked } from "../../src/lib/orderPricing.js";
 import { getInstallationDateError } from "../../src/lib/installationSchedule.js";
+import { getFullAddressError, normalizeFullAddress } from "../utils/fullAddressValidation.js";
+import { getProductEstimatorQuantityError } from "../utils/productEstimatorQuantity.js";
 import {
   deletePrivatePaymentDocument,
   getPrivatePaymentDocumentDownloadUrl,
@@ -627,6 +629,15 @@ const hasValidOrderItemPricingInput = (product = {}, item = {}) => {
 const sanitizeOrderItems = (items = []) => {
   return (items || []).map((item) => {
     const incomingDimensions = item.dimensions || {};
+    if (item.is_estimate) {
+      const estimatorQuantity = item.quantity ?? incomingDimensions.quantity;
+      const quantityError = getProductEstimatorQuantityError(estimatorQuantity);
+      if (quantityError) {
+        const error = new Error(quantityError);
+        error.statusCode = 400;
+        throw error;
+      }
+    }
     const quantity = Number(item.quantity ?? incomingDimensions.quantity) || 1;
     const width = Number(incomingDimensions.width ?? item.width) || 0;
     const height = Number(incomingDimensions.height ?? item.height) || 0;
@@ -983,6 +994,9 @@ export const createOrder = async (req, res) => {
 
     const total_amount = pricedItems.reduce((sum, item) => sum + getItemAmountValue(item), 0);
     const requiredDownpayment = calculateRequiredDownpayment(total_amount, "50%_down_payment");
+    const normalizedShippingAddress = normalizeAddress(shipping_address || buildAddressFromUser(req.user));
+    const shippingAddressError = getFullAddressError(normalizedShippingAddress);
+    if (shippingAddressError) return res.status(400).json({ success: false, message: shippingAddressError });
 
     const order = new Order({
       customer: req.user.id,
@@ -998,7 +1012,7 @@ export const createOrder = async (req, res) => {
       downpayment_amount: requiredDownpayment,
       required_downpayment_amount: requiredDownpayment,
       amount_paid: 0,
-      shipping_address: normalizeAddress(shipping_address || buildAddressFromUser(req.user)),
+      shipping_address: normalizedShippingAddress,
       tracking: generateTrackingNumber(),
       order_type: order_type === "walk_in_customer" ? "walk_in_customer" : "online_order",
       contract_status: "pending",
@@ -1123,6 +1137,10 @@ export const createOrderAsAdmin = async (req, res) => {
       return res.status(400).json({ success: false, message: "The selected customer account was not found" });
     }
 
+    const normalizedShippingAddress = normalizeAddress(shipping_address || buildAddressFromUser(linkedCustomer));
+    const shippingAddressError = getFullAddressError(normalizedShippingAddress);
+    if (shippingAddressError) return res.status(400).json({ success: false, message: shippingAddressError });
+
     const repricedItems = await repriceInspectionItems(items);
     const normalizedProjectCharges = normalizeProjectCharges(project_additional_charges);
     if (normalizedProjectCharges.error) return res.status(400).json({ success: false, message: normalizedProjectCharges.error });
@@ -1164,7 +1182,7 @@ export const createOrderAsAdmin = async (req, res) => {
       downpayment_amount: requiredAmount,
       required_downpayment_amount: requiredAmount,
       amount_paid: initialPaidAmount,
-      shipping_address: normalizeAddress(shipping_address || buildAddressFromUser(linkedCustomer)),
+      shipping_address: normalizedShippingAddress,
       payment_terms: payment_terms || "",
       agreed_payment_date: agreed_payment_date ? new Date(agreed_payment_date) : null,
       has_account_on_website: hasWebsiteAccount,
@@ -3188,7 +3206,6 @@ export const updateOrderInspection = async (req, res) => {
     }
     if (inspection_notes !== undefined) updateData.inspection_notes = inspection_notes;
     if (issues_found !== undefined) updateData.issues_found = issues_found;
-    if (shipping_address !== undefined) updateData.shipping_address = normalizeAddress(shipping_address || "");
     if (payment_terms !== undefined) updateData.payment_terms = payment_terms || "";
     if (agreed_payment_date !== undefined) {
       const parsedAgreedDate = agreed_payment_date ? new Date(agreed_payment_date) : null;
@@ -3224,6 +3241,15 @@ export const updateOrderInspection = async (req, res) => {
 
     if (!order) {
       return res.status(404).json({ success: false, message: "Order not found" });
+    }
+    if (shipping_address !== undefined) {
+      const normalizedShippingAddress = normalizeAddress(shipping_address || "");
+      const addressChanged = normalizeFullAddress(normalizedShippingAddress) !== normalizeFullAddress(order.shipping_address);
+      if (addressChanged) {
+        const addressError = getFullAddressError(normalizedShippingAddress);
+        if (addressError) return res.status(400).json({ success: false, message: addressError });
+        updateData.shipping_address = normalizedShippingAddress;
+      }
     }
     const previousSchedule = {
       inspection_date: order.inspection_date, inspection_time: order.inspection_time,
@@ -3285,11 +3311,6 @@ export const updateOrderInspection = async (req, res) => {
       updateData.customer_email = registeredCustomer.email || "";
       updateData.customer_phone = registeredCustomer.phone || "";
       updateData.has_account_on_website = true;
-      updateData.shipping_address = normalizeAddress(
-        shipping_address !== undefined
-          ? shipping_address || ""
-          : order.shipping_address || buildAddressFromUser(registeredCustomer)
-      );
     }
 
     if (Array.isArray(updateData.items)) {

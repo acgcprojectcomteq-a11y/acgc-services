@@ -1,6 +1,7 @@
 import { ClipboardList, Ruler } from "lucide-react";
 import { calculateEstimate, toSquareFeet } from "@/lib/estimator";
 import { getBladePriceOverrideRate, getDefaultExtraChargeSelections, getProductLineBreakdown, getProductLineTotal, getProductOverrideBaseSubtotal } from "@/lib/productPricing";
+import { getProductEstimatorQuantityError, MAX_PRODUCT_ESTIMATOR_QUANTITY } from "@/lib/productEstimatorQuantity";
 
 const currency = (value) =>
   `PHP ${Number(value || 0).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -101,7 +102,8 @@ export const getProductEstimatorState = (product, form = {}) => {
   const selectedFrame = frameTypes.find((frame) => frame.name === form.frame_type) || frameTypes[0] || null;
   const width = Number(form.width) || 0;
   const height = Number(form.height) || 0;
-  const quantity = Math.max(1, Number(form.quantity) || 1);
+  const quantityError = getProductEstimatorQuantityError(form.quantity ?? 1);
+  const quantity = quantityError ? 0 : Number(form.quantity);
   const minimumBlades = Math.max(1, Number(product.minimum_blades) || 1);
   const maximumBlades = Number(product.maximum_blades) || 0;
   const selectedFrameBladeCount = Number(selectedFrame?.blade_count) || 0;
@@ -128,6 +130,10 @@ export const getProductEstimatorState = (product, form = {}) => {
     : "";
   const bladeCount = Number(form.blade_count) || bladeCountMinimum;
   const needsDimensions = isMeterEstimator || (!isBladeEstimator && !isPieceEstimator) || (form.sale_mode === "frame" && Boolean(form.custom_frame_size));
+  const dimensionError = needsDimensions && (
+    width < 1 || width > 999 ||
+    (!isMeterEstimator && (height < 1 || height > 999))
+  ) ? "Width and height must each be between 1 and 999." : "";
   const item = {
     width,
     height,
@@ -141,7 +147,7 @@ export const getProductEstimatorState = (product, form = {}) => {
     blade_count: bladeCount,
     extra_charges: form.extra_charges?.length ? form.extra_charges : getDefaultExtraChargeSelections(product),
   };
-  const rawResult = calculateEstimate({
+  const rawResult = quantityError || dimensionError ? null : calculateEstimate({
     productName: product.product_name || product.name,
     categoryKey: product.product_type || product.category,
     variantName: product.variant,
@@ -155,9 +161,9 @@ export const getProductEstimatorState = (product, form = {}) => {
     customization: product.customization || false,
     customization_fee: product.customization_fee || 0,
   });
-  const estimatedPrice = getProductLineTotal(product, item);
+  const estimatedPrice = quantityError || dimensionError ? 0 : getProductLineTotal(product, item);
   const result = {
-    ...rawResult,
+    ...(rawResult || {}),
     estimated_price: estimatedPrice,
     rate: isBladeEstimator
       ? Number(product.estimated_price_override) > 0
@@ -165,10 +171,10 @@ export const getProductEstimatorState = (product, form = {}) => {
         : Number(selectedGlass?.price_per_blade ?? product.price_per_blade) || 0
       : Number(product.estimated_price_override) > 0 || isMeterEstimator || isPieceEstimator
         ? Number(getProductEstimateRate(product, form)) || 0
-        : rawResult.rate || 0,
+        : rawResult?.rate || 0,
     areaDisplay: isBladeEstimator
       ? `${bladeCount} blade${bladeCount === 1 ? "" : "s"}`
-      : isMeterEstimator ? `${width} ${item.measurement_unit}` : isPieceEstimator ? "1 piece" : rawResult.areaDisplay,
+      : isMeterEstimator ? `${width} ${item.measurement_unit}` : isPieceEstimator ? "1 piece" : rawResult?.areaDisplay,
   };
   const hasBladeEstimate = Boolean(
     isBladeEstimator &&
@@ -182,19 +188,20 @@ export const getProductEstimatorState = (product, form = {}) => {
       : product.sell_with_frame && (item.custom_frame_size ? product.allow_custom_frame_size && width > 0 && height > 0 : Boolean(selectedFrame))) &&
     Number(result.estimated_price) > 0
   );
-  const hasEstimate = isBladeEstimator
+  const hasEstimate = !quantityError && !dimensionError && (isBladeEstimator
     ? hasBladeEstimate
     : isMeterEstimator
       ? width > 0 && Number(result.estimated_price) > 0
       : isPieceEstimator
         ? Number(result.estimated_price) > 0
-      : width > 0 && height > 0 && Number(result.estimated_price) > 0;
+      : width > 0 && height > 0 && Number(result.estimated_price) > 0);
   return {
     isBladeEstimator,
     isMeterEstimator,
     isPieceEstimator,
     needsDimensions,
     hasEstimate,
+    dimensionError,
     result,
     item,
     bladeCount,
@@ -202,6 +209,7 @@ export const getProductEstimatorState = (product, form = {}) => {
     maximumBlades,
     bladeCountMinimum,
     bladeCountError,
+    quantityError,
     selectedGlass,
     selectedFrame,
     glassTypes,
@@ -219,12 +227,14 @@ function ProductPriceEstimator({ product, form, onFormChange, darkMode = false, 
     isPieceEstimator,
     needsDimensions,
     hasEstimate,
+    dimensionError,
     result,
     bladeCount,
     minimumBlades,
     maximumBlades,
     bladeCountMinimum,
     bladeCountError,
+    quantityError,
     selectedGlass,
     selectedFrame,
     glassTypes,
@@ -263,7 +273,7 @@ function ProductPriceEstimator({ product, form, onFormChange, darkMode = false, 
         <div className="mt-4 grid grid-cols-[minmax(0,1fr)_minmax(88px,0.8fr)] gap-2">
           <label className="min-w-0">
             <span className={labelClass}>Length</span>
-            <input type="number" min="0" step="any" value={form.width || ""} onChange={(event) => updateForm({ width: event.target.value })} className={fieldClass} />
+            <input type="number" min="1" max="999" step="any" value={form.width || ""} onChange={(event) => updateForm({ width: event.target.value })} className={fieldClass} />
           </label>
           <label className="min-w-0">
             <span className={labelClass}>Unit</span>
@@ -279,12 +289,12 @@ function ProductPriceEstimator({ product, form, onFormChange, darkMode = false, 
         <div className="mt-4 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-2 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_minmax(88px,0.8fr)]">
           <label className="min-w-0">
             <span className={labelClass}>Width</span>
-            <input type="number" min="0" step="any" value={form.width || ""} onChange={(event) => updateForm({ width: event.target.value })} className={fieldClass} />
+            <input type="number" min="1" max="999" step="any" value={form.width || ""} onChange={(event) => updateForm({ width: event.target.value })} className={fieldClass} />
           </label>
           <span className={`mt-6 text-sm ${darkMode ? "text-slate-500" : "text-slate-400"}`} aria-hidden="true">x</span>
           <label className="min-w-0">
             <span className={labelClass}>Height</span>
-            <input type="number" min="0" step="any" value={form.height || ""} onChange={(event) => updateForm({ height: event.target.value })} className={fieldClass} />
+            <input type="number" min="1" max="999" step="any" value={form.height || ""} onChange={(event) => updateForm({ height: event.target.value })} className={fieldClass} />
           </label>
           <label className="col-span-3 min-w-0 sm:col-span-1">
             <span className={labelClass}>Unit</span>
@@ -305,11 +315,15 @@ function ProductPriceEstimator({ product, form, onFormChange, darkMode = false, 
         <input
           type="number"
           min="1"
+          max={MAX_PRODUCT_ESTIMATOR_QUANTITY}
           step="1"
           value={form.quantity ?? 1}
           onChange={(event) => updateForm({ quantity: event.target.value })}
+          aria-invalid={Boolean(quantityError)}
+          aria-describedby={quantityError ? "product-estimator-quantity-error" : undefined}
           className={fieldClass}
         />
+        {quantityError && <span id="product-estimator-quantity-error" role="alert" className="mt-1 block text-[11px] font-semibold text-red-600">{quantityError}</span>}
       </label>
 
       {isBladeEstimator && (
@@ -407,7 +421,15 @@ function ProductPriceEstimator({ product, form, onFormChange, darkMode = false, 
         </div>
       )}
 
-      {hasEstimate ? (
+      {dimensionError ? (
+        <div role="alert" className={`mt-3 rounded-lg px-3 py-2.5 text-center text-xs font-semibold ${darkMode ? "bg-red-950/40 text-red-300" : "bg-red-50 text-red-700"}`}>
+          {dimensionError}
+        </div>
+      ) : quantityError ? (
+        <div role="alert" className={`mt-3 rounded-lg px-3 py-2.5 text-center text-xs font-semibold ${darkMode ? "bg-red-950/40 text-red-300" : "bg-red-50 text-red-700"}`}>
+          {quantityError}
+        </div>
+      ) : hasEstimate ? (
         <div className={`${isBladeEstimator ? "flex flex-1 flex-col justify-between " : "mt-4 "}space-y-3 text-sm ${textClass}`} aria-live="polite">
           <div className="flex items-center justify-between gap-3">
             <span className="inline-flex items-center gap-2"><Ruler size={13} aria-hidden="true" />{isBladeEstimator ? "Blades" : isMeterEstimator ? "Length" : isPieceEstimator ? "Quantity" : "Area"}</span>
