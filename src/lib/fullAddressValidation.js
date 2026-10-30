@@ -3,6 +3,14 @@ export const FULL_ADDRESS_MAX_LENGTH = 100;
 
 export const normalizeFullAddress = (value) => String(value ?? "").trim();
 
+export const getStreetAddressError = (value) => {
+  const address = normalizeFullAddress(value);
+  if (address.length > FULL_ADDRESS_MAX_LENGTH) return "Street address cannot exceed 100 characters.";
+  return "";
+};
+
+export const isValidStreetAddress = (value) => !getStreetAddressError(value);
+
 export const getFullAddressError = (value) => {
   const address = normalizeFullAddress(value);
   if (address.length < FULL_ADDRESS_MIN_LENGTH) return "Full address must contain at least 50 characters.";

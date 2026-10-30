@@ -23,7 +23,8 @@ import { isPasswordPolicySatisfied, PASSWORD_POLICY_HINT, PASSWORD_POLICY_MESSAG
 import { getPhilippinePhoneError, isValidPhilippinePhone, normalizePhoneInput } from "@/lib/phoneValidation";
 import { getActivityStorageKey, readActivityLog } from "@/lib/activityLog";
 import FullAddressField from "@/components/FullAddressField";
-import { getFullAddressError, isValidFullAddress, normalizeFullAddress } from "@/lib/fullAddressValidation";
+import PasswordStrengthMeter from "@/components/PasswordStrengthMeter";
+import { getStreetAddressError, isValidStreetAddress, normalizeFullAddress } from "@/lib/fullAddressValidation";
 import { getAdminOrder } from "@/api/orders";
 import { requestEmailChange, resendEmailChangeCode, verifyEmailChangeCode } from "@/api/auth";
 import { formatDateTimeToMMMDDYYYY } from "@/lib/dateUtils";
@@ -93,6 +94,7 @@ function AdminProfile() {
   const isStaff = user?.role === "skilled_worker";
   const profileType = isStaff ? "Staff" : "Admin";
   const [profile, setProfile] = useState(() => user ? createProfileDraft(user) : null);
+  const savedProfileBaselineRef = useRef(user ? createProfileDraft(user) : null);
   const profileAccountIdRef = useRef(user?.id || user?._id || "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -138,6 +140,7 @@ function AdminProfile() {
     const accountId = user?.id || user?._id || "";
     if (!loading && user && profileAccountIdRef.current !== accountId) {
       profileAccountIdRef.current = accountId;
+      savedProfileBaselineRef.current = createProfileDraft(user);
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setProfile(createProfileDraft(user));
     }
@@ -334,23 +337,32 @@ function AdminProfile() {
     setError("");
     setSuccess("");
     setPasswordModalError("");
-    setProfile((prev) => ({ ...prev, [name]: name === "phone" ? normalizePhoneInput(value) : value }));
+    const nextValue = name === "phone"
+      ? normalizePhoneInput(value)
+      : ["first_name", "last_name"].includes(name)
+        ? value.replace(/[^\p{L}\s'-]/gu, "").slice(0, 50)
+        : value;
+    setProfile((prev) => ({ ...prev, [name]: nextValue }));
   };
 
   const profileHasChanges = () => {
-    if (!user || !profile) return false;
+    const baseline = savedProfileBaselineRef.current;
+    if (!baseline || !profile) return false;
     return (
-      profile.first_name !== (user.first_name || "") ||
-      profile.last_name !== (user.last_name || "") ||
-      profile.phone !== (user.phone || "") ||
-      profile.street_address !== (user.street_address || "") ||
+      profile.first_name !== baseline.first_name ||
+      profile.last_name !== baseline.last_name ||
+      profile.phone !== baseline.phone ||
+      profile.street_address !== baseline.street_address ||
+      Boolean(profile.current_password) ||
       Boolean(profile.new_password) ||
       Boolean(profile.confirm_password)
     );
   };
 
   const discardProfileChanges = () => {
-    if (user) setProfile(createProfileDraft(user));
+    if (savedProfileBaselineRef.current) {
+      setProfile({ ...savedProfileBaselineRef.current, current_password: "", new_password: "", confirm_password: "" });
+    }
     setError("");
     setSuccess("");
     setPasswordModalError("");
@@ -363,8 +375,8 @@ function AdminProfile() {
     const setSaveError = showErrorInModal ? setPasswordModalError : setError;
 
     const addressChanged = normalizeFullAddress(profile.street_address) !== normalizeFullAddress(user?.street_address);
-    if (addressChanged && !isValidFullAddress(profile.street_address)) {
-      setSaveError(getFullAddressError(profile.street_address));
+    if (addressChanged && !isValidStreetAddress(profile.street_address)) {
+      setSaveError(getStreetAddressError(profile.street_address));
       return false;
     }
 
@@ -415,14 +427,15 @@ function AdminProfile() {
       }
 
       const response = await updateProfile(payload);
-
-      setProfile((prev) => ({
-        ...prev,
-        ...response.user,
+      const savedProfile = {
+        ...profile,
+        ...(response.user || {}),
         current_password: "",
         new_password: "",
         confirm_password: "",
-      }));
+      };
+      savedProfileBaselineRef.current = savedProfile;
+      setProfile(savedProfile);
       setSuccess("Profile updated successfully.");
       toast.success("Your profile changes were saved successfully.");
       return true;
@@ -533,6 +546,7 @@ function AdminProfile() {
         console.warn("Profile refresh after email verification failed", refreshError);
       }
       const verifiedEmail = updatedUser?.email || response.email || pendingEmail;
+      savedProfileBaselineRef.current = { ...savedProfileBaselineRef.current, email: verifiedEmail };
       setProfile((current) => ({ ...current, email: verifiedEmail }));
       setEmailVerifyOpen(false);
       setEmailVerificationCode("");
@@ -592,6 +606,7 @@ function AdminProfile() {
         darkMode={darkMode}
         onVerified={async (username, response) => {
           try { await refreshUser(); } catch (refreshError) { console.warn("Profile refresh after username verification failed", refreshError); }
+          savedProfileBaselineRef.current = { ...savedProfileBaselineRef.current, username };
           setProfile((current) => ({ ...current, username }));
           setSuccess(response.message || "Your username has been updated successfully.");
           toast.success("Your username has been updated successfully.");
@@ -747,6 +762,7 @@ function AdminProfile() {
                       <AdminProfileTextField label="Phone Number" icon={Phone} darkMode={darkMode} type="tel" inputMode="tel" maxLength={13} name="phone" value={profile.phone} onChange={handleChange} placeholder="+639171234567 or 09171234567" />
                       <div className="md:col-span-2">
                       <FullAddressField
+                        minimumLength={0}
                         label="Full Address"
                         icon={MapPin}
                         name="street_address"
@@ -755,7 +771,7 @@ function AdminProfile() {
                         placeholder="Business address"
                         showError={normalizeFullAddress(profile.street_address) !== normalizeFullAddress(user?.street_address)}
                         labelClassName={darkMode ? "text-slate-300" : "text-slate-700"}
-                        className={`w-full rounded-xl border py-2.5 pr-4 outline-none transition focus:border-red-500 focus:ring-4 focus:ring-red-500/10 ${darkMode ? "border-slate-700 bg-slate-900 text-white placeholder:text-slate-400" : "border-gray-300 bg-white text-slate-900 placeholder:text-gray-400"}`}
+                        className={`w-full rounded-xl border py-2.5 pr-4 text-xs font-semibold outline-none transition focus:border-red-500 focus:ring-4 focus:ring-red-500/10 ${darkMode ? "border-slate-700 bg-slate-900 text-white placeholder:text-slate-400" : "border-gray-300 bg-white text-slate-900 placeholder:text-gray-400"}`}
                       />
                       </div>
                     </div>
@@ -766,6 +782,7 @@ function AdminProfile() {
                       </div>
                       <div>
                         <AdminProfileTextField label="New Password" icon={LockKeyhole} darkMode={darkMode} type="password" name="new_password" minLength={8} maxLength={128} value={profile.new_password} onChange={handleChange} placeholder="Enter new password" autoComplete="new-password" />
+                        <PasswordStrengthMeter password={profile.new_password} darkMode={darkMode} />
                         <p className="mt-1 text-xs text-slate-500">{PASSWORD_POLICY_HINT}</p>
                       </div>
                       <AdminProfileTextField label="Confirm Password" icon={LockKeyhole} darkMode={darkMode} type="password" name="confirm_password" minLength={8} maxLength={128} value={profile.confirm_password} onChange={handleChange} placeholder="Confirm new password" autoComplete="new-password" />

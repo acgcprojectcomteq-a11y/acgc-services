@@ -12,6 +12,7 @@ export const getRepairRequests = (filters = {}) => {
 };
 export const getOrderRepairHistory = (orderId) => apiFetch(`/repairs/admin/orders/${encodeURIComponent(orderId)}/repair-history`, { cache: "no-store" });
 export const createAdminRepairRequest = (payload) => apiFetch("/repairs/admin/requests", { method: "POST", body: JSON.stringify(payload) });
+export const closeDuplicateRepair = (repairId, reason) => apiFetch(`/repairs/admin/requests/${encodeURIComponent(repairId)}/close-duplicate`, { method: "POST", body: JSON.stringify({ reason }) });
 export const getAdminCustomerRepairProducts = (customerId) => apiFetch(`/repairs/admin/customers/${encodeURIComponent(customerId)}/products`, { cache: "no-store" });
 export const approveWarrantyClaim = (repairId, payload) => apiFetch(`/repairs/admin/requests/${encodeURIComponent(repairId)}/approve-warranty`, { method: "POST", body: JSON.stringify(payload) });
 export const rejectWarrantyClaim = (repairId, payload) => apiFetch(`/repairs/admin/requests/${encodeURIComponent(repairId)}/reject-warranty`, { method: "POST", body: JSON.stringify(payload) });

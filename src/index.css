@@ -135,6 +135,35 @@ body:has(.mobile-fullscreen-overlay) .customer-mobile-navigation {
   }
 }
 
+@media (max-width: 759px) {
+  .place-order-request-overlay {
+    align-items: stretch !important;
+    justify-content: stretch !important;
+    overflow: hidden !important;
+    padding: 0 !important;
+  }
+
+  .place-order-request-dialog {
+    width: 100% !important;
+    max-width: none !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    min-height: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+  }
+}
+
+.place-order-summary > div:first-child {
+  padding-bottom: 1rem;
+}
+
+.place-order-summary .text-xs.uppercase.tracking-\[0\.2em\] {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
@@ -2048,6 +2077,10 @@ select:not([multiple]) option {
   color: #0f172a;
   padding: 0.65rem 0.8rem;
   font-size: 0.875rem;
+}
+
+select:not([multiple]) option:disabled {
+  cursor: not-allowed;
 }
 
 select:not([multiple]) option:checked {

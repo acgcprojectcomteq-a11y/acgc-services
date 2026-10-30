@@ -241,8 +241,8 @@ function ProductPriceEstimator({ product, form, onFormChange, darkMode = false, 
     frameTypes,
   } = state;
   const fieldClass = `h-10 w-full rounded-lg border px-3 text-sm outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/15 ${darkMode ? "border-slate-600 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-900"}`;
-  const labelClass = `mb-1 block text-[10px] font-bold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`;
-  const textClass = darkMode ? "text-slate-300" : "text-slate-600";
+  const labelClass = `mb-1 block text-[11px] font-bold uppercase tracking-wide ${darkMode ? "text-slate-300" : "text-slate-700"}`;
+  const textClass = darkMode ? "text-slate-200" : "text-slate-700";
   const strongClass = darkMode ? "text-white" : "text-slate-900";
   const bladeLimitContext = form.sale_mode === "frame"
     ? form.custom_frame_size
@@ -263,8 +263,8 @@ function ProductPriceEstimator({ product, form, onFormChange, darkMode = false, 
     <section className={`overflow-hidden rounded-xl border border-t-2 p-3.5 ${darkMode ? "border-slate-700 border-t-red-500 bg-slate-900" : "border-slate-200 border-t-red-600 bg-white"}`} aria-labelledby="product-estimator-title">
       <div className="flex items-center gap-2">
         <ClipboardList size={15} className="text-red-600" aria-hidden="true" />
-        <h4 id="product-estimator-title" className={`text-sm font-bold ${strongClass}`}>Price Estimator</h4>
-        {hasDefaultMeasurements && <span className={`ml-auto rounded-full px-2.5 py-1 text-[10px] font-semibold ${isShowingDefaultMeasurements
+        <h4 id="product-estimator-title" className={`text-base font-bold ${strongClass}`}>Price Estimator</h4>
+        {hasDefaultMeasurements && <span className={`ml-auto rounded-full px-2.5 py-1 text-[11px] font-semibold ${isShowingDefaultMeasurements
           ? darkMode ? "bg-slate-800 text-slate-300" : "bg-slate-100 text-slate-600"
           : darkMode ? "bg-red-950/60 text-red-200" : "bg-red-50 text-red-700"}`}>{isShowingDefaultMeasurements ? "Default measurements" : "Customize measurements"}</span>}
       </div>
@@ -338,28 +338,40 @@ function ProductPriceEstimator({ product, form, onFormChange, darkMode = false, 
 
           <div>
             <span className={labelClass}>Frame</span>
-            <div className={`space-y-1.5 text-[11px] ${textClass}`}>
+            <div className={`space-y-2 text-sm ${textClass}`}>
               {product?.sell_blades_only !== false && (
-                <label className="flex items-center gap-2">
-                  <input type="radio" checked={(form.sale_mode || "blades_only") === "blades_only"} onChange={() => updateForm({ sale_mode: "blades_only", custom_frame_size: false, frame_type: "", blade_count: product.customer_can_choose_blade_count ? "" : minimumBlades })} className="accent-red-700" />
-                  <span>Blades only (no frame)</span>
+                <label className={`flex cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-2 transition-colors ${
+                  (form.sale_mode || "blades_only") === "blades_only"
+                    ? darkMode ? "border-red-700 bg-red-950/40 text-red-100" : "border-red-300 bg-red-50 text-red-900"
+                    : darkMode ? "border-slate-600 bg-slate-900 text-slate-200 hover:border-slate-500" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                }`}>
+                  <input type="radio" checked={(form.sale_mode || "blades_only") === "blades_only"} onChange={() => updateForm({ sale_mode: "blades_only", custom_frame_size: false, frame_type: "", blade_count: product.customer_can_choose_blade_count ? "" : minimumBlades })} className="h-4 w-4 shrink-0 accent-red-700" />
+                  <span className="leading-5">Blades only (no frame)</span>
                 </label>
               )}
               {frameTypes.map((frame) => (
-                <label key={frame.name} className="flex items-center gap-2">
+                <label key={frame.name} className={`flex cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-2 transition-colors ${
+                  form.sale_mode === "frame" && !form.custom_frame_size && (form.frame_type || selectedFrame?.name) === frame.name
+                    ? darkMode ? "border-red-700 bg-red-950/40 text-red-100" : "border-red-300 bg-red-50 text-red-900"
+                    : darkMode ? "border-slate-600 bg-slate-900 text-slate-200 hover:border-slate-500" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                }`}>
                   <input
                     type="radio"
                     checked={form.sale_mode === "frame" && !form.custom_frame_size && (form.frame_type || selectedFrame?.name) === frame.name}
                     onChange={() => updateForm({ sale_mode: "frame", custom_frame_size: false, frame_type: frame.name, blade_count: product.customer_can_choose_blade_count ? "" : Number(frame.blade_count) || minimumBlades })}
-                    className="accent-red-700"
+                    className="h-4 w-4 shrink-0 accent-red-700"
                   />
-                  <span>{frame.name} - {Number(frame.blade_count) || 0} blades - +{formatCurrency(frame.price)}</span>
+                  <span className="leading-5">{frame.name} - {Number(frame.blade_count) || 0} blades - +{formatCurrency(frame.price)}</span>
                 </label>
               ))}
               {product?.allow_custom_frame_size && (
-                <label className="flex items-center gap-2">
-                  <input type="radio" checked={form.sale_mode === "frame" && Boolean(form.custom_frame_size)} onChange={() => updateForm({ sale_mode: "frame", custom_frame_size: true, frame_type: "", blade_count: product.customer_can_choose_blade_count ? "" : minimumBlades, unit: product.custom_frame_size_unit || form.unit || "in" })} className="accent-red-700" />
-                  <span>Custom size - +{formatCurrency(product.custom_frame_price)}</span>
+                <label className={`flex cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-2 transition-colors ${
+                  form.sale_mode === "frame" && Boolean(form.custom_frame_size)
+                    ? darkMode ? "border-red-700 bg-red-950/40 text-red-100" : "border-red-300 bg-red-50 text-red-900"
+                    : darkMode ? "border-slate-600 bg-slate-900 text-slate-200 hover:border-slate-500" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                }`}>
+                  <input type="radio" checked={form.sale_mode === "frame" && Boolean(form.custom_frame_size)} onChange={() => updateForm({ sale_mode: "frame", custom_frame_size: true, frame_type: "", blade_count: product.customer_can_choose_blade_count ? "" : minimumBlades, unit: product.custom_frame_size_unit || form.unit || "in" })} className="h-4 w-4 shrink-0 accent-red-700" />
+                  <span className="leading-5">Custom size - +{formatCurrency(product.custom_frame_price)}</span>
                 </label>
               )}
             </div>
@@ -379,7 +391,7 @@ function ProductPriceEstimator({ product, form, onFormChange, darkMode = false, 
               className={fieldClass}
               placeholder={`min ${bladeCountMinimum}`}
             />
-            <span id="product-blade-count-help" className={`mt-1 block text-[10px] ${darkMode ? "text-slate-400" : "text-slate-500"}`}>
+            <span id="product-blade-count-help" className={`mt-1 block text-[11px] leading-5 ${darkMode ? "text-slate-300" : "text-slate-600"}`}>
               Minimum for {bladeLimitContext}: <strong>{bladeCountMinimum} blade{bladeCountMinimum === 1 ? "" : "s"}</strong>. {showMaximumBlades ? <>Maximum: <strong>{maximumBlades} blade{maximumBlades === 1 ? "" : "s"}</strong>. </> : null}Final count is confirmed by our team.
             </span>
             {bladeCountError && <span id="product-blade-count-error" role="alert" className="mt-1 block text-[11px] font-semibold text-red-600">{bladeCountError}</span>}
@@ -399,7 +411,7 @@ function ProductPriceEstimator({ product, form, onFormChange, darkMode = false, 
             const selectedCharge = form.extra_charges?.[index];
             const checked = selectedCharge?.is_selected ?? false;
             return (
-              <label key={`${charge.name || charge.label}-${index}`} className={`flex items-center justify-between gap-2 text-xs ${textClass}`}>
+              <label key={`${charge.name || charge.label}-${index}`} className={`flex items-center justify-between gap-2 text-sm ${textClass}`}>
                 <span className="flex min-w-0 items-center gap-2">
                   <input
                     type="checkbox"
@@ -442,7 +454,7 @@ function ProductPriceEstimator({ product, form, onFormChange, darkMode = false, 
               : Number(result?.rate) > 0 ? `${formatCurrency(result.rate)} / ${isBladeEstimator ? "blade" : isMeterEstimator ? "meter" : isPieceEstimator ? "piece" : "sq ft"}` : "Contact us"}</span>
           </div>
           {priceBreakdown.extraCharges.map((charge, index) => (
-            <div key={`${charge.name}-${index}`} className="flex items-center justify-between gap-3 text-xs">
+            <div key={`${charge.name}-${index}`} className="flex items-center justify-between gap-3 text-sm">
               <span>{charge.name}</span><strong className={strongClass}>{formatCurrency(charge.total)}</strong>
             </div>
           ))}
@@ -461,7 +473,7 @@ function ProductPriceEstimator({ product, form, onFormChange, darkMode = false, 
         </div>
       )}
 
-      <p className={`${isBladeEstimator ? "" : "mt-2 "}text-[11px] font-medium leading-4 ${darkMode ? "text-slate-500" : "text-slate-500"}`}>
+      <p className={`${isBladeEstimator ? "" : "mt-2 "}text-xs font-medium leading-5 ${darkMode ? "text-slate-400" : "text-slate-600"}`}>
         Final pricing is subject to negotiation during shop discussion or on-site inspection.
       </p>
       </div>

@@ -77,8 +77,9 @@ import { uploadFiles } from "@/api/uploads";
 import ContractModal from "../../components/ContractModal";
 import UnsavedChangesDialog from "@/components/UnsavedChangesDialog";
 import FullAddressField from "@/components/FullAddressField";
+import PasswordStrengthMeter from "@/components/PasswordStrengthMeter";
 import { createUnsavedSnapshot } from "@/lib/unsavedSnapshot";
-import { getFullAddressError, isValidFullAddress, normalizeFullAddress } from "@/lib/fullAddressValidation";
+import { getFullAddressError, getStreetAddressError, isValidFullAddress, isValidStreetAddress, normalizeFullAddress } from "@/lib/fullAddressValidation";
 import AboutBusinessContent from "@/components/AboutBusinessContent";
 import FilterDropdown from "@/components/FilterDropdown";
 import OtpCodeInput from "@/components/OtpCodeInput";
@@ -269,6 +270,21 @@ const buildFullAddress = (user) => {
   const addressParts = [user.street_address, user.city, user.province, user.zip_code].filter(Boolean);
   return normalizeAddress(addressParts.join(", "));
 };
+
+const createCustomerProfileDraft = (user = {}) => ({
+  first_name: user.first_name || "",
+  last_name: user.last_name || "",
+  phone: user.phone || "",
+  email: user.email || "",
+  username: user.username || "",
+  street_address: user.street_address || "",
+  city: user.city || "",
+  province: user.province || "",
+  zip_code: user.zip_code || "",
+  current_password: "",
+  new_password: "",
+  confirm_password: "",
+});
 
 const buildDeliveryAddress = (address = {}) => normalizeAddress(
   [address.street_address, address.city, address.province, address.zip_code].filter(Boolean).join(", ")
@@ -555,6 +571,7 @@ function CustomerDashboard() {
   const [deliveryConfirmMode, setDeliveryConfirmMode] = useState("estimate");
   const [deliveryConfirmForm, setDeliveryConfirmForm] = useState({
     phone: "",
+    shipping_address: "",
     street_address: "",
     city: "",
     province: "",
@@ -812,6 +829,7 @@ function CustomerDashboard() {
     new_password: "",
     confirm_password: "",
   });
+  const profileFormBaselineRef = useRef(null);
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileMessage, setProfileMessage] = useState("");
   const [profileError, setProfileError] = useState("");
@@ -1234,23 +1252,13 @@ function CustomerDashboard() {
 
   useEffect(() => {
     if (user) {
+      const savedProfile = createCustomerProfileDraft(user);
+      profileFormBaselineRef.current = savedProfile;
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setProfileForm({
-        first_name: user.first_name || "",
-        last_name: user.last_name || "",
-        phone: user.phone || "",
-        email: user.email || "",
-        username: user.username || "",
-        street_address: user.street_address || "",
-        city: user.city || "",
-        province: user.province || "",
-        zip_code: user.zip_code || "",
-        current_password: "",
-        new_password: "",
-        confirm_password: "",
-      });
+      setProfileForm(savedProfile);
       setDeliveryConfirmForm({
         phone: user.phone || "",
+        shipping_address: buildFullAddress(user),
         street_address: user.street_address || "",
         city: user.city || "",
         province: user.province || "",
@@ -2324,6 +2332,7 @@ function CustomerDashboard() {
     setDeliveryConfirmMode(resumeState.deliveryConfirmMode || "estimate");
     setDeliveryConfirmForm(resumeState.deliveryConfirmForm || {
       phone: profileForm.phone || user.phone || "",
+      shipping_address: buildDeliveryAddress({ street_address: profileForm.street_address || user.street_address || "", city: profileForm.city || user.city || "", province: profileForm.province || user.province || "", zip_code: profileForm.zip_code || user.zip_code || "" }),
       street_address: profileForm.street_address || user.street_address || "",
       city: profileForm.city || user.city || "",
       province: profileForm.province || user.province || "",
@@ -2862,6 +2871,7 @@ function CustomerDashboard() {
       setDeliveryConfirmMode("estimate");
       setDeliveryConfirmForm({
         phone: profileForm.phone || "",
+        shipping_address: buildDeliveryAddress({ street_address: profileForm.street_address || "", city: profileForm.city || "", province: profileForm.province || "", zip_code: profileForm.zip_code || "" }),
         street_address: profileForm.street_address || "",
         city: profileForm.city || "",
         province: profileForm.province || "",
@@ -2895,7 +2905,7 @@ function CustomerDashboard() {
       setDeliveryConfirmError("Please complete your delivery information before proceeding.");
       return false;
     }
-    const addressError = getFullAddressError(buildDeliveryAddress(deliveryConfirmForm));
+    const addressError = getStreetAddressError(deliveryConfirmForm.shipping_address || buildDeliveryAddress(deliveryConfirmForm));
     if (addressError) {
       setDeliveryConfirmError(addressError);
       return false;
@@ -2987,7 +2997,7 @@ function CustomerDashboard() {
       }
     }
 
-    const currentShippingAddress = buildDeliveryAddress(deliveryConfirmForm) || buildFullAddress(user);
+    const currentShippingAddress = deliveryConfirmForm.shipping_address || buildDeliveryAddress(deliveryConfirmForm) || buildFullAddress(user);
     if (!isValidFullAddress(currentShippingAddress)) {
       setCartActionError(getFullAddressError(currentShippingAddress));
       return;
@@ -3057,11 +3067,7 @@ function CustomerDashboard() {
 
         const response = await createOrder({
           items: [item],
-          shipping_address: normalizeAddress(
-            [deliveryConfirmForm.street_address, deliveryConfirmForm.city, deliveryConfirmForm.province, deliveryConfirmForm.zip_code]
-              .filter(Boolean)
-              .join(", ") || buildFullAddress(user)
-          ),
+          shipping_address: normalizeFullAddress(deliveryConfirmForm.shipping_address || buildDeliveryAddress(deliveryConfirmForm) || buildFullAddress(user)),
           order_type: "online_order",
         });
 
@@ -3299,6 +3305,7 @@ function CustomerDashboard() {
     setDeliveryConfirmMode("orderNow");
     setDeliveryConfirmForm({
       phone: profileForm.phone || user?.phone || "",
+      shipping_address: buildDeliveryAddress({ street_address: profileForm.street_address || user?.street_address || "", city: profileForm.city || user?.city || "", province: profileForm.province || user?.province || "", zip_code: profileForm.zip_code || user?.zip_code || "" }),
       street_address: profileForm.street_address || user?.street_address || "",
       city: profileForm.city || user?.city || "",
       province: profileForm.province || user?.province || "",
@@ -3332,6 +3339,7 @@ function CustomerDashboard() {
     setDeliveryConfirmMode("estimate");
     setDeliveryConfirmForm({
       phone: profileForm.phone || user?.phone || "",
+      shipping_address: buildDeliveryAddress({ street_address: profileForm.street_address || user?.street_address || "", city: profileForm.city || user?.city || "", province: profileForm.province || user?.province || "", zip_code: profileForm.zip_code || user?.zip_code || "" }),
       street_address: profileForm.street_address || user?.street_address || "",
       city: profileForm.city || user?.city || "",
       province: profileForm.province || user?.province || "",
@@ -3369,6 +3377,7 @@ function CustomerDashboard() {
     setDeliveryConfirmMode("orderNow");
     setDeliveryConfirmForm({
       phone: profileForm.phone || "",
+      shipping_address: buildDeliveryAddress({ street_address: profileForm.street_address || "", city: profileForm.city || "", province: profileForm.province || "", zip_code: profileForm.zip_code || "" }),
       street_address: profileForm.street_address || "",
       city: profileForm.city || "",
       province: profileForm.province || "",
@@ -3413,11 +3422,7 @@ function CustomerDashboard() {
     const response = await createOrder({
       items: [item],
       notes: deliveryConfirmNotes.trim(),
-      shipping_address: normalizeAddress(
-        [deliveryConfirmForm.street_address, deliveryConfirmForm.city, deliveryConfirmForm.province, deliveryConfirmForm.zip_code]
-          .filter(Boolean)
-          .join(", ") || buildFullAddress(user)
-      ),
+      shipping_address: normalizeFullAddress(deliveryConfirmForm.shipping_address || buildDeliveryAddress(deliveryConfirmForm) || buildFullAddress(user)),
       order_type: "online_order",
     });
 
@@ -3505,49 +3510,48 @@ function CustomerDashboard() {
     setProfileError("");
     setProfileMessage("");
     setPasswordModalError("");
-    setProfileForm((prev) => ({ ...prev, [name]: name === "phone" ? normalizePhoneInput(value) : value }));
+    const nextValue = name === "phone"
+      ? normalizePhoneInput(value)
+      : name === "zip_code"
+        ? value.replace(/\D/g, "").slice(0, 4)
+        : ["first_name", "last_name"].includes(name)
+          ? value.replace(/[^\p{L}\s'-]/gu, "").slice(0, 50)
+          : ["city", "province"].includes(name)
+            ? value.replace(/[^\p{L}\s'-]/gu, "").slice(0, 40)
+        : value;
+    setProfileForm((prev) => ({ ...prev, [name]: nextValue }));
   };
 
   const profileHasChanges = () => {
-    if (!user) return false;
-
-    const currentAddress = buildFullAddress(user);
-    const profileAddress = normalizeAddress(
-      [profileForm.street_address, profileForm.city, profileForm.province, profileForm.zip_code]
-        .filter(Boolean)
-        .join(", ") || ""
-    );
+    const baseline = profileFormBaselineRef.current;
+    if (!baseline || !user) return false;
 
     return (
-      profileForm.first_name.trim() !== (user.first_name || "") ||
-      profileForm.last_name.trim() !== (user.last_name || "") ||
-      profileForm.phone !== (user.phone || "") ||
-      profileAddress !== currentAddress ||
+      profileForm.first_name.trim() !== baseline.first_name ||
+      profileForm.last_name.trim() !== baseline.last_name ||
+      profileForm.phone !== baseline.phone ||
+      normalizeFullAddress(profileForm.street_address) !== normalizeFullAddress(baseline.street_address) ||
+      profileForm.city.trim() !== baseline.city ||
+      profileForm.province.trim() !== baseline.province ||
+      profileForm.zip_code.trim() !== baseline.zip_code ||
+      Boolean(profileForm.current_password) ||
       Boolean(profileForm.new_password) ||
       Boolean(profileForm.confirm_password)
     );
   };
 
-  const resetCustomerProfileDraft = () => {
-    setProfileForm({
-      first_name: user?.first_name || "",
-      last_name: user?.last_name || "",
-      phone: user?.phone || "",
-      email: user?.email || "",
-      username: user?.username || "",
-      street_address: user?.street_address || "",
-      city: user?.city || "",
-      province: user?.province || "",
-      zip_code: user?.zip_code || "",
-      current_password: "",
-      new_password: "",
-      confirm_password: "",
-    });
+  const restoreCustomerProfileDraft = ({ exitSettings = false } = {}) => {
+    const savedProfile = profileFormBaselineRef.current || createCustomerProfileDraft(user);
+    setProfileForm({ ...savedProfile, current_password: "", new_password: "", confirm_password: "" });
     setProfileError("");
     setProfileMessage("");
-    setProfileTab("profile");
+    setPasswordModalError("");
+    setShowPasswordModal(false);
     setShowDiscardProfileChanges(false);
-    setProfileEditing(false);
+    if (exitSettings) {
+      setProfileTab("profile");
+      setProfileEditing(false);
+    }
   };
 
   const closeProfileEditor = () => {
@@ -3555,7 +3559,17 @@ function CustomerDashboard() {
       setShowDiscardProfileChanges(true);
       return;
     }
-    resetCustomerProfileDraft();
+    restoreCustomerProfileDraft({ exitSettings: true });
+  };
+
+  const confirmCustomerProfileDiscard = () => {
+    // Discard always resets the form and keeps Profile Settings open.
+    // The user can then choose Back to profile to leave the editor.
+    restoreCustomerProfileDraft();
+  };
+
+  const keepCustomerProfileEditing = () => {
+    setShowDiscardProfileChanges(false);
   };
 
   const performProfileSave = async ({ showErrorInModal = false } = {}) => {
@@ -3577,8 +3591,8 @@ function CustomerDashboard() {
     }
 
     const addressChanged = normalizeFullAddress(profileForm.street_address) !== normalizeFullAddress(user?.street_address);
-    if (addressChanged && !isValidFullAddress(profileForm.street_address)) {
-      setSaveError(getFullAddressError(profileForm.street_address));
+    if (addressChanged && !isValidStreetAddress(profileForm.street_address)) {
+      setSaveError(getStreetAddressError(profileForm.street_address));
       return false;
     }
 
@@ -3618,21 +3632,13 @@ function CustomerDashboard() {
 
       const response = await updateProfile(payload);
       const nextProfile = response.user || user;
-
-      setProfileForm({
-        first_name: nextProfile?.first_name || "",
-        last_name: nextProfile?.last_name || "",
-        phone: nextProfile?.phone || "",
+      const savedProfile = createCustomerProfileDraft({
+        ...nextProfile,
         email: nextProfile?.email || profileForm.email,
-        username: nextProfile?.username || "",
-        street_address: nextProfile?.street_address || "",
-        city: nextProfile?.city || "",
-        province: nextProfile?.province || "",
-        zip_code: nextProfile?.zip_code || "",
-        current_password: "",
-        new_password: "",
-        confirm_password: "",
+        username: nextProfile?.username || profileForm.username,
       });
+      profileFormBaselineRef.current = savedProfile;
+      setProfileForm(savedProfile);
 
       try {
         await refreshUser();
@@ -3755,6 +3761,7 @@ function CustomerDashboard() {
         console.warn("Profile refresh after email verification failed", refreshError);
       }
       const verifiedEmail = updatedUser?.email || response.email || pendingEmail;
+      profileFormBaselineRef.current = { ...profileFormBaselineRef.current, email: verifiedEmail };
       setProfileForm((current) => ({ ...current, email: verifiedEmail }));
       setEmailVerifyOpen(false);
       setEmailVerificationCode("");
@@ -5172,7 +5179,7 @@ function CustomerDashboard() {
   const isDeliveryConfirmValid = Boolean(
     deliveryConfirmForm.phone.trim() &&
     deliveryConfirmForm.street_address.trim() &&
-    isValidFullAddress(buildDeliveryAddress(deliveryConfirmForm))
+    isValidStreetAddress(deliveryConfirmForm.shipping_address || buildDeliveryAddress(deliveryConfirmForm))
   );
   const isBatchOrderAddressValid = isValidFullAddress(batchOrderForm.shipping_address || buildFullAddress(user));
 
@@ -5230,6 +5237,7 @@ function CustomerDashboard() {
         darkMode={darkMode}
         onVerified={async (username, response) => {
           try { await refreshUser(); } catch (refreshError) { console.warn("Profile refresh after username verification failed", refreshError); }
+          profileFormBaselineRef.current = { ...profileFormBaselineRef.current, username };
           setProfileForm((current) => ({ ...current, username }));
           setProfileMessage(response.message || "Your username has been updated successfully.");
           toast.success("Your username has been updated successfully.");
@@ -7149,9 +7157,9 @@ function CustomerDashboard() {
             )}
 
             {showDeliveryConfirmModal && canRequestOrders && (
-              <div className="customer-modal-overlay mobile-fullscreen-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-2 backdrop-blur-sm sm:p-4">
-                <div className={`mobile-fullscreen-dialog order-flow-modal flex max-h-[calc(100dvh-1rem)] w-full ${isConfirmBladeProduct ? "max-w-7xl" : "max-w-4xl"} flex-col overflow-hidden rounded-3xl shadow-2xl sm:max-h-[88vh] ${darkMode ? "order-flow-modal-dark bg-slate-900" : "bg-white"}`}>
-                  <div className={`flex-shrink-0 border-b px-4 py-2 sm:px-5 sm:py-2.5 ${darkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-white"}`}>
+              <div className="place-order-request-overlay customer-modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm">
+                <div className={`place-order-request-dialog order-flow-modal flex max-h-[calc(100dvh-2rem)] w-full max-w-[900px] flex-col overflow-hidden rounded-2xl border shadow-[0_24px_70px_rgba(15,23,42,0.24)] ${darkMode ? "order-flow-modal-dark border-slate-700 bg-slate-900" : "border-slate-200 bg-white"}`}>
+                  <div className={`flex-shrink-0 border-b px-5 py-3 ${darkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-white"}`}>
                     <div className="flex items-center justify-between gap-4">
                       <button
                         type="button"
@@ -7194,34 +7202,34 @@ function CustomerDashboard() {
                         </button>
                       </div>
                     )}
-                    <div className={`grid min-h-0 gap-6 p-5 sm:p-6 ${isConfirmBladeProduct ? "lg:grid-cols-[minmax(0,1fr)_minmax(520px,0.9fr)]" : "lg:grid-cols-[1.2fr_0.9fr]"} ${darkMode ? "bg-slate-950" : "bg-slate-50"}`}>
-                      <div className={`space-y-4 rounded-3xl border ${isConfirmBladeProduct ? "p-6" : "p-5"} shadow-sm ${darkMode ? "border-slate-700 bg-slate-900" : "border-gray-200 bg-white"}`}>
+                    <div className={`grid min-h-0 grid-cols-1 gap-4 p-4 min-[760px]:grid-cols-[minmax(0,1.2fr)_minmax(0,0.9fr)] min-[760px]:p-5 ${darkMode ? "bg-slate-950" : "bg-slate-50"}`}>
+                      <div className={`min-w-0 space-y-4 rounded-2xl border p-4 shadow-sm ${darkMode ? "border-slate-700 bg-slate-900" : "border-gray-200 bg-white"}`}>
                         <div className="flex items-center justify-between gap-4">
                           <div>
-                            <h4 className={`text-lg font-semibold ${darkMode ? "text-white" : "text-gray-900"}`}>Customer Information</h4>
-                            <p className={`text-sm mt-1 ${darkMode ? "text-slate-400" : "text-gray-500"}`}>Review your details before submitting your request.</p>
+                            <h4 className={`text-base font-semibold ${darkMode ? "text-white" : "text-gray-900"}`}>Customer Information</h4>
+                            <p className={`mt-1 text-xs ${darkMode ? "text-slate-400" : "text-gray-500"}`}>Review your details before submitting your request.</p>
                           </div>
                           {!isDeliveryConfirmValid && (
                             <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-semibold text-red-700">Incomplete required fields</span>
                           )}
                         </div>
 
-                        <div className="grid gap-4 sm:grid-cols-2">
+                        <div className="grid grid-cols-1 gap-3 min-[760px]:grid-cols-2">
                           <div>
-                            <label className={`text-xs font-semibold uppercase tracking-[0.2em] ${darkMode ? "text-slate-400" : "text-gray-500"}`}>Full Name</label>
-                            <p className={`mt-2 ${darkMode ? "text-white" : "text-gray-900"}`}>{`${profileForm.first_name || user?.first_name || ""} ${profileForm.last_name || user?.last_name || ""}`.trim() || "N/A"}</p>
+                            <label className={`text-[11px] font-bold uppercase tracking-[0.04em] ${darkMode ? "text-slate-400" : "text-gray-500"}`}>Full Name</label>
+                            <p className={`mt-1 flex h-10 min-w-0 items-center truncate rounded-[9px] border px-3 text-sm ${darkMode ? "border-slate-700 bg-slate-800 text-slate-200" : "border-slate-200 bg-slate-50 text-slate-800"}`}>{`${profileForm.first_name || user?.first_name || ""} ${profileForm.last_name || user?.last_name || ""}`.trim() || "N/A"}</p>
                           </div>
                           <div>
-                            <label className={`text-xs font-semibold uppercase tracking-[0.2em] ${darkMode ? "text-slate-400" : "text-gray-500"}`}>Email Address</label>
-                            <p className={`mt-2 ${darkMode ? "text-white" : "text-gray-900"}`}>{profileForm.email || user?.email || "N/A"}</p>
+                            <label className={`text-[11px] font-bold uppercase tracking-[0.04em] ${darkMode ? "text-slate-400" : "text-gray-500"}`}>Email Address</label>
+                            <p className={`mt-1 flex h-10 min-w-0 items-center truncate rounded-[9px] border px-3 text-sm ${darkMode ? "border-slate-700 bg-slate-800 text-slate-200" : "border-slate-200 bg-slate-50 text-slate-800"}`} title={profileForm.email || user?.email || "N/A"}>{profileForm.email || user?.email || "N/A"}</p>
                           </div>
                         </div>
 
-                        <div className={`rounded-3xl border p-4 ${darkMode ? "border-slate-700 bg-slate-800" : "border-gray-200 bg-gray-50"}`}>
-                          <h4 className={`text-sm font-semibold uppercase tracking-[0.2em] ${darkMode ? "text-slate-400" : "text-gray-500"}`}>Contact &amp; Installation Details</h4>
-                          <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                            <div className="sm:col-span-2">
-                              <label className={`text-xs font-semibold uppercase tracking-[0.2em] ${darkMode ? "text-slate-400" : "text-gray-500"}`}>Contact Number <span className="text-red-600">*</span></label>
+                        <div className={`border-t pt-4 ${darkMode ? "border-slate-700" : "border-slate-200"}`}>
+                          <h4 className={`text-xs font-bold uppercase tracking-[0.06em] ${darkMode ? "text-slate-300" : "text-slate-700"}`}>Contact &amp; Installation Details</h4>
+                          <div className="mt-3 grid gap-3">
+                            <div>
+                              <label className={`text-[11px] font-bold uppercase tracking-[0.04em] ${darkMode ? "text-slate-400" : "text-gray-500"}`}>Contact Number <span className="text-red-600">*</span></label>
                               <input
                                 name="phone"
                                 type="tel"
@@ -7230,31 +7238,32 @@ function CustomerDashboard() {
                                 value={deliveryConfirmForm.phone}
                                 onChange={handleDeliveryConfirmChange}
                                 placeholder="+639171234567 or 09171234567"
-                                className={`mt-2 w-full rounded-2xl border px-4 py-3 outline-none focus:border-red-500 focus:ring-2 focus:ring-red-100 ${darkMode ? "border-slate-700 bg-slate-900 text-white" : "border-gray-300 bg-white text-gray-900"}`}
+                                className={`mt-1.5 h-[42px] w-full rounded-[9px] border px-3 outline-none focus:border-red-500 focus:ring-2 focus:ring-red-100 ${darkMode ? "border-slate-700 bg-slate-900 text-white" : "border-gray-300 bg-white text-gray-900"}`}
                               />
                             </div>
-                            <div className="sm:col-span-2">
+                            <div>
                               <FullAddressField
+                                minimumLength={0}
                                 label="Full Address *"
-                                name="street_address"
-                                value={deliveryConfirmForm.street_address}
+                                name="shipping_address"
+                                value={deliveryConfirmForm.shipping_address || buildDeliveryAddress(deliveryConfirmForm)}
                                 onChange={handleDeliveryConfirmChange}
-                                validationValue={buildDeliveryAddress(deliveryConfirmForm)}
-                                labelClassName={`text-xs font-semibold uppercase tracking-[0.2em] ${darkMode ? "text-slate-400" : "text-gray-500"}`}
+                                validationValue={deliveryConfirmForm.shipping_address || buildDeliveryAddress(deliveryConfirmForm)}
+                                labelClassName={`text-[11px] font-bold uppercase tracking-[0.04em] ${darkMode ? "text-slate-400" : "text-gray-500"}`}
                                 helperClassName={darkMode ? "text-slate-400" : "text-gray-500"}
-                                className={`mt-2 w-full rounded-2xl border px-4 py-3 outline-none focus:border-red-500 focus:ring-2 focus:ring-red-100 ${darkMode ? "border-slate-700 bg-slate-900 text-white" : "border-gray-300 bg-white text-gray-900"}`}
+                                className={`mt-1.5 h-[42px] w-full rounded-[9px] border px-3 outline-none focus:border-red-500 focus:ring-2 focus:ring-red-100 ${darkMode ? "border-slate-700 bg-slate-900 text-white" : "border-gray-300 bg-white text-gray-900"}`}
                               />
                             </div>
                           </div>
                         </div>
 
                         <div>
-                          <label className={`text-xs font-semibold uppercase tracking-[0.2em] ${darkMode ? "text-slate-400" : "text-gray-500"}`}>Special Instructions / Engineering Notes (Optional)</label>
+                          <label className={`text-[11px] font-bold uppercase tracking-[0.04em] ${darkMode ? "text-slate-400" : "text-gray-500"}`}>Special Instructions / Engineering Notes <span className={`font-medium normal-case tracking-normal ${darkMode ? "text-slate-500" : "text-slate-400"}`}>(Optional)</span></label>
                           <textarea
                             value={deliveryConfirmNotes}
                             onChange={(event) => setDeliveryConfirmNotes(event.target.value)}
                             placeholder="Add notes about structure elevations, framing colors, glass thickness preferences, etc."
-                            className={`mt-2 min-h-[92px] w-full resize-y rounded-2xl border px-4 py-3 outline-none focus:border-red-500 focus:ring-2 focus:ring-red-100 ${darkMode ? "border-slate-700 bg-slate-900 text-white placeholder:text-slate-500" : "border-gray-300 bg-white text-gray-900"}`}
+                            className={`mt-1.5 min-h-[96px] w-full resize-y rounded-[9px] border px-3 py-2.5 outline-none focus:border-red-500 focus:ring-2 focus:ring-red-100 ${darkMode ? "border-slate-700 bg-slate-900 text-white placeholder:text-slate-500" : "border-gray-300 bg-white text-gray-900"}`}
                           />
                         </div>
 
@@ -7265,14 +7274,14 @@ function CustomerDashboard() {
                         )}
                       </div>
 
-                        <div className={`rounded-3xl border ${isConfirmBladeProduct ? "p-6" : "p-5"} shadow-sm ${darkMode ? "border-slate-700 bg-slate-900" : "border-gray-200 bg-white"}`}>
+                        <div className={`place-order-summary min-w-0 rounded-2xl border p-4 shadow-sm ${darkMode ? "border-slate-700 bg-slate-900" : "border-gray-200 bg-white"}`}>
                         <div className="flex items-start gap-4">
-                          <div className="h-24 w-24 overflow-hidden rounded-3xl border border-gray-200 bg-gray-100">
+                          <div className="h-[76px] w-[76px] shrink-0 overflow-hidden rounded-xl border border-gray-200 bg-gray-100">
                             <img
                               src={getProductImage(confirmProduct, 160) || PRODUCT_IMAGE_PLACEHOLDER}
                               alt={confirmProduct?.name || "Product preview"}
-                              width="96"
-                              height="96"
+                              width="76"
+                              height="76"
                               loading="lazy"
                               decoding="async"
                               onError={handleProductImageError}
@@ -7280,16 +7289,16 @@ function CustomerDashboard() {
                             />
                           </div>
                           <div className="flex-1">
-                            <p className={`text-sm uppercase tracking-[0.2em] ${darkMode ? "text-slate-400" : "text-gray-500"}`}>Order Summary</p>
-                            <h4 className={`text-xl font-semibold mt-2 ${darkMode ? "text-white" : "text-gray-900"}`}>{confirmProduct?.name || "Product details"}</h4>
-                            <p className={`mt-1 text-sm ${darkMode ? "text-slate-400" : "text-gray-600"}`}>{confirmProduct?.product_type || confirmProduct?.category || "Product"}</p>
+                            <p className={`text-[10px] font-bold uppercase tracking-[0.14em] ${darkMode ? "text-slate-400" : "text-gray-500"}`}>Order Summary</p>
+                            <h4 className={`mt-1 text-base font-semibold ${darkMode ? "text-white" : "text-gray-900"}`}>{confirmProduct?.name || "Product details"}</h4>
+                            <p className={`mt-0.5 text-xs ${darkMode ? "text-slate-400" : "text-gray-600"}`}>{confirmProduct?.product_type || confirmProduct?.category || "Product"}</p>
                           </div>
                         </div>
 
-                        <div className="mt-6 space-y-4">
-                          <div className={`rounded-3xl p-4 border ${darkMode ? "border-slate-700 bg-slate-800" : "bg-slate-50 border-slate-200"}`}>
-                            <p className={`text-sm font-semibold mb-3 ${darkMode ? "text-slate-200" : "text-gray-700"}`}>Product Details</p>
-                            <div className={`grid gap-3 text-sm sm:grid-cols-2 ${darkMode ? "text-slate-300" : "text-gray-700"}`}>
+                        <div className={`mt-4 space-y-4 border-t pt-4 ${darkMode ? "border-slate-700" : "border-slate-200"}`}>
+                          <div>
+                            <p className={`mb-3 text-xs font-bold uppercase tracking-[0.06em] ${darkMode ? "text-slate-200" : "text-gray-700"}`}>Product Details</p>
+                            <div className={`grid gap-x-4 gap-y-3 text-sm min-[760px]:grid-cols-2 ${darkMode ? "text-slate-300" : "text-gray-700"}`}>
                               {isConfirmBladeProduct ? (
                                 <>
                                   <div>
@@ -7340,8 +7349,8 @@ function CustomerDashboard() {
                             </div>
                           </div>
 
-                          <div className={`rounded-3xl p-4 border ${darkMode ? "border-slate-700 bg-slate-800" : "bg-slate-50 border-slate-200"}`}>
-                            <p className={`text-sm font-semibold mb-3 ${darkMode ? "text-slate-200" : "text-gray-700"}`}>Pricing Breakdown</p>
+                          <div className={`border-t pt-4 ${darkMode ? "border-slate-700" : "border-slate-200"}`}>
+                            <p className={`mb-3 text-xs font-bold uppercase tracking-[0.06em] ${darkMode ? "text-slate-200" : "text-gray-700"}`}>Pricing Breakdown</p>
                             <div className={`space-y-3 text-sm ${darkMode ? "text-slate-300" : "text-gray-700"}`}>
                               {isConfirmBladeProduct ? (
                                 <>
@@ -7381,9 +7390,9 @@ function CustomerDashboard() {
                                 </div>
                               )}
                               
-                              <div className={`border-t pt-3 flex items-center justify-between text-base font-semibold ${darkMode ? "border-slate-700 text-white" : "border-gray-200 text-gray-900"}`}>
+                              <div className={`mt-3 flex items-center justify-between border-t border-dashed pt-3 text-lg font-bold ${darkMode ? "border-slate-700 text-white" : "border-gray-300 text-gray-900"}`}>
                                 <span>Total</span>
-                                <span>{formatCurrency(confirmGrandTotal)}</span>
+                                <span className="text-red-600">{formatCurrency(confirmGrandTotal)}</span>
                               </div>
                             </div>
                           </div>
@@ -7392,11 +7401,11 @@ function CustomerDashboard() {
                     </div>
                   </div>
 
-                  <div className={`sticky bottom-0 z-10 flex flex-col-reverse gap-2 border-t px-4 py-3 sm:flex-row sm:justify-end sm:gap-3 sm:px-5 ${darkMode ? "border-slate-700 bg-slate-900" : "border-gray-200 bg-gray-50"}`}>
+                  <div className={`sticky bottom-0 z-10 flex shrink-0 gap-3 border-t px-4 py-3 ${darkMode ? "border-slate-700 bg-slate-900" : "border-gray-200 bg-white"}`}>
                     <button
                       type="button"
                       onClick={performCancelDeliveryConfirm}
-                      className={`w-full rounded-xl border px-5 py-3 text-sm font-semibold transition sm:w-auto ${darkMode ? "border-slate-600 bg-slate-800 text-slate-200 hover:bg-slate-700" : "border-gray-300 bg-white text-gray-700 hover:bg-gray-100"}`}
+                      className={`h-[42px] min-w-0 flex-1 rounded-[9px] border px-5 text-sm font-semibold transition min-[760px]:ml-auto min-[760px]:flex-none ${darkMode ? "border-slate-600 bg-slate-800 text-slate-200 hover:bg-slate-700" : "border-gray-300 bg-white text-gray-700 hover:bg-gray-100"}`}
                     >
                       Cancel
                     </button>
@@ -7404,7 +7413,7 @@ function CustomerDashboard() {
                       type="button"
                       onClick={handleConfirmAndContinue}
                       disabled={!isDeliveryConfirmValid || orderRequestLoading || resumeProductRefreshing || Boolean(resumeProductRefreshError)}
-                      className="w-full rounded-xl bg-gradient-to-r from-red-600 to-red-700 px-5 py-3 text-sm font-semibold text-white transition shadow-lg hover:from-red-700 hover:to-red-800 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                      className="h-[42px] min-w-0 flex-1 rounded-[9px] bg-red-700 px-5 text-sm font-semibold text-white transition hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-60 min-[760px]:flex-none"
                     >
                       Submit Order Request
                     </button>
@@ -7938,12 +7947,7 @@ function CustomerDashboard() {
                         </div>
                         <div className="flex items-start gap-2">
                           <MapPin size={14} className="mt-0.5 shrink-0 text-slate-400" />
-                          <span>{normalizeAddress([
-                            deliveryConfirmForm.street_address || profileForm.street_address,
-                            deliveryConfirmForm.city || profileForm.city,
-                            deliveryConfirmForm.province || profileForm.province,
-                            deliveryConfirmForm.zip_code || profileForm.zip_code,
-                          ].filter(Boolean).join(", ")) || "N/A"}</span>
+                          <span>{deliveryConfirmForm.shipping_address || buildDeliveryAddress(deliveryConfirmForm) || "N/A"}</span>
                         </div>
                       </div>
                     </section>
@@ -8048,7 +8052,7 @@ function CustomerDashboard() {
                     <button
                       type="button"
                       onClick={handleSubmitOrderRequest}
-                      disabled={!orderReviewAgreed || orderRequestLoading || !isValidFullAddress(buildDeliveryAddress(deliveryConfirmForm))}
+                      disabled={!orderReviewAgreed || orderRequestLoading || !isValidStreetAddress(deliveryConfirmForm.shipping_address || buildDeliveryAddress(deliveryConfirmForm))}
                       className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-red-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                     >
                       <CheckCircle size={16} />
@@ -9902,7 +9906,6 @@ function CustomerDashboard() {
             <div className={`relative hidden min-w-0 rounded-2xl border p-4 shadow-sm sm:p-5 lg:block ${darkMode ? "border-slate-700 bg-slate-800 text-slate-100" : "border-slate-200 bg-white text-slate-900"}`}>
               <button
                 type="button"
-                data-close-modal
                 onClick={closeProfileEditor}
                 className={`absolute right-4 top-4 rounded-lg border px-3 py-2 text-xs font-semibold lg:hidden ${darkMode ? "border-slate-600 text-slate-200 hover:bg-slate-700" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`}
               >
@@ -10010,6 +10013,7 @@ function CustomerDashboard() {
                         darkMode={darkMode}
                         type="text"
                         name="first_name"
+                        maxLength={50}
                         value={profileForm.first_name}
                         onChange={handleProfileChange}
                         placeholder="First Name"
@@ -10020,6 +10024,7 @@ function CustomerDashboard() {
                         darkMode={darkMode}
                         type="text"
                         name="last_name"
+                        maxLength={50}
                         value={profileForm.last_name}
                         onChange={handleProfileChange}
                         placeholder="Last Name"
@@ -10071,25 +10076,26 @@ function CustomerDashboard() {
                           </button>
                         )}
                       />
-                      <div className="md:col-span-2">
+                      <div className="md:col-span-2 grid grid-cols-1 gap-4 md:grid-cols-2">
                         <FullAddressField
-                          label="Full Address"
+                          minimumLength={0}
+                          label="Street Address"
                           icon={MapPin}
                           name="street_address"
                           value={profileForm.street_address}
                           onChange={handleProfileChange}
-                          placeholder="Enter your full address"
+                          placeholder="Enter your street address"
                           showError={normalizeFullAddress(profileForm.street_address) !== normalizeFullAddress(user?.street_address)}
                           labelClassName={darkMode ? "text-slate-300" : "text-slate-700"}
-                          className={`w-full rounded-xl border py-2.5 pr-4 outline-none transition focus:border-red-500 focus:ring-4 focus:ring-red-500/10 disabled:cursor-not-allowed ${darkMode ? "border-slate-700 bg-slate-900 text-white placeholder:text-slate-400" : "border-gray-300 bg-white text-slate-900 placeholder:text-gray-400"}`}
+                          className={`w-full rounded-xl border py-2.5 pr-4 text-xs font-semibold outline-none transition focus:border-red-500 focus:ring-4 focus:ring-red-500/10 disabled:cursor-not-allowed ${darkMode ? "border-slate-700 bg-slate-900 text-white placeholder:text-slate-400" : "border-gray-300 bg-white text-slate-900 placeholder:text-gray-400"}`}
                         />
-                      </div>
                       <ProfileTextField
                         label="City"
                         icon={Building2}
                         darkMode={darkMode}
                         type="text"
                         name="city"
+                        maxLength={40}
                         value={profileForm.city}
                         onChange={handleProfileChange}
                         placeholder="City"
@@ -10100,6 +10106,7 @@ function CustomerDashboard() {
                         darkMode={darkMode}
                         type="text"
                         name="province"
+                        maxLength={40}
                         value={profileForm.province}
                         onChange={handleProfileChange}
                         placeholder="Province"
@@ -10110,11 +10117,13 @@ function CustomerDashboard() {
                         darkMode={darkMode}
                         type="text"
                         inputMode="numeric"
+                        maxLength={4}
                         name="zip_code"
                         value={profileForm.zip_code}
                         onChange={handleProfileChange}
                         placeholder="Zip Code"
                       />
+                      </div>
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -10145,6 +10154,7 @@ function CustomerDashboard() {
                           placeholder="Enter new password"
                           autoComplete="new-password"
                         />
+                        <PasswordStrengthMeter password={profileForm.new_password} darkMode={darkMode} />
                         <p className="mt-1 text-xs text-slate-500">{PASSWORD_POLICY_HINT}</p>
                       </div>
                       <ProfileTextField
@@ -10169,7 +10179,9 @@ function CustomerDashboard() {
                 {profileHasChanges() && (
                   <button
                     type="button"
-                    onClick={() => setShowDiscardProfileChanges(true)}
+                    onClick={() => {
+                      setShowDiscardProfileChanges(true);
+                    }}
                     disabled={profileSaving}
                     className={`mr-auto rounded-xl border px-4 py-2.5 text-sm font-semibold transition disabled:opacity-60 ${darkMode ? "border-slate-600 text-slate-200 hover:bg-slate-700" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"}`}
                   >
@@ -10192,10 +10204,10 @@ function CustomerDashboard() {
                     <h3 id="discard-customer-profile-title" className="text-lg font-bold">Discard unsaved changes?</h3>
                     <p className={`mt-2 text-sm ${darkMode ? "text-slate-300" : "text-slate-600"}`}>Your saved profile is unchanged. The edits in this form will be cleared.</p>
                     <div className="mt-5 flex justify-end gap-2">
-                      <button type="button" data-close-modal onClick={() => setShowDiscardProfileChanges(false)} className={`rounded-lg border px-4 py-2 text-sm font-semibold ${darkMode ? "border-slate-600 text-slate-200 hover:bg-slate-700" : "border-slate-300 text-slate-700 hover:bg-slate-50"}`}>
+                      <button type="button" onClick={keepCustomerProfileEditing} className={`rounded-lg border px-4 py-2 text-sm font-semibold ${darkMode ? "border-slate-600 text-slate-200 hover:bg-slate-700" : "border-slate-300 text-slate-700 hover:bg-slate-50"}`}>
                         Keep editing
                       </button>
-                      <button type="button" onClick={resetCustomerProfileDraft} className="rounded-lg bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-800">
+                      <button type="button" onClick={confirmCustomerProfileDiscard} className="rounded-lg bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-800">
                         Discard changes
                       </button>
                     </div>

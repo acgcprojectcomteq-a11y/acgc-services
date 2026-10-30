@@ -1,4 +1,4 @@
-import { getFullAddressError, normalizeFullAddress, FULL_ADDRESS_MAX_LENGTH } from "@/lib/fullAddressValidation";
+import { getFullAddressError, getStreetAddressError, normalizeFullAddress, FULL_ADDRESS_MAX_LENGTH, FULL_ADDRESS_MIN_LENGTH } from "@/lib/fullAddressValidation";
 
 export default function FullAddressField({
   label,
@@ -14,11 +14,14 @@ export default function FullAddressField({
   labelClassName = "",
   helperClassName = "",
   showError = true,
+  minimumLength = FULL_ADDRESS_MIN_LENGTH,
   ...props
 }) {
   const address = String(value ?? "");
   const trimmedAddress = normalizeFullAddress(countValue ?? address);
-  const validationError = getFullAddressError(validationValue ?? address);
+  const validationError = minimumLength === 0
+    ? getStreetAddressError(validationValue ?? address)
+    : getFullAddressError(validationValue ?? address);
   const Component = as;
   const iconPadding = Icon ? "pl-11" : "";
 
@@ -42,7 +45,7 @@ export default function FullAddressField({
       </div>
       <div id={`${props.id || props.name}-address-help`} className={`mt-1 flex flex-wrap items-start justify-between gap-x-3 gap-y-1 text-xs ${helperClassName}`}>
         <span className={showError && validationError ? "text-red-600" : "text-slate-500"}>
-          {showError && validationError ? validationError : "Enter 50-100 characters."}
+          {showError && validationError ? validationError : minimumLength === 0 ? "Maximum 100 characters." : "Enter 50-100 characters."}
         </span>
         <span className="shrink-0 text-slate-500" aria-live="polite">{trimmedAddress.length}/{FULL_ADDRESS_MAX_LENGTH}</span>
       </div>

@@ -61,7 +61,10 @@ function AdminRecovery() {
 
   const updateProfile = (event) => {
     const { name, value } = event.target;
-    setProfile((current) => ({ ...current, [name]: value }));
+    const nextValue = ["first_name", "last_name"].includes(name)
+      ? value.replace(/[^\p{L}\s'-]/gu, "").slice(0, 80)
+      : value;
+    setProfile((current) => ({ ...current, [name]: nextValue }));
   };
 
   const verifyOwner = async (event) => {

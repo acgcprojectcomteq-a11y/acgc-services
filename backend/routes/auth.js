@@ -16,7 +16,7 @@ import AdminRecoveryState from "../models/AdminRecoveryState.js";
 import SystemSetting from "../models/SystemSetting.js";
 import BackupOperationAudit from "../models/BackupOperationAudit.js";
 import SuperAdminPromotionAudit from "../models/SuperAdminPromotionAudit.js";
-import { getFullAddressError, normalizeFullAddress } from "../utils/fullAddressValidation.js";
+import { getStreetAddressError, normalizeFullAddress } from "../utils/fullAddressValidation.js";
 import { authMiddleware, roleMiddleware, staffModulePermission, staffModulePermissionIfStaff } from "../middleware/auth.js";
 import { sendMail } from "../config/mailer.js";
 import {
@@ -265,8 +265,8 @@ const validateRecoveryProfile = (body = {}) => {
   return Boolean(
     typeof email === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && email.length <= 254 &&
     typeof username === "string" && /^[a-zA-Z0-9._-]{6,12}$/.test(username.trim()) &&
-    typeof first_name === "string" && first_name.trim() && first_name.trim().length <= 80 &&
-    typeof last_name === "string" && last_name.trim() && last_name.trim().length <= 80 &&
+    typeof first_name === "string" && first_name.trim() && first_name.trim().length <= 50 &&
+    typeof last_name === "string" && last_name.trim() && last_name.trim().length <= 50 &&
     isPasswordPolicySatisfied(password)
   );
 };
@@ -1308,8 +1308,22 @@ router.post("/register", async (req, res) => {
       });
     }
 
+    if (String(first_name).trim().length > 50 || String(last_name).trim().length > 50) {
+      return res.status(400).json({ success: false, message: "First name and last name cannot exceed 50 characters each." });
+    }
+
+    if (typeof city === "string" && city.trim().length > 40) {
+      return res.status(400).json({ success: false, message: "City cannot exceed 40 characters." });
+    }
+    if (typeof province === "string" && province.trim().length > 40) {
+      return res.status(400).json({ success: false, message: "Province cannot exceed 40 characters." });
+    }
+    if (zip_code !== undefined && zip_code !== null && String(zip_code).trim() && !/^\d{1,4}$/.test(String(zip_code).trim())) {
+      return res.status(400).json({ success: false, message: "Zip Code must contain up to 4 digits." });
+    }
+
     const normalizedStreetAddress = normalizeFullAddress(street_address);
-    const addressError = getFullAddressError(normalizedStreetAddress);
+    const addressError = getStreetAddressError(normalizedStreetAddress);
     if (addressError) return res.status(400).json({ success: false, message: addressError });
 
     if (!/^[a-zA-Z0-9._-]{6,12}$/.test(String(username).trim())) {
@@ -2812,21 +2826,36 @@ router.put("/profile", authMiddleware, staffModulePermissionIfStaff("profile", "
       user.password = new_password;
     }
 
-    if (first_name) user.first_name = first_name;
-    if (last_name) user.last_name = last_name;
+    if (typeof first_name === "string" && first_name.trim() !== String(user.first_name || "").trim() && first_name.trim().length > 50) {
+      return res.status(400).json({ success: false, message: "First name cannot exceed 50 characters." });
+    }
+    if (typeof last_name === "string" && last_name.trim() !== String(user.last_name || "").trim() && last_name.trim().length > 50) {
+      return res.status(400).json({ success: false, message: "Last name cannot exceed 50 characters." });
+    }
+    if (first_name) user.first_name = first_name.trim();
+    if (last_name) user.last_name = last_name.trim();
     if (phone) user.phone = phone;
+    if (typeof city === "string" && city.trim() !== String(user.city || "").trim() && city.trim().length > 40) {
+      return res.status(400).json({ success: false, message: "City cannot exceed 40 characters." });
+    }
+    if (typeof province === "string" && province.trim() !== String(user.province || "").trim() && province.trim().length > 40) {
+      return res.status(400).json({ success: false, message: "Province cannot exceed 40 characters." });
+    }
+    if (zip_code !== undefined && String(zip_code).trim() !== String(user.zip_code || "").trim() && String(zip_code).trim() && !/^\d{1,4}$/.test(String(zip_code).trim())) {
+      return res.status(400).json({ success: false, message: "Zip Code must contain up to 4 digits." });
+    }
     const addressWasSubmitted = address !== undefined || street_address !== undefined;
     if (addressWasSubmitted) {
       const submittedAddress = normalizeFullAddress(street_address ?? address);
       const addressChanged = submittedAddress !== normalizeFullAddress(user.street_address);
       if (addressChanged) {
-        const addressError = getFullAddressError(submittedAddress);
+        const addressError = getStreetAddressError(submittedAddress);
         if (addressError) return res.status(400).json({ success: false, message: addressError });
         user.street_address = submittedAddress;
       }
     }
-    if (city) user.city = city;
-    if (province) user.province = province;
+    if (city) user.city = city.trim();
+    if (province) user.province = province.trim();
     if (zip_code) user.zip_code = zip_code;
 
     await user.save();

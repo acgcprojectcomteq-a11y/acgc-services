@@ -243,7 +243,7 @@ const getAvailableScheduleTimes = (records, dateValue, excludeRecordId = "", dur
   return availableTimes;
 };
 
-function MonthDayYearDateInput({ label, value, timeValue, min, onChange, onTimeChange, className, darkMode = false, scheduledRecords = [], excludeRecordId = "", durationMinutes = 30, businessHours = { open: "08:00", close: "18:00" } }) {
+function MonthDayYearDateInput({ label, value, timeValue, min, onChange, onTimeChange, className, darkMode = false, scheduledRecords = [], excludeRecordId = "", durationMinutes = 30, businessHours = { open: "08:00", close: "18:00" }, disabled = false }) {
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [isTimeModalOpen, setIsTimeModalOpen] = useState(false);
   const [viewSchedulesDate, setViewSchedulesDate] = useState("");
@@ -252,6 +252,13 @@ function MonthDayYearDateInput({ label, value, timeValue, min, onChange, onTimeC
     const initialDate = value ? new Date(`${value}T12:00:00`) : min ? new Date(`${min}T12:00:00`) : new Date();
     return new Date(initialDate.getFullYear(), initialDate.getMonth(), 1);
   });
+
+  useEffect(() => {
+    if (disabled) {
+      setIsCalendarOpen(false);
+      setIsTimeModalOpen(false);
+    }
+  }, [disabled]);
 
   useEffect(() => {
     if (!isCalendarOpen) return undefined;
@@ -353,12 +360,14 @@ function MonthDayYearDateInput({ label, value, timeValue, min, onChange, onTimeC
         readOnly
         placeholder="Select date and time"
         value={combinedValue}
-        onClick={openCalendar}
+        onClick={() => !disabled && openCalendar()}
+        disabled={disabled}
         aria-label={label}
-        className={`${className} cursor-pointer pr-11`}
+        className={`${className} ${disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"} pr-11`}
       />
       <button
         type="button"
+        disabled={disabled}
         onClick={() => {
           openCalendar();
         }}
@@ -636,9 +645,71 @@ export const isInspectionBladeItem = (item = {}) => {
   return method === "blade" || method === "per_blade";
 };
 
-export const requiresInspectionItemDimensions = (item = {}) =>
-  (!isInspectionBladeItem(item) && !isInspectionMeterItem(item) && !isInspectionPieceItem(item))
-  || (item.sale_mode === "frame" && Boolean(item.custom_frame_size));
+export const getInspectionMeasurementFields = (item = {}) => {
+  if (isInspectionBladeItem(item)) {
+    return item.sale_mode === "frame" && Boolean(item.custom_frame_size)
+      ? [{ key: "width", label: "Width" }, { key: "height", label: "Height" }]
+      : [];
+  }
+  if (isInspectionMeterItem(item)) return [{ key: "width", label: item.length_label || "Length" }];
+  if (isInspectionPieceItem(item)) return [];
+  return [{ key: "width", label: item.width_label || "Width" }, { key: "height", label: item.height_label || "Height" }];
+};
+
+export const requiresInspectionItemDimensions = (item = {}) => {
+  const fields = getInspectionMeasurementFields(item);
+  return fields.some((field) => field.key === "width") && fields.some((field) => field.key === "height");
+};
+
+const isValidInspectionDate = (value) => {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return false;
+  const [, year, month, day] = match.map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+};
+
+export const validateInspectionMeasurementRows = (items = []) => {
+  const itemErrors = (Array.isArray(items) ? items : []).map((item) => {
+    const rowErrors = {};
+    if (!normalizeProductId(item.product_id)) rowErrors.product_id = "Select a product.";
+    if (!String(item.name || "").trim()) rowErrors.name = "Description is required.";
+
+    for (const field of getInspectionMeasurementFields(item)) {
+      const value = item[field.key];
+      if (value === "" || value === null || value === undefined || !Number.isFinite(Number(value)) || Number(value) <= 0) {
+        rowErrors[field.key] = `${field.label} must be greater than zero.`;
+      }
+    }
+
+    const quantityValue = item.qty ?? item.quantity;
+    if (quantityValue === "" || quantityValue === null || quantityValue === undefined || !Number.isFinite(Number(quantityValue)) || Number(quantityValue) <= 0) {
+      rowErrors.qty = "Quantity must be at least 1.";
+    }
+
+    if (isInspectionBladeItem(item)) {
+      if (!String(item.blade_glass_type || "").trim()) rowErrors.blade_glass_type = "Select a glass type.";
+      const minimumBlades = Math.max(1, Number(item.minimum_blades) || 1);
+      const maximumBlades = Number(item.maximum_blades) || 0;
+      if (item.sale_mode === "frame" && !item.frame_type && !item.custom_frame_size) {
+        rowErrors.frame_type = "Select a frame type or enter a custom frame size.";
+      }
+      if (item.sale_mode === "blades_only" || item.custom_frame_size) {
+        const bladeCount = Number(item.blade_count) || 0;
+        if (bladeCount < minimumBlades || (maximumBlades > 0 && bladeCount > maximumBlades)) {
+          rowErrors.blade_count = `Blade count must be between ${minimumBlades}${maximumBlades > 0 ? ` and ${maximumBlades}` : " or more"}.`;
+        }
+      }
+    }
+    return rowErrors;
+  });
+  const firstIncompleteRow = itemErrors.findIndex((row) => Object.keys(row).length > 0);
+  return {
+    itemErrors,
+    firstIncompleteRow,
+    valid: firstIncompleteRow === -1,
+  };
+};
 
 export const calculateMeasurementSubtotal = (item, product = null) => {
   const quantity = Number(item.qty ?? item.quantity ?? 1) || 1;
@@ -726,31 +797,7 @@ export const validateInspectionPayload = (payload = {}, { requireScheduleTimes =
     nextErrors.customerId = "Select the matching registered customer account before creating this inspection.";
   }
 
-  const itemErrors = payload.items?.map((item) => {
-    const rowErrors = {};
-    const normalizedProductId = normalizeProductId(item.product_id);
-    if (!normalizedProductId) rowErrors.product_id = "Select a product.";
-    if (!item.name?.trim()) rowErrors.name = "Description is required.";
-    const needsDimensions = requiresInspectionItemDimensions(item);
-    if (needsDimensions && Number(item.width) <= 0) rowErrors.width = "Width must be greater than zero.";
-    if (needsDimensions && !isInspectionMeterItem(item) && Number(item.height) <= 0) rowErrors.height = "Height must be greater than zero.";
-    if (Number(item.qty) <= 0) rowErrors.qty = "Quantity must be at least 1.";
-    if (String(item.pricing_method || "").toLowerCase() === "blade") {
-      if (!String(item.blade_glass_type || "").trim()) rowErrors.blade_glass_type = "Select a glass type.";
-      const minimumBlades = Math.max(1, Number(item.minimum_blades) || 1);
-      const maximumBlades = Number(item.maximum_blades) || 0;
-      if (item.sale_mode === "frame" && !item.frame_type && !item.custom_frame_size) {
-        rowErrors.frame_type = "Select a frame type or enter a custom frame size.";
-      }
-      if (item.sale_mode === "blades_only" || item.custom_frame_size) {
-        const bladeCount = Number(item.blade_count) || 0;
-        if (bladeCount < minimumBlades || (maximumBlades > 0 && bladeCount > maximumBlades)) {
-          rowErrors.blade_count = `Blade count must be between ${minimumBlades}${maximumBlades > 0 ? ` and ${maximumBlades}` : " or more"}.`;
-        }
-      }
-    }
-    return rowErrors;
-  }) || [];
+  const { itemErrors } = validateInspectionMeasurementRows(payload.items || []);
 
   if (itemErrors.some((row) => Object.keys(row).length > 0)) {
     nextErrors.itemErrors = itemErrors;
@@ -1018,6 +1065,7 @@ function SiteInspection() {
   const [highCancellationConfirmation, setHighCancellationConfirmation] = useState(false);
   const [editMeasurementsEnabled, setEditMeasurementsEnabled] = useState(false);
   const [measurementDeleteConfirmation, setMeasurementDeleteConfirmation] = useState(null);
+  const [measurementValidationAttempted, setMeasurementValidationAttempted] = useState({ new: false, edit: false });
   const editInspectionBodyRef = useRef(null);
   const [savingEdit, setSavingEdit] = useState(false);
   const [activeTab, setActiveTab] = useState("site");
@@ -1919,6 +1967,17 @@ function SiteInspection() {
           </label>
         )}
 
+        {saleMode === "frame" && item.custom_frame_size && (
+          <div className="grid grid-cols-2 gap-2">
+            {[{ key: "width", label: "Width" }, { key: "height", label: "Height" }].map((field) => (
+              <label key={field.key} className="block">
+                <span className={labelClass}>{field.label}</span>
+                <input type="number" min="0" inputMode="decimal" aria-label={`${field.label} for measurement ${rowIndex + 1}`} value={getDimensionInputValue(item[field.key])} onFocus={() => clearDefaultDimensionZero(item.id, field.key, item[field.key], onFieldChange)} onChange={(event) => onFieldChange(item.id, field.key, event.target.value)} className={fieldClass} />
+              </label>
+            ))}
+          </div>
+        )}
+
         {saleMode === "blades_only" || item.custom_frame_size ? (
           <label className="block">
             <span className={labelClass}>Blade count</span>
@@ -1936,6 +1995,7 @@ function SiteInspection() {
     const details = getBladeMeasurementDetails(item);
     if (!details) return null;
     const {
+      product,
       glassTypes,
       frameTypes,
       minimumBlades,
@@ -1963,6 +2023,7 @@ function SiteInspection() {
     const bladeCountId = `${mode}-blade-count-${index}`;
     const framePriceId = `${mode}-blade-frame-price-${index}`;
     const isMobileMode = mode.endsWith("mobile");
+    const showValidationError = measurementValidationAttempted[mode.startsWith("edit") ? "edit" : "new"] && Object.keys(validateInspectionMeasurementRows([item]).itemErrors[0] || {}).length > 0;
     const deleteButtonClasses = `inline-flex size-9 shrink-0 items-center justify-center rounded-lg border transition ${darkMode ? "border-[#5c2a24] bg-[#3a1c18] text-[#ff8080] hover:border-[#ff8080] hover:bg-[#4a211c]" : "border-[#f3c2bc] bg-[#fdecea] text-[#d64545] hover:border-[#d64545] hover:bg-[#fbded9]"}`;
 
     const updateExtraCharge = (chargeIndex, patch) => {
@@ -1973,7 +2034,7 @@ function SiteInspection() {
     };
 
     return (
-      <article key={item.id || `${mode}-blade-${index}`} className={`mt-4 overflow-hidden rounded-xl border shadow-[0_1px_2px_rgba(16,24,40,0.04)] ${hasSelectedRushCharge(item) ? darkMode ? "border-red-400 bg-red-500/20" : "border-red-500 bg-red-100" : darkMode ? "border-[#263040] bg-[#161c26]" : "border-[#dde3ec] bg-white"}`}>
+      <article key={item.id || `${mode}-blade-${index}`} className={`mt-4 overflow-hidden rounded-xl border shadow-[0_1px_2px_rgba(16,24,40,0.04)] ${showValidationError ? "border-2 border-red-500" : hasSelectedRushCharge(item) ? darkMode ? "border-red-400 bg-red-500/20" : "border-red-500 bg-red-100" : darkMode ? "border-[#263040] bg-[#161c26]" : "border-[#dde3ec] bg-white"}`}>
         {isMobileMode && (
           <div className={`flex items-center justify-between gap-2 border-b px-4 py-2.5 ${darkMode ? "border-[#263040]" : "border-[#dde3ec]"}`}>
             <p className={`text-xs font-bold ${darkMode ? "text-slate-200" : "text-slate-700"}`}>Measurement {index + 1}</p>
@@ -1985,7 +2046,7 @@ function SiteInspection() {
         <div className="grid grid-cols-1 items-end gap-4 p-4 min-[620px]:grid-cols-[minmax(0,1.6fr)_76px_minmax(110px,0.8fr)_minmax(90px,auto)_36px]">
           <label className="min-w-0">
             <span className={labelClasses}>Product / Description</span>
-            <select id={productSelectId} value={item.product_id || ""} onChange={(event) => onProductChange(item.id, event.target.value)} className={inputClasses}>
+            <select id={productSelectId} value={item.product_id || ""} onChange={(event) => onProductChange(item.id, event.target.value)} className={`${inputClasses} ${item.product_id ? `font-semibold ${darkMode ? "!text-red-300" : "!text-red-600"}` : ""}`}>
               <option value="">-- Select Active Product --</option>
               {products.map((product) => (
                 <option key={String(product._id || product.id)} value={String(product._id || product.id)}>{product.name}</option>
@@ -2037,6 +2098,27 @@ function SiteInspection() {
               {frameTypes.map((frame) => <option key={frame.name} value={frame.name}>{frame.name} - {Number(frame.blade_count) || 0} blades - {formatCurrency(Number(frame.price || 0))}</option>)}
             </select>
           </label>
+
+          {saleMode === "frame" && product?.allow_custom_frame_size && (
+            <label className={`flex items-center gap-2 text-xs font-medium ${mutedClass}`}>
+              <input type="checkbox" checked={Boolean(item.custom_frame_size)} onChange={(event) => {
+                onFieldChange(item.id, "custom_frame_size", event.target.checked);
+                onFieldChange(item.id, "frame_price", Number(event.target.checked ? product?.custom_frame_price : selectedFrame?.price) || 0);
+              }} className="accent-red-700" />
+              Custom frame size ({product.custom_frame_size_unit || item.measurement_unit || "in"})
+            </label>
+          )}
+
+          {saleMode === "frame" && item.custom_frame_size && (
+            <div className="grid grid-cols-2 gap-2">
+              {[{ key: "width", label: "Width" }, { key: "height", label: "Height" }].map((field) => (
+                <label key={field.key} className="min-w-0">
+                  <span className={labelClasses}>{field.label}</span>
+                  <input type="number" min="0" inputMode="decimal" value={getDimensionInputValue(item[field.key])} onFocus={() => clearDefaultDimensionZero(item.id, field.key, item[field.key], onFieldChange)} onChange={(event) => onFieldChange(item.id, field.key, event.target.value)} className={inputClasses} aria-label={`${field.label} for measurement ${index + 1}`} />
+                </label>
+              ))}
+            </div>
+          )}
 
           <label className="min-w-0">
             <span className={labelClasses}>Number of blades</span>
@@ -2501,6 +2583,13 @@ function SiteInspection() {
   };
 
   const addItemRow = () => {
+    const validation = validateInspectionMeasurementRows(newInspection.items || []);
+    if (!validation.valid) {
+      setMeasurementValidationAttempted((current) => ({ ...current, new: true }));
+      toast.error("Please complete the current measurement before adding another measurement.");
+      return;
+    }
+    setMeasurementValidationAttempted((current) => ({ ...current, new: false }));
     setNewInspection((prev) => ({
       ...prev,
       items: [
@@ -2511,6 +2600,13 @@ function SiteInspection() {
   };
 
   const addEditItemRow = () => {
+    const validation = validateInspectionMeasurementRows(editInspection?.items || []);
+    if (!validation.valid) {
+      setMeasurementValidationAttempted((current) => ({ ...current, edit: true }));
+      toast.error("Please complete the current measurement before adding another measurement.");
+      return;
+    }
+    setMeasurementValidationAttempted((current) => ({ ...current, edit: false }));
     setEditInspection((prev) => ({
       ...prev,
       items: [
@@ -2547,15 +2643,15 @@ function SiteInspection() {
   };
 
   const computeTotals = () => {
-    const totalArea = (newInspection.items || []).reduce((sum, item) => sum + (Number(item.area) || 0), 0);
+    const completeItems = (newInspection.items || []).filter((item) => Object.keys(validateInspectionMeasurementRows([item]).itemErrors[0] || {}).length === 0);
+    const totalArea = completeItems.reduce((sum, item) => sum + (Number(item.area) || 0), 0);
     const productEstimate = Math.round(
-      (newInspection.items || []).reduce((sum, item) => {
-        if (!normalizeProductId(item.product_id)) return sum;
+      completeItems.reduce((sum, item) => {
         if (item.estimation_mode === "manual") return sum + (Number(item.manual_estimated_total) || calculateRowSubtotal(item));
         return sum + calculateRowSubtotal(item);
       }, 0) * 100
     ) / 100;
-    const productCharges = (newInspection.items || []).reduce((sum, item) => sum + getItemAdditionalChargesTotal(item), 0);
+    const productCharges = completeItems.reduce((sum, item) => sum + getItemAdditionalChargesTotal(item), 0);
     const totalEstimate = productEstimate + productCharges + (newInspection.project_additional_charges || []).reduce((sum, charge) => String(charge.name || "").trim() && String(charge.amount ?? "").trim() !== "" ? sum + Math.max(0, Number(charge.amount) || 0) : sum, 0);
     return { totalArea, totalEstimate };
   };
@@ -2564,15 +2660,15 @@ function SiteInspection() {
     if (!editInspection?.items) {
       return { totalArea: 0, totalEstimate: 0 };
     }
-    const totalArea = (editInspection.items || []).reduce((sum, item) => sum + (Number(item.area) || 0), 0);
+    const completeItems = (editInspection.items || []).filter((item) => Object.keys(validateInspectionMeasurementRows([item]).itemErrors[0] || {}).length === 0);
+    const totalArea = completeItems.reduce((sum, item) => sum + (Number(item.area) || 0), 0);
     const productEstimate = Math.round(
-      (editInspection.items || []).reduce((sum, item) => {
-        if (!normalizeProductId(item.product_id)) return sum;
+      completeItems.reduce((sum, item) => {
         if (item.estimation_mode === "manual") return sum + (Number(item.manual_estimated_total) || calculateRowSubtotal(item));
         return sum + calculateRowSubtotal(item);
       }, 0) * 100
     ) / 100;
-    const productCharges = (editInspection.items || []).reduce((sum, item) => sum + getItemAdditionalChargesTotal(item), 0);
+    const productCharges = completeItems.reduce((sum, item) => sum + getItemAdditionalChargesTotal(item), 0);
     const totalEstimate = productEstimate + productCharges + (editInspection.project_additional_charges || []).reduce((sum, charge) => String(charge.name || "").trim() && String(charge.amount ?? "").trim() !== "" ? sum + Math.max(0, Number(charge.amount) || 0) : sum, 0);
     return { totalArea, totalEstimate };
   };
@@ -4724,6 +4820,7 @@ function SiteInspection() {
                         <MonthDayYearDateInput
                           label="Estimated installation date"
                           value={newInspection.estimated_installation_date || ""}
+                          disabled={!isValidInspectionDate(newInspection.inspection_date)}
                           timeValue={newInspection.estimated_installation_time}
                           durationMinutes={Number(newInspection.installation_duration_minutes) || 60}
                           businessHours={businessHours}
@@ -4737,6 +4834,7 @@ function SiteInspection() {
                           darkMode={darkMode}
                           scheduledRecords={rushOrderRecords}
                         />
+                        {!isValidInspectionDate(newInspection.inspection_date) && <p className={`mt-2 text-xs ${darkMode ? "text-amber-300" : "text-amber-700"}`}>Please set the Site Inspection Date first before scheduling the Estimated Installation Date.</p>}
                         <label className="mt-3 block text-xs font-semibold">Installation duration (min)<input type="text" inputMode="numeric" pattern="[0-9]*" value={newInspection.installation_duration_minutes} onChange={(event) => { if (/^\d*$/.test(event.target.value)) handleInspectionFieldChange("installation_duration_minutes", event.target.value); }} className={`${fieldClass} mt-1`} /></label>
                         {errors.estimated_installation_date && <p className="mt-2 text-xs text-red-400">{errors.estimated_installation_date}</p>}
                       </div>
@@ -4915,31 +5013,23 @@ function SiteInspection() {
                       <p className={`text-sm ${darkMode ? "text-slate-300" : "text-slate-600"}`}>Add or edit measurement rows. Totals update in real time.</p>
                     </div>
 
-                    <div className={`mt-4 hidden overflow-x-clip rounded-[10px] border shadow-[0_1px_2px_rgba(16,24,40,0.04)] xl:block ${darkMode ? "border-[#263040] bg-[#161c26]" : "border-[#dde3ec] bg-white"}`}>
-                        <div className={`sticky top-0 z-20 grid min-w-[820px] grid-cols-[1.7fr_0.9fr_0.9fr_0.8fr_0.7fr_1fr_1fr_40px] gap-2 px-3 py-3 text-[11.5px] font-bold uppercase tracking-[0.1em] ${darkMode ? "bg-[#1b2230] text-[#93a0b4]" : "bg-[#f6f8fb] text-[#6f7a8c]"}`}>
-                          <div>Product / Description</div>
-                          <div>Width</div>
-                          <div>Height</div>
-                          <div>Unit</div>
-                          <div>Quantity</div>
-                          <div>Rate / Unit</div>
-                          <div>Total</div>
-                          <div className="sr-only">Actions</div>
-                        </div>
+                    <div className={`mt-4 hidden overflow-x-auto rounded-xl border shadow-sm xl:block ${darkMode ? "border-[#263040] bg-[#161c26]" : "border-[#dde3ec] bg-white"}`}>
 
                       {(newInspection.items || []).map((item, index) => {
                         const hasSelectedProduct = Boolean(normalizeProductId(item.product_id));
+                        const rowIncomplete = measurementValidationAttempted.new && Object.keys(validateInspectionMeasurementRows([item]).itemErrors[0] || {}).length > 0;
                         const hasActiveProduct = products.some((product) => String(product._id || product.id) === normalizeProductId(item.product_id));
                         const rowSubtotal = hasSelectedProduct ? calculateRowSubtotal(item) + getItemAdditionalChargesTotal(item) : 0;
                         const bladeRow = hasSelectedProduct ? renderBladeMeasurementRow(item, index, handleItemFieldChange, handleItemProductChange, removeItemRow, computeTotals(), "new") : null;
                         if (bladeRow) return <Fragment key={`new-blade-charge-${item.id}`}>{bladeRow}{renderItemAdditionalCharges(item, index, handleItemFieldChange)}</Fragment>;
                         return (
-                          <div key={item.id} className={`m-0 grid min-w-[820px] grid-cols-[1.7fr_0.9fr_0.9fr_0.8fr_0.7fr_1fr_1fr_40px] items-start gap-2 border-b p-3 transition-colors ${hasSelectedRushCharge(item) ? darkMode ? "border-red-400/80 bg-red-500/20 hover:bg-red-500/30" : "border-red-500 bg-red-100 hover:bg-red-200" : darkMode ? "border-[#263040] bg-[#161c26] hover:bg-[#1b2230]" : "border-[#dde3ec] bg-white hover:bg-[#f6f8fb]"} ${index === (newInspection.items || []).length - 1 ? "last:border-b-0" : ""}`}>
-                            <div className="flex flex-col items-start gap-2">
+                          <div key={item.id} className={`m-0 grid min-w-[980px] grid-cols-[minmax(220px,1.65fr)_repeat(2,minmax(100px,0.85fr))_minmax(88px,0.72fr)_minmax(72px,0.58fr)_minmax(135px,1fr)_minmax(125px,0.92fr)_40px] items-end gap-3 border-b p-4 transition-colors last:border-b-0 ${rowIncomplete ? "ring-2 ring-inset ring-red-500" : ""} ${hasSelectedRushCharge(item) ? darkMode ? "border-red-400/80 bg-red-500/20 hover:bg-red-500/30" : "border-red-500 bg-red-100 hover:bg-red-200" : darkMode ? "border-[#263040] bg-[#161c26] hover:bg-[#1b2230]" : "border-[#dde3ec] bg-white hover:bg-[#f6f8fb]"}`}>
+                            <div className="flex min-w-0 flex-col items-start gap-1.5">
+                              <span className={`text-[10px] font-bold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Product</span>
                               <select
                                 value={normalizeProductId(item.product_id)}
                                 onChange={(e) => handleItemProductChange(item.id, e.target.value)}
-                                className={`product-measurement-select min-h-11 w-full rounded-lg border ${!item.product_id ? "border-dashed" : ""} px-2 py-2 text-sm outline-none transition focus:border-[#2563eb] ${darkMode ? "border-[#263040] bg-[#161c26] text-[#eef1f6] placeholder:text-[#93a0b4] focus:ring-2 focus:ring-[#6ea8fe]/20" : "border-[#dde3ec] bg-white text-[#1a2230] placeholder:text-[#6f7a8c] focus:ring-2 focus:ring-[#2563eb]/15"}`}
+                                className={`product-measurement-select min-h-11 w-full rounded-lg border ${!item.product_id ? "border-dashed" : ""} px-2 py-2 text-sm outline-none transition focus:border-[#2563eb] ${darkMode ? `border-[#263040] bg-[#161c26] ${hasSelectedProduct ? "font-semibold text-red-300" : "text-[#eef1f6]"} placeholder:text-[#93a0b4] focus:ring-2 focus:ring-[#6ea8fe]/20` : `border-[#dde3ec] bg-white ${hasSelectedProduct ? "font-semibold text-red-600" : "text-[#1a2230]"} placeholder:text-[#6f7a8c] focus:ring-2 focus:ring-[#2563eb]/15`}`}
                               >
                                 <option value="">-- Select Active Product --</option>
                                 {hasSelectedProduct && !hasActiveProduct && <option value={normalizeProductId(item.product_id)}>{item.name || "Unavailable Product"}</option>}
@@ -4949,25 +5039,17 @@ function SiteInspection() {
                               </select>
                               {renderBladeMeasurementOptions(item, handleItemFieldChange, index)}
                             </div>
-                            <input
-                              type="number"
-                              min="0"
-                              value={hasSelectedProduct ? getDimensionInputValue(item.width) : ""}
-                              disabled={!hasSelectedProduct}
-                              onFocus={() => clearDefaultDimensionZero(item.id, "width", item.width, handleItemFieldChange)}
-                              onChange={(e) => handleItemFieldChange(item.id, "width", e.target.value)}
-                              className={`min-h-11 w-full rounded-lg border px-2 py-2 text-sm outline-none focus:ring-2 ${darkMode ? "border-[#263040] bg-[#161c26] text-[#eef1f6] focus:border-[#6ea8fe] focus:ring-[#6ea8fe]/20" : "border-[#dde3ec] bg-white text-[#1a2230] focus:border-[#2563eb] focus:ring-[#2563eb]/15"}`}
-                            />
-                            <input
-                              type="number"
-                              min="0"
-                              value={hasSelectedProduct ? getDimensionInputValue(item.height) : ""}
-                              disabled={!hasSelectedProduct}
-                              onFocus={() => clearDefaultDimensionZero(item.id, "height", item.height, handleItemFieldChange)}
-                              onChange={(e) => handleItemFieldChange(item.id, "height", e.target.value)}
-                              className={`min-h-11 w-full rounded-lg border px-2 py-2 text-sm outline-none focus:ring-2 ${darkMode ? "border-[#263040] bg-[#161c26] text-[#eef1f6] focus:border-[#6ea8fe] focus:ring-[#6ea8fe]/20" : "border-[#dde3ec] bg-white text-[#1a2230] focus:border-[#2563eb] focus:ring-[#2563eb]/15"}`}
-                            />
-                            <select
+                            <div className="col-span-2 grid grid-cols-2 gap-3">
+                              {getInspectionMeasurementFields(item).map((field) => (
+                                <label key={field.key} className="min-w-0">
+                                  <span className={`mb-1 block text-[10px] font-bold uppercase ${darkMode ? "text-slate-400" : "text-slate-500"}`}>{field.label}</span>
+                                  <input type="number" min="0" value={hasSelectedProduct ? getDimensionInputValue(item[field.key]) : ""} disabled={!hasSelectedProduct} onFocus={() => clearDefaultDimensionZero(item.id, field.key, item[field.key], handleItemFieldChange)} onChange={(event) => handleItemFieldChange(item.id, field.key, event.target.value)} className={`min-h-11 w-full rounded-lg border px-2 py-2 text-sm outline-none focus:ring-2 ${darkMode ? "border-[#263040] bg-[#161c26] text-[#eef1f6] focus:border-[#6ea8fe] focus:ring-[#6ea8fe]/20" : "border-[#dde3ec] bg-white text-[#1a2230] focus:border-[#2563eb] focus:ring-[#2563eb]/15"}`} />
+                                </label>
+                              ))}
+                            </div>
+                            <label className="min-w-0">
+                              <span className={`mb-1 block text-[10px] font-bold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Unit</span>
+                              <select
                               aria-label={`Measurement unit for product ${index + 1}`}
                               value={hasSelectedProduct ? item.measurement_unit || item.measurementUnit || "in" : ""}
                               disabled={!hasSelectedProduct}
@@ -4979,20 +5061,28 @@ function SiteInspection() {
                               <option value="ft">ft</option>
                               <option value="cm">cm</option>
                               <option value="m">m</option>
-                            </select>
-                            <input
+                              </select>
+                            </label>
+                            <label className="min-w-0">
+                              <span className={`mb-1 block text-[10px] font-bold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Quantity</span>
+                              <input
                               type="number"
                               min="1"
                               value={hasSelectedProduct ? item.qty ?? 1 : ""}
                               disabled={!hasSelectedProduct}
                               onChange={(e) => handleItemFieldChange(item.id, "qty", e.target.value)}
                               className={`w-full rounded-lg border px-2 py-2 text-sm outline-none focus:ring-2 ${darkMode ? "border-[#263040] bg-[#161c26] text-[#eef1f6] focus:border-[#6ea8fe] focus:ring-[#6ea8fe]/20" : "border-[#dde3ec] bg-white text-[#1a2230] focus:border-[#2563eb] focus:ring-[#2563eb]/15"}`}
-                            />
-                            <div className={`measurement-rate-badge flex min-h-11 items-center justify-center rounded-md border px-2 py-2 text-sm font-semibold ${darkMode ? "border-[#263040] bg-[#1b2740] text-[#6ea8fe]" : "border-[#dde3ec] bg-[#eaf1fe] text-[#2563eb]"}`}>
-                              {hasSelectedProduct ? formatRateLabel(item) : "—"}
+                              />
+                            </label>
+                            <div className="min-w-0">
+                              <span className={`mb-1 block text-[10px] font-bold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Rate / unit</span>
+                              <div className={`measurement-rate-badge flex min-h-11 items-center justify-center rounded-lg border px-2 py-2 text-sm font-bold ${darkMode ? "border-[#263040] bg-[#1b2740] text-[#6ea8fe]" : "border-[#dde3ec] bg-[#eaf1fe] text-[#2563eb]"}`}>{hasSelectedProduct ? formatRateLabel(item) : "—"}</div>
                             </div>
                             <div className="contents">
-                              <span className={`measurement-row-total flex min-h-11 min-w-0 items-center whitespace-nowrap text-sm font-bold ${darkMode ? "text-slate-100" : "text-slate-800"}`}>{hasSelectedProduct ? formatCurrency(rowSubtotal) : "—"}</span>
+                              <div className="min-w-0">
+                                <span className={`mb-1 block text-[10px] font-bold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Total</span>
+                                <span className={`measurement-row-total flex min-h-11 min-w-0 items-center whitespace-nowrap text-base font-black ${darkMode ? "text-slate-100" : "text-slate-900"}`}>{hasSelectedProduct ? formatCurrency(rowSubtotal) : "—"}</span>
+                              </div>
                               <button type="button" onClick={() => requestMeasurementDelete("new", item, index)} className={`measurement-remove-button mt-0.5 inline-flex size-9 items-center justify-center self-start rounded-lg border transition ${darkMode ? "border-[#5c2a24] bg-[#3a1c18] text-[#ff8080] hover:border-[#ff8080] hover:bg-[#4a211c]" : "border-[#f3c2bc] bg-[#fdecea] text-[#d64545] hover:border-[#d64545] hover:bg-[#fbded9]"}`} aria-label={`Remove measurement ${index + 1}`} title={`Remove measurement ${index + 1}`}>
                                 <Trash2 size={15} aria-hidden="true" />
                               </button>
@@ -5052,6 +5142,7 @@ function SiteInspection() {
                     <div className="mt-4 space-y-3 xl:hidden">
                       {(newInspection.items || []).map((item, index) => {
                         const hasSelectedProduct = Boolean(normalizeProductId(item.product_id));
+                        const rowIncomplete = measurementValidationAttempted.new && Object.keys(validateInspectionMeasurementRows([item]).itemErrors[0] || {}).length > 0;
                         const hasActiveProduct = products.some((product) => String(product._id || product.id) === normalizeProductId(item.product_id));
                         const rowSubtotal = hasSelectedProduct ? calculateRowSubtotal(item) + getItemAdditionalChargesTotal(item) : 0;
                         const bladeRow = hasSelectedProduct ? renderBladeMeasurementRow(item, index, handleItemFieldChange, handleItemProductChange, removeItemRow, computeTotals(), "new-mobile") : null;
@@ -5062,7 +5153,7 @@ function SiteInspection() {
                         const labelClasses = `mb-1.5 block text-[10px] font-bold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`;
 
                         return (
-                          <div key={item.id} className={`min-w-0 rounded-xl border p-3.5 shadow-sm transition-colors sm:p-4 ${darkMode ? "border-slate-700 bg-[#0d2033] hover:border-slate-600" : "border-slate-200 bg-white hover:border-slate-300"}`}>
+                          <div key={item.id} className={`min-w-0 rounded-xl border p-3.5 shadow-sm transition-colors sm:p-4 ${rowIncomplete ? "border-red-500 bg-red-50/60" : darkMode ? "border-slate-700 bg-[#0d2033] hover:border-slate-600" : "border-slate-200 bg-white hover:border-slate-300"}`}>
                             <div className="flex items-center justify-between gap-2">
                               <p className={`text-xs font-bold ${darkMode ? "text-slate-200" : "text-slate-700"}`}>Measurement {index + 1}</p>
                               <button type="button" onClick={() => requestMeasurementDelete("new", item, index)} className={`inline-flex size-9 shrink-0 items-center justify-center rounded-lg border transition ${darkMode ? "border-[#5c2a24] bg-[#3a1c18] text-[#ff8080] hover:border-[#ff8080] hover:bg-[#4a211c]" : "border-[#f3c2bc] bg-[#fdecea] text-[#d64545] hover:border-[#d64545] hover:bg-[#fbded9]"}`} aria-label={`Remove measurement ${index + 1}`} title="Remove measurement">
@@ -5075,7 +5166,7 @@ function SiteInspection() {
                                 id={`new-measurement-product-${index}`}
                                 value={normalizeProductId(item.product_id)}
                                 onChange={(event) => handleItemProductChange(item.id, event.target.value)}
-                                className={inputClasses}
+                                className={`${inputClasses} ${hasSelectedProduct ? `font-semibold ${darkMode ? "!text-red-300" : "!text-red-600"}` : ""}`}
                               >
                                 <option value="">-- Select Active Product --</option>
                                 {hasSelectedProduct && !hasActiveProduct && <option value={normalizeProductId(item.product_id)}>{item.name || "Unavailable Product"}</option>}
@@ -5125,14 +5216,12 @@ function SiteInspection() {
                                 )}
                             </div>
                             <div className="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
-                              <label className="min-w-0">
-                                <span className={labelClasses}>{isInspectionMeterItem(item) ? "Length" : "Width"}</span>
-                                <input type="number" min="0" inputMode="decimal" aria-label={`${isInspectionMeterItem(item) ? "Length" : "Width"} for measurement ${index + 1}`} value={hasSelectedProduct ? getDimensionInputValue(item.width) : ""} disabled={!hasSelectedProduct} onFocus={() => clearDefaultDimensionZero(item.id, "width", item.width, handleItemFieldChange)} onChange={(event) => handleItemFieldChange(item.id, "width", event.target.value)} className={inputClasses} />
-                              </label>
-                              <label className="min-w-0">
-                                <span className={labelClasses}>{isInspectionMeterItem(item) ? "Height (optional)" : "Height"}</span>
-                                <input type="number" min="0" inputMode="decimal" aria-label={`Height for measurement ${index + 1}`} value={hasSelectedProduct ? getDimensionInputValue(item.height) : ""} disabled={!hasSelectedProduct} onFocus={() => clearDefaultDimensionZero(item.id, "height", item.height, handleItemFieldChange)} onChange={(event) => handleItemFieldChange(item.id, "height", event.target.value)} className={inputClasses} />
-                              </label>
+                              {getInspectionMeasurementFields(item).map((field) => (
+                                <label key={field.key} className="min-w-0">
+                                  <span className={labelClasses}>{field.label}</span>
+                                  <input type="number" min="0" inputMode="decimal" aria-label={`${field.label} for measurement ${index + 1}`} value={hasSelectedProduct ? getDimensionInputValue(item[field.key]) : ""} disabled={!hasSelectedProduct} onFocus={() => clearDefaultDimensionZero(item.id, field.key, item[field.key], handleItemFieldChange)} onChange={(event) => handleItemFieldChange(item.id, field.key, event.target.value)} className={inputClasses} />
+                                </label>
+                              ))}
                               <label className="min-w-0">
                                 <span className={labelClasses}>Measurement Unit</span>
                                 <select aria-label={`Measurement unit for measurement ${index + 1}`} value={hasSelectedProduct ? item.measurement_unit || item.measurementUnit || "in" : ""} disabled={!hasSelectedProduct} onChange={(event) => handleItemFieldChange(item.id, "measurement_unit", event.target.value)} className={inputClasses}>
@@ -5166,6 +5255,7 @@ function SiteInspection() {
                     <button type="button" onClick={addItemRow} className={`mt-4 inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border px-3.5 py-2 text-sm font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 ${darkMode ? "border-red-500/40 bg-red-500/10 text-red-300 hover:bg-red-500/20" : "border-red-200 bg-red-50 text-red-700 hover:bg-red-100"}`}>
                       <Plus size={15} aria-hidden="true" /> Add measurement
                     </button>
+                    {measurementValidationAttempted.new && !validateInspectionMeasurementRows(newInspection.items || []).valid && <p role="alert" className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">Please complete the current measurement before adding another measurement.</p>}
                     {errors.additional_project_charges && <p role="alert" className="mt-2 text-xs font-medium text-red-600">{errors.additional_project_charges}</p>}
 
                     <div className={`mt-4 flex justify-end border-t pt-4 ${darkMode ? "border-slate-700" : "border-slate-200"}`}>
@@ -5913,6 +6003,7 @@ function SiteInspection() {
                         <MonthDayYearDateInput
                           label="Estimated installation date"
                           value={editInspection.estimated_installation_date || ""}
+                          disabled={!isValidInspectionDate(editInspection.inspection_date)}
                           timeValue={editInspection.estimated_installation_time}
                           durationMinutes={Number(editInspection.installation_duration_minutes) || 60}
                           businessHours={businessHours}
@@ -5927,6 +6018,7 @@ function SiteInspection() {
                           scheduledRecords={rushOrderRecords}
                           excludeRecordId={editInspection.id}
                         />
+                        {!isValidInspectionDate(editInspection.inspection_date) && <p className={`mt-2 text-xs ${darkMode ? "text-amber-300" : "text-amber-700"}`}>Please set the Site Inspection Date first before scheduling the Estimated Installation Date.</p>}
                         <label className="mt-3 block text-xs font-semibold">Installation duration (min)<input type="text" inputMode="numeric" pattern="[0-9]*" value={editInspection.installation_duration_minutes ?? 60} onChange={(event) => { if (/^\d*$/.test(event.target.value)) handleEditChange("installation_duration_minutes", event.target.value); }} className={`${fieldClass} mt-1`} /></label>
                         {errors.estimated_installation_date && <p className="mt-2 text-xs text-red-400">{errors.estimated_installation_date}</p>}
                       </div>
@@ -6116,32 +6208,24 @@ function SiteInspection() {
                       </button>
                     </div>
 
-                    <div className={`mt-4 hidden overflow-x-clip rounded-[10px] border shadow-[0_1px_2px_rgba(16,24,40,0.04)] xl:block ${darkMode ? "border-[#263040] bg-[#161c26]" : "border-[#dde3ec] bg-white"}`}>
-                        <div className={`sticky top-0 z-20 grid min-w-[820px] grid-cols-[1.7fr_0.9fr_0.9fr_0.8fr_0.7fr_1fr_1fr_40px] gap-2 px-3 py-3 text-[11.5px] font-bold uppercase tracking-[0.12em] ${darkMode ? "bg-[#1b2230] text-[#93a0b4]" : "bg-[#f6f8fb] text-[#6f7a8c]"}`}>
-                          <div>Product / Description</div>
-                          <div>Width</div>
-                          <div>Height</div>
-                          <div>Unit</div>
-                          <div>Quantity</div>
-                          <div>Rate / Unit</div>
-                          <div>Total</div>
-                          <div className="sr-only">Actions</div>
-                        </div>
+                    <div className={`mt-4 hidden overflow-x-auto rounded-xl border shadow-sm xl:block ${darkMode ? "border-[#263040] bg-[#161c26]" : "border-[#dde3ec] bg-white"}`}>
 
                       <fieldset disabled={!editMeasurementsEnabled} className={`m-0 min-w-0 w-full border-0 p-0 ${editMeasurementsEnabled ? "" : "edit-measurements-disabled"}`}>
                       {(editInspection.items || []).map((item, index) => {
                         const hasSelectedProduct = Boolean(normalizeProductId(item.product_id));
+                        const rowIncomplete = measurementValidationAttempted.edit && Object.keys(validateInspectionMeasurementRows([item]).itemErrors[0] || {}).length > 0;
                         const hasActiveProduct = products.some((product) => String(product._id || product.id) === normalizeProductId(item.product_id));
                         const rowSubtotal = hasSelectedProduct ? calculateRowSubtotal(item) + getItemAdditionalChargesTotal(item) : 0;
                         const bladeRow = hasSelectedProduct ? renderBladeMeasurementRow(item, index, handleEditItemFieldChange, handleEditItemProductChange, removeEditItemRow, computeEditTotals(), "edit") : null;
                         if (bladeRow) return <Fragment key={`edit-blade-charge-${item.id || index}`}>{bladeRow}{renderItemAdditionalCharges(item, index, handleEditItemFieldChange)}</Fragment>;
                         return (
-                          <div key={item.id || `${item.product_id || "row"}-${index}`} className={`m-0 grid min-w-[820px] grid-cols-[1.7fr_0.9fr_0.9fr_0.8fr_0.7fr_1fr_1fr_40px] items-start gap-2 border-b p-3 transition-colors ${hasSelectedRushCharge(item) ? darkMode ? "border-red-400/80 bg-red-500/20 hover:bg-red-500/30" : "border-red-500 bg-red-100 hover:bg-red-200" : darkMode ? "border-[#263040] bg-[#161c26] hover:bg-[#1b2230]" : "border-[#dde3ec] bg-white hover:bg-[#f6f8fb]"} ${index === (editInspection.items || []).length - 1 ? "last:border-b-0" : ""}`}>
-                            <div className="flex flex-col items-start gap-2">
+                          <div key={item.id || `${item.product_id || "row"}-${index}`} className={`m-0 grid min-w-[980px] grid-cols-[minmax(220px,1.65fr)_repeat(2,minmax(100px,0.85fr))_minmax(88px,0.72fr)_minmax(72px,0.58fr)_minmax(135px,1fr)_minmax(125px,0.92fr)_40px] items-end gap-3 border-b p-4 transition-colors last:border-b-0 ${rowIncomplete ? "ring-2 ring-inset ring-red-500" : ""} ${hasSelectedRushCharge(item) ? darkMode ? "border-red-400/80 bg-red-500/20 hover:bg-red-500/30" : "border-red-500 bg-red-100 hover:bg-red-200" : darkMode ? "border-[#263040] bg-[#161c26] hover:bg-[#1b2230]" : "border-[#dde3ec] bg-white hover:bg-[#f6f8fb]"}`}>
+                            <div className="flex min-w-0 flex-col items-start gap-1.5">
+                              <span className={`text-[10px] font-bold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Product</span>
                               <select
                                 value={normalizeProductId(item.product_id)}
                                 onChange={(e) => handleEditItemProductChange(item.id, e.target.value)}
-                                className={`product-measurement-select min-h-11 w-full rounded-lg border ${!item.product_id ? "border-dashed" : ""} px-2 py-2 text-sm outline-none transition focus:border-[#2563eb] ${darkMode ? "border-[#263040] bg-[#161c26] text-[#eef1f6] focus:border-[#6ea8fe] focus:ring-2 focus:ring-[#6ea8fe]/20" : "border-[#dde3ec] bg-white text-[#1a2230] focus:ring-2 focus:ring-[#2563eb]/15"}`}
+                                className={`product-measurement-select min-h-11 w-full rounded-lg border ${!item.product_id ? "border-dashed" : ""} px-2 py-2 text-sm outline-none transition focus:border-[#2563eb] ${darkMode ? `border-[#263040] bg-[#161c26] ${hasSelectedProduct ? "font-semibold text-red-300" : "text-[#eef1f6]"} focus:ring-2 focus:ring-[#6ea8fe]/20` : `border-[#dde3ec] bg-white ${hasSelectedProduct ? "font-semibold text-red-600" : "text-[#1a2230]"} focus:ring-2 focus:ring-[#2563eb]/15`}`}
                               >
                                 <option value="">-- Select Active Product --</option>
                                 {hasSelectedProduct && !hasActiveProduct && <option value={normalizeProductId(item.product_id)}>{item.name || "Unavailable Product"}</option>}
@@ -6152,27 +6236,18 @@ function SiteInspection() {
                               {renderBladeMeasurementOptions(item, handleEditItemFieldChange, index)}
                             </div>
 
-                            <input
-                              type="number"
-                              min="0"
-                              value={hasSelectedProduct ? getDimensionInputValue(item.width) : ""}
-                              disabled={!hasSelectedProduct}
-                              onFocus={() => clearDefaultDimensionZero(item.id, "width", item.width, handleEditItemFieldChange)}
-                              onChange={(e) => handleEditItemFieldChange(item.id, "width", e.target.value)}
-                              className={darkMode ? "min-h-11 w-full rounded-lg border border-[#263040] bg-[#161c26] px-2 py-2 text-sm text-[#eef1f6] outline-none focus:border-[#6ea8fe] focus:ring-2 focus:ring-[#6ea8fe]/20" : "min-h-11 w-full rounded-lg border border-[#dde3ec] bg-white px-2 py-2 text-sm text-[#1a2230] outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/15"}
-                            />
+                            <div className="col-span-2 grid grid-cols-2 gap-2">
+                              {getInspectionMeasurementFields(item).map((field) => (
+                                <label key={field.key} className="min-w-0">
+                                  <span className={`mb-1 block text-[10px] font-bold uppercase ${darkMode ? "text-slate-400" : "text-slate-500"}`}>{field.label}</span>
+                                  <input type="number" min="0" value={hasSelectedProduct ? getDimensionInputValue(item[field.key]) : ""} disabled={!hasSelectedProduct} onFocus={() => clearDefaultDimensionZero(item.id, field.key, item[field.key], handleEditItemFieldChange)} onChange={(event) => handleEditItemFieldChange(item.id, field.key, event.target.value)} className={darkMode ? "min-h-11 w-full rounded-lg border border-[#263040] bg-[#161c26] px-2 py-2 text-sm text-[#eef1f6] outline-none focus:border-[#6ea8fe] focus:ring-2 focus:ring-[#6ea8fe]/20" : "min-h-11 w-full rounded-lg border border-[#dde3ec] bg-white px-2 py-2 text-sm text-[#1a2230] outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/15"} />
+                                </label>
+                              ))}
+                            </div>
 
-                            <input
-                              type="number"
-                              min="0"
-                              value={hasSelectedProduct ? getDimensionInputValue(item.height) : ""}
-                              disabled={!hasSelectedProduct}
-                              onFocus={() => clearDefaultDimensionZero(item.id, "height", item.height, handleEditItemFieldChange)}
-                              onChange={(e) => handleEditItemFieldChange(item.id, "height", e.target.value)}
-                              className={darkMode ? "min-h-11 w-full rounded-lg border border-[#263040] bg-[#161c26] px-2 py-2 text-sm text-[#eef1f6] outline-none focus:border-[#6ea8fe] focus:ring-2 focus:ring-[#6ea8fe]/20" : "min-h-11 w-full rounded-lg border border-[#dde3ec] bg-white px-2 py-2 text-sm text-[#1a2230] outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/15"}
-                            />
-
-                            <select
+                            <label className="min-w-0">
+                              <span className={`mb-1 block text-[10px] font-bold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Unit</span>
+                              <select
                               aria-label={`Measurement unit for ${item.name || "item"}`}
                               value={hasSelectedProduct ? item.measurement_unit || item.measurementUnit || "in" : ""}
                               disabled={!hasSelectedProduct}
@@ -6184,25 +6259,31 @@ function SiteInspection() {
                               <option value="ft">ft</option>
                               <option value="cm">cm</option>
                               <option value="m">m</option>
-                            </select>
+                              </select>
+                            </label>
 
-                            <input
+                            <label className="min-w-0">
+                              <span className={`mb-1 block text-[10px] font-bold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Quantity</span>
+                              <input
                               type="number"
                               min="1"
                               value={hasSelectedProduct ? item.qty ?? item.quantity ?? 1 : ""}
                               disabled={!hasSelectedProduct}
                               onChange={(e) => handleEditItemFieldChange(item.id, "qty", e.target.value)}
                               className={darkMode ? "w-full rounded-lg border border-[#263040] bg-[#161c26] px-2 py-2 text-sm text-[#eef1f6] outline-none focus:border-[#6ea8fe] focus:ring-2 focus:ring-[#6ea8fe]/20" : "w-full rounded-lg border border-[#dde3ec] bg-white px-2 py-2 text-sm text-[#1a2230] outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/15"}
-                            />
+                              />
+                            </label>
 
-                            <div className={`measurement-rate-badge flex min-h-11 items-center justify-center rounded-md border px-2 py-2 text-sm font-semibold ${darkMode ? "border-[#263040] bg-[#1b2740] text-[#6ea8fe]" : "border-[#dde3ec] bg-[#eaf1fe] text-[#2563eb]"}`}>
-                              {hasSelectedProduct ? formatRateLabel(item) : "—"}
+                            <div className="min-w-0">
+                              <span className={`mb-1 block text-[10px] font-bold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Rate / unit</span>
+                              <div className={`measurement-rate-badge flex min-h-11 items-center justify-center rounded-lg border px-2 py-2 text-sm font-bold ${darkMode ? "border-[#263040] bg-[#1b2740] text-[#6ea8fe]" : "border-[#dde3ec] bg-[#eaf1fe] text-[#2563eb]"}`}>{hasSelectedProduct ? formatRateLabel(item) : "—"}</div>
                             </div>
 
                             <div className="contents">
-                              <span className={`measurement-row-total flex min-h-11 min-w-0 items-center whitespace-nowrap text-sm font-bold ${darkMode ? "text-slate-100" : "text-slate-800"}`}>
+                              <div className="min-w-0"><span className={`mb-1 block text-[10px] font-bold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Total</span><span className={`measurement-row-total flex min-h-11 min-w-0 items-center whitespace-nowrap text-base font-black ${darkMode ? "text-slate-100" : "text-slate-900"}` }>
                                 {hasSelectedProduct ? formatCurrency(rowSubtotal) : "—"}
                               </span>
+                              </div>
                               <button type="button" onClick={() => requestMeasurementDelete("edit", item, index)} className={`measurement-remove-button mt-0.5 inline-flex size-9 items-center justify-center self-start rounded-lg border transition ${darkMode ? "border-[#5c2a24] bg-[#3a1c18] text-[#ff8080] hover:border-[#ff8080] hover:bg-[#4a211c]" : "border-[#f3c2bc] bg-[#fdecea] text-[#d64545] hover:border-[#d64545] hover:bg-[#fbded9]"}`} aria-label={`Remove measurement ${index + 1}`} title={`Remove measurement ${index + 1}`}>
                                 <Trash2 size={15} aria-hidden="true" />
                               </button>
@@ -6264,6 +6345,7 @@ function SiteInspection() {
                     <div className="mt-4 space-y-3 xl:hidden">
                       {(editInspection.items || []).map((item, index) => {
                         const hasSelectedProduct = Boolean(normalizeProductId(item.product_id));
+                        const rowIncomplete = measurementValidationAttempted.edit && Object.keys(validateInspectionMeasurementRows([item]).itemErrors[0] || {}).length > 0;
                         const hasActiveProduct = products.some((product) => String(product._id || product.id) === normalizeProductId(item.product_id));
                         const rowSubtotal = hasSelectedProduct ? calculateRowSubtotal(item) + getItemAdditionalChargesTotal(item) : 0;
                         const bladeRow = hasSelectedProduct ? renderBladeMeasurementRow(item, index, handleEditItemFieldChange, handleEditItemProductChange, removeEditItemRow, computeEditTotals(), "edit-mobile") : null;
@@ -6274,7 +6356,7 @@ function SiteInspection() {
                         const labelClasses = `mb-1.5 block text-[10px] font-bold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`;
 
                         return (
-                          <div key={item.id || `${item.product_id || "row"}-${index}`} className={`min-w-0 rounded-xl border p-3.5 shadow-sm transition-colors sm:p-4 ${darkMode ? "border-slate-700 bg-[#0d2033] hover:border-slate-600" : "border-slate-200 bg-white hover:border-slate-300"}`}>
+                          <div key={item.id || `${item.product_id || "row"}-${index}`} className={`min-w-0 rounded-xl border p-3.5 shadow-sm transition-colors sm:p-4 ${rowIncomplete ? "border-red-500 bg-red-50/60" : darkMode ? "border-slate-700 bg-[#0d2033] hover:border-slate-600" : "border-slate-200 bg-white hover:border-slate-300"}`}>
                             <div className="flex items-center justify-between gap-2">
                               <p className={`text-xs font-bold ${darkMode ? "text-slate-200" : "text-slate-700"}`}>Measurement {index + 1}</p>
                               <button type="button" onClick={() => requestMeasurementDelete("edit", item, index)} className={`inline-flex size-9 shrink-0 items-center justify-center rounded-lg border transition ${darkMode ? "border-[#5c2a24] bg-[#3a1c18] text-[#ff8080] hover:border-[#ff8080] hover:bg-[#4a211c]" : "border-[#f3c2bc] bg-[#fdecea] text-[#d64545] hover:border-[#d64545] hover:bg-[#fbded9]"}`} aria-label={`Remove measurement ${index + 1}`} title="Remove measurement">
@@ -6287,7 +6369,7 @@ function SiteInspection() {
                                 id={`edit-measurement-product-${index}`}
                                 value={normalizeProductId(item.product_id)}
                                 onChange={(event) => handleEditItemProductChange(item.id, event.target.value)}
-                                className={inputClasses}
+                                className={`${inputClasses} ${hasSelectedProduct ? `font-semibold ${darkMode ? "!text-red-300" : "!text-red-600"}` : ""}`}
                               >
                                 <option value="">-- Select Active Product --</option>
                                 {hasSelectedProduct && !hasActiveProduct && <option value={normalizeProductId(item.product_id)}>{item.name || "Unavailable Product"}</option>}
@@ -6328,14 +6410,12 @@ function SiteInspection() {
                               )}
                             </div>
                             <div className="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
-                              <label className="min-w-0">
-                                <span className={labelClasses}>{isInspectionMeterItem(item) ? "Length" : isInspectionPieceItem(item) ? "Not used" : "Width"}</span>
-                                <input type="number" min="0" inputMode="decimal" aria-label={`Width for measurement ${index + 1}`} value={hasSelectedProduct ? getDimensionInputValue(item.width) : ""} disabled={!hasSelectedProduct} onFocus={() => clearDefaultDimensionZero(item.id, "width", item.width, handleEditItemFieldChange)} onChange={(event) => handleEditItemFieldChange(item.id, "width", event.target.value)} className={inputClasses} />
-                              </label>
-                              <label className="min-w-0">
-                                <span className={labelClasses}>{isInspectionMeterItem(item) ? "Height (optional)" : isInspectionPieceItem(item) ? "Not used" : "Height"}</span>
-                                <input type="number" min="0" inputMode="decimal" aria-label={`Height for measurement ${index + 1}`} value={hasSelectedProduct ? getDimensionInputValue(item.height) : ""} disabled={!hasSelectedProduct} onFocus={() => clearDefaultDimensionZero(item.id, "height", item.height, handleEditItemFieldChange)} onChange={(event) => handleEditItemFieldChange(item.id, "height", event.target.value)} className={inputClasses} />
-                              </label>
+                              {getInspectionMeasurementFields(item).map((field) => (
+                                <label key={field.key} className="min-w-0">
+                                  <span className={labelClasses}>{field.label}</span>
+                                  <input type="number" min="0" inputMode="decimal" aria-label={`${field.label} for measurement ${index + 1}`} value={hasSelectedProduct ? getDimensionInputValue(item[field.key]) : ""} disabled={!hasSelectedProduct} onFocus={() => clearDefaultDimensionZero(item.id, field.key, item[field.key], handleEditItemFieldChange)} onChange={(event) => handleEditItemFieldChange(item.id, field.key, event.target.value)} className={inputClasses} />
+                                </label>
+                              ))}
                               <label className="min-w-0">
                                 <span className={labelClasses}>Measurement Unit</span>
                                 <select aria-label={`Measurement unit for ${item.name || `measurement ${index + 1}`}`} value={hasSelectedProduct ? item.measurement_unit || item.measurementUnit || "in" : ""} disabled={!hasSelectedProduct} onChange={(event) => handleEditItemFieldChange(item.id, "measurement_unit", event.target.value)} className={inputClasses}>
@@ -6370,6 +6450,7 @@ function SiteInspection() {
                     <button type="button" disabled={!editMeasurementsEnabled} onClick={addEditItemRow} className={`mt-4 inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border px-3.5 py-2 text-sm font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 disabled:cursor-not-allowed disabled:opacity-50 ${darkMode ? "border-red-500/40 bg-red-500/10 text-red-300 hover:bg-red-500/20" : "border-red-200 bg-red-50 text-red-700 hover:bg-red-100"}`}>
                       <Plus size={15} aria-hidden="true" /> Add measurement
                     </button>
+                    {measurementValidationAttempted.edit && !validateInspectionMeasurementRows(editInspection.items || []).valid && <p role="alert" className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">Please complete the current measurement before adding another measurement.</p>}
                     {errors.additional_project_charges && <p role="alert" className="mt-2 text-xs font-medium text-red-600">{errors.additional_project_charges}</p>}
 
                     <div className={`mt-4 flex justify-end border-t pt-4 ${darkMode ? "border-slate-700" : "border-slate-200"}`}>

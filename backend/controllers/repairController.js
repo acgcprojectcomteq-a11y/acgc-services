@@ -4,14 +4,30 @@ import RepairRequest from "../models/RepairRequest.js";
 import User from "../models/User.js";
 import { buildWarrantyCoverage } from "../services/warranty.js";
 import { sendMail } from "../config/mailer.js";
+import { ACTIVE_REPAIR_STATUSES } from "../utils/repairIdentity.js";
 
 const text = (value, max = 4000) => String(value ?? "").trim().slice(0, max);
+const normalizedRepairProductName = (value) => text(value, 200).replace(/\s+/g, " ").toLocaleLowerCase();
 const money = (value, label = "Amount") => {
   const result = Number(value);
   if (!Number.isFinite(result) || result < 0) throw Object.assign(new Error(`${label} must be zero or more.`), { status: 400 });
   return Math.round(result * 100) / 100;
 };
 const statusError = (message, status = 409) => Object.assign(new Error(message), { status });
+const repairStatusLabel = (status) => ({ pending_review: "Pending Review", quotation_pending_approval: "Awaiting Admin Approval", customer_accepted: "Approved", admin_approved: "Approved", scheduled: "Scheduled", in_progress: "In Progress", completed: "Completed", cancelled: "Cancelled", rejected: "Rejected" }[status] || status || "Unknown");
+const activeRepairConflict = async ({ customer, order, productIndex, excludeId } = {}) => {
+  if (!customer || !order || !Number.isInteger(Number(productIndex))) return null;
+  const filter = { customer, order, productIndex: Number(productIndex), status: { $in: ACTIVE_REPAIR_STATUSES } };
+  if (excludeId) filter._id = { $ne: excludeId };
+  return RepairRequest.findOne(filter).sort({ createdAt: 1, _id: 1 });
+};
+const sendActiveRepairConflict = (res, repair, admin = false) => res.status(409).json({
+  success: false,
+  code: "ACTIVE_REPAIR_EXISTS",
+  message: `An active repair ticket already exists for this product and project. Ticket ${repair.repairTrackingId || "pending"} is ${repairStatusLabel(repair.status)}. Please wait until it is completed or closed before creating another request.`,
+  existingRepair: admin ? publicAdmin(repair) : publicCustomer(repair),
+});
+const isDuplicateRepairKeyError = (error) => error?.code === 11000 && (error?.keyPattern?.activeRepairKey || error?.message?.includes("unique_active_repair_per_project_item"));
 const event = (repair, name, detail, actor) => repair.history.push({ event: name, detail: text(detail), actor: actor?.id || null, actorRole: actor?.role || "system" });
 const repairTotal = (repair) => Math.round(Math.max(0, Number(repair.quotation?.total) || 0) * 100) / 100;
 const parsePaymentDate = (value) => {
@@ -187,15 +203,34 @@ export const createAdminRepairRequest = async (req, res) => {
     customer = await User.findOne({ _id: requestedCustomerId, role: "customer" }).select("first_name last_name email phone").lean();
     if (!customer) return res.status(404).json({ success: false, message: "Customer account not found." });
   }
-  const orderId = String(req.body?.orderId || "");
-  const productIndex = Number(req.body?.productIndex);
+  let orderId = String(req.body?.orderId || "");
+  let productIndex = Number(req.body?.productIndex);
   let order = null;
   let orderItem = null;
+  if (!orderId && customer && text(req.body?.orderTracking, 100) && text(req.body?.productName, 200)) {
+    const referencedOrder = await Order.findOne({ customer: customer._id, tracking: text(req.body.orderTracking, 100), status: "completed" }).select("_id customer tracking items").lean();
+    if (referencedOrder) {
+      const normalizedName = normalizedRepairProductName(req.body.productName);
+      const matchingIndexes = (referencedOrder.items || []).flatMap((item, index) => normalizedRepairProductName(item.name) === normalizedName ? [index] : []);
+      if (matchingIndexes.length !== 1) return res.status(400).json({ success: false, message: matchingIndexes.length ? "This project contains multiple matching product rows. Select the exact product row from the customer account." : "The product name does not match the referenced customer project. Select the exact product from the customer account." });
+      orderId = String(referencedOrder._id);
+      productIndex = matchingIndexes[0];
+    }
+  }
   if (orderId || (req.body?.productIndex !== undefined && req.body?.productIndex !== "")) {
     if (!customer || !mongoose.Types.ObjectId.isValid(orderId) || req.body?.productIndex === undefined || req.body?.productIndex === "" || !Number.isInteger(productIndex) || productIndex < 0) return res.status(400).json({ success: false, message: "Choose a valid product from the selected customer account." });
     order = await Order.findOne({ _id: orderId, customer: customer._id, status: "completed" }).lean();
     orderItem = order?.items?.[productIndex];
     if (!order || !orderItem) return res.status(404).json({ success: false, message: "The selected product is not part of a completed order for this customer." });
+  }
+  if (customer && !order) {
+    const activeForCustomer = await RepairRequest.findOne({ customer: customer._id, status: { $in: ACTIVE_REPAIR_STATUSES } }).sort({ createdAt: 1, _id: 1 });
+    if (activeForCustomer) return res.status(409).json({
+      success: false,
+      code: "ACTIVE_REPAIR_REQUIRES_PRODUCT",
+      message: "This customer has an active repair ticket. Select the exact project and product row so the system can verify that this is a different item.",
+      existingRepair: publicAdmin(activeForCustomer),
+    });
   }
   const customerName = customer ? [customer.first_name, customer.last_name].filter(Boolean).join(" ").trim() : text(req.body?.customerName, 180);
   const customerEmail = customer ? String(customer.email || "").trim().toLowerCase() : text(req.body?.customerEmail, 180).toLowerCase();
@@ -205,6 +240,9 @@ export const createAdminRepairRequest = async (req, res) => {
   const warranty = order && orderItem ? warrantyForItem(order, orderItem) : { status: req.body?.workflowType === "warranty" ? "unknown" : "no_warranty" };
   const workflowType = order && orderItem ? warranty.status === "active" ? "warranty" : "paid" : req.body?.workflowType === "warranty" ? "warranty" : "paid";
   if (!customerName || !productName || !issueDescription) return res.status(400).json({ success: false, message: "Enter the customer name, product or service, and repair issue." });
+  const existing = await activeRepairConflict({ customer: customer?._id, order: order?._id, productIndex });
+  if (existing) return sendActiveRepairConflict(res, existing, true);
+  try {
   const repair = await RepairRequest.create({
     customerName, customerEmail, customerPhone, productName, issueDescription,
     installationDate: order ? order.estimated_installation_date || orderItem.warranty_start_date || order.warranty_start_date || null : null,
@@ -218,6 +256,13 @@ export const createAdminRepairRequest = async (req, res) => {
     history: [{ event: "pending_review", detail: "Repair ticket created manually by an administrator.", actor: req.user.id, actorRole: req.user.role || "admin" }],
   });
   res.status(201).json({ success: true, repair: publicAdmin(repair) });
+  } catch (error) {
+    if (isDuplicateRepairKeyError(error)) {
+      const conflict = await activeRepairConflict({ customer: customer?._id, order: order?._id, productIndex });
+      if (conflict) return sendActiveRepairConflict(res, conflict, true);
+    }
+    throw error;
+  }
 };
 
 export const listCustomerRepairRequests = async (req, res) => {
@@ -272,14 +317,25 @@ export const createCustomerRepairRequest = async (req, res) => {
   const mediaUrls = Array.isArray(req.body?.mediaUrls) ? req.body.mediaUrls.slice(0, 6).map((url) => text(url, 1200)).filter((url) => /^https:\/\//i.test(url)) : [];
   const account = await User.findById(req.user.id).select("first_name last_name email phone").lean();
   if (!account) return res.status(404).json({ success: false, message: "Customer account not found." });
+  const existing = await activeRepairConflict({ customer: req.user.id, order: order._id, productIndex });
+  if (existing) return sendActiveRepairConflict(res, existing);
   const customerName = [account.first_name, account.last_name].filter(Boolean).join(" ").trim();
-  const repair = await RepairRequest.create({
+  let repair;
+  try {
+  repair = await RepairRequest.create({
     order: order._id, productIndex, customer: req.user.id, customerName,
     customerEmail: String(account.email || "").trim().toLowerCase(), customerPhone: account.phone || "",
     orderTracking: order.tracking || "", productName: text(item.name, 200) || "Ordered product", issueDescription,
     mediaUrls, workflowType, warranty, status: "pending_review",
     history: [{ event: "pending_review", detail: `Customer filed a ${workflowType === "warranty" ? "warranty claim" : "paid repair request"} for completed order ${order.tracking || ""}.`, actor: req.user.id, actorRole: "customer" }],
   });
+  } catch (error) {
+    if (isDuplicateRepairKeyError(error)) {
+      const conflict = await activeRepairConflict({ customer: req.user.id, order: order._id, productIndex });
+      if (conflict) return sendActiveRepairConflict(res, conflict);
+    }
+    throw error;
+  }
   void notifyAdmin(`New ${workflowType === "warranty" ? "warranty claim" : "paid repair request"}: ${repair.productName}`, `${customerName} filed a repair request for ${repair.productName}. Order ${repair.orderTracking}. Issue: ${issueDescription}`);
   res.status(201).json({ success: true, repair: publicCustomer(repair) });
 };
@@ -525,11 +581,32 @@ export const generateRepairReceipt = async (req, res) => {
   return res.json({ success: true, repair: publicAdmin(repair), reprinted });
 };
 
+export const closeDuplicateRepair = async (req, res) => {
+  const repair = await getRepair(req.params.repairId);
+  if (!repair) return res.status(404).json({ success: false, message: "Repair request not found." });
+  if (!repair.duplicateReview?.flagged || !repair.duplicateReview?.duplicateOf) return res.status(409).json({ success: false, message: "Only a ticket flagged as a duplicate can be closed through this review action." });
+  if (!ACTIVE_REPAIR_STATUSES.includes(repair.status)) return res.status(409).json({ success: false, message: "This duplicate ticket is already closed." });
+  const reason = text(req.body?.reason, 1200);
+  if (reason.length < 10) return res.status(400).json({ success: false, message: "Provide at least 10 characters explaining why this duplicate ticket is being closed." });
+  const primary = await RepairRequest.findById(repair.duplicateReview.duplicateOf).select("repairTrackingId").lean();
+  if (!primary) return res.status(409).json({ success: false, message: "The primary repair ticket linked to this duplicate could not be found." });
+  repair.status = "cancelled";
+  repair.duplicateReview.resolvedAt = new Date();
+  repair.duplicateReview.resolvedBy = req.user.id;
+  repair.duplicateReview.resolutionReason = reason;
+  event(repair, "duplicate_cancelled", `Administrator closed this duplicate repair ticket after review. Primary ticket: ${primary.repairTrackingId || repair.duplicateReview.duplicateOf}. Reason: ${reason}`, req.user);
+  await repair.save();
+  void quoteCustomer(repair, `Repair ticket closed after duplicate review: ${repair.productName}`, `Repair ticket ${repair.repairTrackingId} was closed after an administrator reviewed it as a duplicate of ${primary.repairTrackingId || "another ticket"}. Reason: ${reason}`);
+  return res.json({ success: true, repair: publicAdmin(repair) });
+};
+
 export const scheduleRepair = async (req, res) => {
   const repair = await getRepair(req.params.repairId);
   if (!repair) return res.status(404).json({ success: false, message: "Repair request not found." });
   if (!["customer_accepted", "admin_approved", "scheduled"].includes(repair.status)) return res.status(409).json({ success: false, message: "Approve the warranty claim or receive quotation acceptance before scheduling." });
   const startValue = text(req.body?.startDate || req.body?.date, 10);
+  if (repair.status === "scheduled" && req.body?.reschedule !== true) return res.status(409).json({ success: false, message: "This repair already has a schedule. Confirm that you are editing or rescheduling the existing appointment." });
+  if (repair.status !== "scheduled" && req.body?.reschedule === true) return res.status(409).json({ success: false, message: "Only an already scheduled repair can be rescheduled." });
   const finishValue = text(req.body?.finishDate || req.body?.startDate || req.body?.date, 10);
   const manilaDateParts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
   const manilaDateValues = Object.fromEntries(manilaDateParts.map(({ type, value }) => [type, value]));
@@ -538,6 +615,11 @@ export const scheduleRepair = async (req, res) => {
   const finishDate = /^\d{4}-\d{2}-\d{2}$/.test(finishValue) ? new Date(`${finishValue}T12:00:00.000Z`) : new Date(NaN);
   if (Number.isNaN(startDate.getTime()) || Number.isNaN(finishDate.getTime()) || startDate.toISOString().slice(0, 10) !== startValue || finishDate.toISOString().slice(0, 10) !== finishValue || finishDate < startDate) return res.status(400).json({ success: false, message: "Choose valid start and finish dates. Finish date cannot be before start date." });
   if (startValue < todayInManila) return res.status(400).json({ success: false, message: "Repair schedules cannot start in the past." });
+  const previousSchedule = repair.schedule?.startDate || repair.schedule?.date;
+  if (previousSchedule) {
+    const previousFinish = repair.schedule?.finishDate || previousSchedule;
+    event(repair, "rescheduled", `Repair appointment changed from ${new Date(previousSchedule).toLocaleDateString("en-PH")} through ${new Date(previousFinish).toLocaleDateString("en-PH")} to ${startDate.toLocaleDateString("en-PH")} through ${finishDate.toLocaleDateString("en-PH")}.`, req.user);
+  }
   repair.schedule = { date: startDate, startDate, finishDate, notes: text(req.body?.notes, 1200) };
   repair.status = "scheduled";
   event(repair, "scheduled", `Repair scheduled from ${startDate.toLocaleDateString("en-PH")} through ${finishDate.toLocaleDateString("en-PH")}.${repair.schedule.notes ? ` ${repair.schedule.notes}` : ""}`, req.user);

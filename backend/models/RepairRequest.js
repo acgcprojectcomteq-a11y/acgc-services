@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { randomBytes } from "node:crypto";
+import { buildActiveRepairKey } from "../utils/repairIdentity.js";
 
 const RepairEventSchema = new mongoose.Schema({
   event: { type: String, required: true, trim: true },
@@ -20,6 +21,8 @@ const RepairRequestSchema = new mongoose.Schema({
   order: { type: mongoose.Schema.Types.ObjectId, ref: "Order", default: null, index: true },
   productIndex: { type: Number, default: 0, min: 0 },
   customer: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null, index: true },
+  activeRepairKey: { type: String, default: undefined, select: false },
+  duplicateReview: { flagged: { type: Boolean, default: false }, duplicateOf: { type: mongoose.Schema.Types.ObjectId, ref: "RepairRequest", default: null }, flaggedAt: { type: Date, default: null }, flaggedBy: { type: mongoose.Schema.Types.ObjectId, default: null }, resolvedAt: { type: Date, default: null }, resolvedBy: { type: mongoose.Schema.Types.ObjectId, default: null }, resolutionReason: { type: String, default: "", trim: true, maxlength: 1200 } },
   customerName: { type: String, required: true, trim: true },
   customerEmail: { type: String, default: "", trim: true, lowercase: true },
   customerPhone: { type: String, default: "", trim: true },
@@ -82,6 +85,7 @@ const RepairRequestSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 RepairRequestSchema.pre("validate", function () {
+  this.activeRepairKey = buildActiveRepairKey(this);
   if (this.repairTrackingId) return;
   const date = new Date().toISOString().slice(2, 10).replaceAll("-", "");
   this.repairTrackingId = `RPR-${date}-${randomBytes(4).toString("hex").toUpperCase()}`;
@@ -89,5 +93,6 @@ RepairRequestSchema.pre("validate", function () {
 
 RepairRequestSchema.index({ customer: 1, updatedAt: -1 });
 RepairRequestSchema.index({ workflowType: 1, status: 1, updatedAt: -1 });
+RepairRequestSchema.index({ activeRepairKey: 1 }, { unique: true, sparse: true, name: "unique_active_repair_per_project_item" });
 
 export default mongoose.model("RepairRequest", RepairRequestSchema);

@@ -24,7 +24,7 @@ import {
 import { buildProductPriceSnapshot, getMeasuredProductLineTotal } from "../../src/lib/productPricing.js";
 import { calculateRequiredDownpayment, getFinalProjectCost, isProjectPriceLocked } from "../../src/lib/orderPricing.js";
 import { getInstallationDateError } from "../../src/lib/installationSchedule.js";
-import { getFullAddressError, normalizeFullAddress } from "../utils/fullAddressValidation.js";
+import { getStreetAddressError, normalizeFullAddress } from "../utils/fullAddressValidation.js";
 import { getProductEstimatorQuantityError } from "../utils/productEstimatorQuantity.js";
 import {
   deletePrivatePaymentDocument,
@@ -610,7 +610,7 @@ const hasValidMeterLength = (item) =>
 const requiresOrderItemDimensions = (product = {}, item = {}) => {
   const pricingMethod = getOrderItemPricingMethod(product, item);
   const isBladeProduct = pricingMethod === "blade" || pricingMethod === "per_blade";
-  const isMeterProduct = pricingMethod === "per_meter";
+  const isMeterProduct = pricingMethod === "per_meter" || pricingMethod === "meter";
   const isPieceProduct = ["per_piece", "piece", "per_set", "set"].includes(pricingMethod);
   return (!isBladeProduct && !isMeterProduct && !isPieceProduct)
     || (isBladeProduct && item.sale_mode === "frame" && Boolean(item.custom_frame_size));
@@ -619,7 +619,7 @@ const requiresOrderItemDimensions = (product = {}, item = {}) => {
 const hasValidOrderItemPricingInput = (product = {}, item = {}) => {
   const pricingMethod = getOrderItemPricingMethod(product, item);
   const isBladeProduct = pricingMethod === "blade" || pricingMethod === "per_blade";
-  if (pricingMethod === "per_meter") return hasValidMeterLength(item);
+  if (pricingMethod === "per_meter" || pricingMethod === "meter") return hasValidMeterLength(item);
   if (["per_piece", "piece", "per_set", "set"].includes(pricingMethod)) return Number(item.dimensions?.quantity) > 0;
   if (!isBladeProduct) return hasValidDimensions(item);
   if (requiresOrderItemDimensions(product, item) && !hasValidDimensions(item)) return false;
@@ -777,6 +777,15 @@ const applyCatalogExtraChargeSelections = (product = {}, item = {}, { allowAmoun
 };
 
 const repriceInspectionItems = async (items) => {
+  const requestedItems = Array.isArray(items) ? items : [];
+  for (const [index, item] of requestedItems.entries()) {
+    const requestedQuantity = item?.qty ?? item?.quantity ?? item?.dimensions?.quantity;
+    if (requestedQuantity === "" || requestedQuantity === null || requestedQuantity === undefined || !Number.isFinite(Number(requestedQuantity)) || Number(requestedQuantity) <= 0) {
+      const error = new Error(`Measurement ${index + 1}: quantity must be greater than zero.`);
+      error.statusCode = 400;
+      throw error;
+    }
+  }
   const sanitizedItems = sanitizeOrderItems(items);
   const productIds = [...new Set(sanitizedItems.map((item) => item.product_id).filter(Boolean))];
   if (sanitizedItems.some((item) => !item.product_id || !mongoose.Types.ObjectId.isValid(item.product_id))) {
@@ -796,8 +805,31 @@ const repriceInspectionItems = async (items) => {
     throw error;
   }
 
-  return sanitizedItems.map((item) => {
+  return sanitizedItems.map((item, index) => {
     const product = productsById.get(String(item.product_id));
+    if (!String(item.name || "").trim()) {
+      const error = new Error(`Measurement ${index + 1}: product description is required.`);
+      error.statusCode = 400;
+      throw error;
+    }
+    const pricingMethod = getOrderItemPricingMethod(product, item);
+    const requiredDimensions = pricingMethod === "per_meter" || pricingMethod === "meter"
+      ? [["width", "Length"]]
+      : requiresOrderItemDimensions(product, item)
+        ? [["width", "Width"], ["height", "Height"]]
+        : [];
+    for (const [field, label] of requiredDimensions) {
+      if (!Number.isFinite(Number(item[field])) || Number(item[field]) <= 0) {
+        const error = new Error(`Measurement ${index + 1}: ${label} must be greater than zero.`);
+        error.statusCode = 400;
+        throw error;
+      }
+    }
+    if ((pricingMethod === "blade" || pricingMethod === "per_blade") && (!item.blade_glass_type || Number(item.blade_count) < 1)) {
+      const error = new Error(`Measurement ${index + 1}: select a glass type and valid blade count.`);
+      error.statusCode = 400;
+      throw error;
+    }
     const pricedItem = applyCatalogExtraChargeSelections(product, item, { allowAmountOverrides: true });
 
     const priceSnapshot = buildProductPriceSnapshot(product, pricedItem);
@@ -995,7 +1027,7 @@ export const createOrder = async (req, res) => {
     const total_amount = pricedItems.reduce((sum, item) => sum + getItemAmountValue(item), 0);
     const requiredDownpayment = calculateRequiredDownpayment(total_amount, "50%_down_payment");
     const normalizedShippingAddress = normalizeAddress(shipping_address || buildAddressFromUser(req.user));
-    const shippingAddressError = getFullAddressError(normalizedShippingAddress);
+    const shippingAddressError = getStreetAddressError(normalizedShippingAddress);
     if (shippingAddressError) return res.status(400).json({ success: false, message: shippingAddressError });
 
     const order = new Order({
@@ -1138,7 +1170,7 @@ export const createOrderAsAdmin = async (req, res) => {
     }
 
     const normalizedShippingAddress = normalizeAddress(shipping_address || buildAddressFromUser(linkedCustomer));
-    const shippingAddressError = getFullAddressError(normalizedShippingAddress);
+    const shippingAddressError = getStreetAddressError(normalizedShippingAddress);
     if (shippingAddressError) return res.status(400).json({ success: false, message: shippingAddressError });
 
     const repricedItems = await repriceInspectionItems(items);
@@ -3246,7 +3278,7 @@ export const updateOrderInspection = async (req, res) => {
       const normalizedShippingAddress = normalizeAddress(shipping_address || "");
       const addressChanged = normalizeFullAddress(normalizedShippingAddress) !== normalizeFullAddress(order.shipping_address);
       if (addressChanged) {
-        const addressError = getFullAddressError(normalizedShippingAddress);
+        const addressError = getStreetAddressError(normalizedShippingAddress);
         if (addressError) return res.status(400).json({ success: false, message: addressError });
         updateData.shipping_address = normalizedShippingAddress;
       }

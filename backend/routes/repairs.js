@@ -2,6 +2,7 @@ import express from "express";
 import { authMiddleware, optionalAuthMiddleware, permissionMiddleware, roleMiddleware, staffModulePermission } from "../middleware/auth.js";
 import {
   completeRepair,
+  closeDuplicateRepair,
   createCustomerRepairRequest,
   createAdminRepairRequest,
   getAdminCustomerRepairProducts,
@@ -46,5 +47,6 @@ router.post("/admin/requests/:repairId/receipt", ...staffRepairAccess("manage"),
 router.post("/admin/requests/:repairId/schedule", ...staffRepairAccess("manage"), scheduleRepair);
 router.post("/admin/requests/:repairId/start", ...staffRepairAccess("manage"), startRepair);
 router.post("/admin/requests/:repairId/complete", ...staffRepairAccess("manage"), completeRepair);
+router.post("/admin/requests/:repairId/close-duplicate", authMiddleware, roleMiddleware(["admin", "super_admin"]), staffModulePermission("repair_management", "manage"), closeDuplicateRepair);
 
 export default router;

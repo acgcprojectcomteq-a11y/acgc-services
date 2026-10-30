@@ -19,10 +19,10 @@ function ContractModal({ isOpen, onClose, inspection, contractData, onAccept, on
   const shellClass = darkMode
     ? "mobile-fullscreen-dialog flex h-[94dvh] max-h-[94dvh] w-[min(100%,210mm)] flex-col overflow-hidden rounded-2xl border border-slate-600 bg-[#0d1f2f] shadow-2xl"
     : "mobile-fullscreen-dialog flex h-[94dvh] max-h-[94dvh] w-[min(100%,210mm)] flex-col overflow-hidden rounded-2xl bg-slate-100 shadow-2xl";
-  const headerClass = darkMode ? "sticky top-0 z-20 flex flex-wrap items-center justify-between gap-3 border-b border-slate-600 bg-[#11293a] px-4 py-3" : "sticky top-0 z-20 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3";
-  const titleClass = darkMode ? "text-xl font-bold text-slate-100" : "text-xl font-bold text-slate-900";
-  const buttonShellClass = darkMode ? "rounded-lg border border-slate-600 bg-[#1b3045] px-3 py-2 text-sm text-slate-100 hover:bg-[#233d57]" : "rounded-lg border bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50";
-  const closeButtonClass = darkMode ? "rounded-lg p-2 text-slate-200 hover:bg-slate-700" : "rounded-lg p-2 text-slate-600 hover:bg-slate-100";
+  const headerClass = darkMode ? "sticky top-0 z-20 flex flex-wrap items-center justify-between gap-2 border-b border-slate-600 bg-[#11293a] px-3 py-2 sm:px-4" : "sticky top-0 z-20 flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-white px-3 py-2 sm:px-4";
+  const titleClass = darkMode ? "text-lg font-bold text-slate-100" : "text-lg font-bold text-slate-900";
+  const buttonShellClass = darkMode ? "rounded-lg border border-slate-600 bg-[#1b3045] px-2.5 py-1.5 text-xs text-slate-100 hover:bg-[#233d57] sm:text-sm" : "rounded-lg border bg-white px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-50 sm:text-sm";
+  const closeButtonClass = darkMode ? "rounded-lg p-1.5 text-slate-200 hover:bg-slate-700" : "rounded-lg p-1.5 text-slate-600 hover:bg-slate-100";
   const contentClass = "contract-paper contract-fixed-light relative mx-0 my-0 w-full max-w-none bg-white px-0 py-0 text-[12px] text-slate-800 shadow-none";
   const infoCardClass = "grid grid-cols-2 gap-x-4 gap-y-3 border-b border-slate-200 bg-gradient-to-br from-slate-50 to-slate-100 px-4 py-4 text-[10px] text-slate-700 sm:grid-cols-3 sm:px-6 sm:py-5";
   const infoLabelClass = "text-[9px] font-black uppercase tracking-[0.16em] text-[#7f1d1d]";
@@ -147,17 +147,17 @@ function ContractModal({ isOpen, onClose, inspection, contractData, onAccept, on
         <div id="contract-content" className={contentClass}>
           {isAccepted && <img src={approvedStamp} alt="Approved stamp" className="pointer-events-none absolute left-1/2 top-1/2 z-10 w-4/5 -translate-x-1/2 -translate-y-1/2 rotate-[-18deg] opacity-20" />}
 
-          <header className="contract-brand-header relative isolate grid grid-cols-1 items-center gap-4 overflow-hidden px-5 py-5 text-white shadow-lg sm:grid-cols-[1.2fr_1fr] sm:px-8 sm:py-6">
-            <div className="pointer-events-none absolute -right-12 -top-28 -z-10 h-64 w-64 rounded-full border border-white/10" />
-            <div className="pointer-events-none absolute -right-5 -top-20 -z-10 h-48 w-48 rounded-full border border-white/10" />
-            <div className="flex items-center gap-3">
-              <img src={logo} alt="ACGC" className="h-16 w-16 shrink-0 object-contain drop-shadow-[0_0_7px_rgba(255,255,255,0.85)]" />
+          <header className="contract-brand-header relative isolate grid grid-cols-1 items-center gap-3 overflow-hidden px-4 py-3 text-white shadow-lg sm:grid-cols-[1.2fr_1fr] sm:px-6 sm:py-4">
+            <div className="pointer-events-none absolute -right-12 -top-28 -z-10 h-56 w-56 rounded-full border border-white/10" />
+            <div className="pointer-events-none absolute -right-5 -top-20 -z-10 h-44 w-44 rounded-full border border-white/10" />
+            <div className="flex items-center gap-2.5">
+              <img src={logo} alt="ACGC" className="h-12 w-12 shrink-0 object-contain drop-shadow-[0_0_7px_rgba(255,255,255,0.85)] sm:h-14 sm:w-14" />
               <div>
-                <p className="text-sm font-black text-white sm:text-base">ACGC Glass &amp; Aluminum Services</p>
-                <p className="mt-1 text-[10px] font-semibold text-slate-200 sm:text-xs">Glass and Aluminum Specialists</p>
+                <p className="text-xs font-black text-white sm:text-sm">ACGC Glass &amp; Aluminum Services</p>
+                <p className="mt-0.5 text-[9px] font-semibold text-slate-200 sm:text-[10px]">Glass and Aluminum Specialists</p>
               </div>
             </div>
-            <h1 className="text-left text-xl font-black uppercase tracking-[0.08em] text-white sm:text-right sm:text-2xl">Service Contract</h1>
+            <h1 className="text-left text-lg font-black uppercase tracking-[0.08em] text-white sm:text-right sm:text-xl">Service Contract</h1>
           </header>
 
           <div className={infoCardClass}>

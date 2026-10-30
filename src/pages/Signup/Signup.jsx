@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { preservePendingProductRedirect } from "@/lib/pendingProductAction";
 import FullAddressField from "@/components/FullAddressField";
-import { isValidFullAddress, normalizeFullAddress } from "@/lib/fullAddressValidation";
+import { isValidStreetAddress, normalizeFullAddress } from "@/lib/fullAddressValidation";
 import { getPasswordStrength, isPasswordPolicySatisfied, PASSWORD_POLICY_HINT, PASSWORD_POLICY_MESSAGE } from "@/lib/passwordStrength";
 import { getPhilippinePhoneError, isValidPhilippinePhone, normalizePhoneInput } from "@/lib/phoneValidation";
 import logo from "../../assets/images/ACGCLOGO1.png";
@@ -130,7 +130,7 @@ function Signup() {
     }
 
     if (name === "zip_code") {
-      return value.replace(/\D/g, "");
+      return value.replace(/\D/g, "").slice(0, 4);
     }
 
     return value;
@@ -167,8 +167,8 @@ function Signup() {
       return;
     }
 
-    if (!isValidFullAddress(formData.street_address)) {
-      setError("Full address must contain 50–100 characters.");
+    if (!isValidStreetAddress(formData.street_address)) {
+      setError("Street address cannot exceed 100 characters.");
       return;
     }
 
@@ -238,17 +238,17 @@ function Signup() {
 
               <div className="min-h-0 flex-1 overflow-y-auto pr-1">
               <div className="grid gap-1.5 md:grid-cols-2">
-                <Field icon={UserRound} label="First Name *" name="first_name" value={formData.first_name} onChange={handleChange} placeholder="Enter your first name" inputClass={inputClass} />
-                <Field icon={UserRound} label="Last Name *" name="last_name" value={formData.last_name} onChange={handleChange} placeholder="Enter your last name" inputClass={inputClass} />
+                <Field icon={UserRound} label="First Name *" name="first_name" maxLength={50} value={formData.first_name} onChange={handleChange} placeholder="Enter your first name" inputClass={inputClass} />
+                <Field icon={UserRound} label="Last Name *" name="last_name" maxLength={50} value={formData.last_name} onChange={handleChange} placeholder="Enter your last name" inputClass={inputClass} />
                 <Field icon={Mail} label="Email *" type="email" name="email" value={formData.email} onChange={handleChange} placeholder="Enter your email" inputClass={inputClass} />
                 <Field icon={AtSign} label="Username *" name="username" minLength={6} maxLength={12} pattern="[A-Za-z0-9._-]{6,12}" title="Use 6-12 letters, numbers, dots, underscores, or hyphens." value={formData.username} onChange={handleChange} placeholder="Choose a username" inputClass={inputClass} />
               </div>
 
-              <div className="mt-1.5"><FullAddressField icon={MapPin} label="Full Address *" name="street_address" value={formData.street_address} onChange={handleChange} placeholder="Enter your full address" className={inputClass} /></div>
+              <div className="mt-1.5"><FullAddressField minimumLength={0} icon={MapPin} label="Street Address *" name="street_address" value={formData.street_address} onChange={handleChange} placeholder="Enter your street address" className={inputClass} /></div>
               <div className="mt-1.5 grid gap-1.5 md:grid-cols-2">
-                <Field icon={Building2} label="City *" name="city" value={formData.city} onChange={handleChange} placeholder="Enter your city" inputClass={inputClass} />
-                <Field icon={MapPin} label="Province *" name="province" value={formData.province} onChange={handleChange} placeholder="Enter your province" inputClass={inputClass} />
-                <Field icon={Hash} label="Zip Code *" name="zip_code" inputMode="numeric" value={formData.zip_code} onChange={handleChange} placeholder="4000" inputClass={inputClass} />
+                <Field icon={Building2} label="City *" name="city" maxLength={40} value={formData.city} onChange={handleChange} placeholder="Enter your city" inputClass={inputClass} />
+                <Field icon={MapPin} label="Province *" name="province" maxLength={40} value={formData.province} onChange={handleChange} placeholder="Enter your province" inputClass={inputClass} />
+                <Field icon={Hash} label="Zip Code *" name="zip_code" inputMode="numeric" maxLength={4} value={formData.zip_code} onChange={handleChange} placeholder="4000" inputClass={inputClass} />
                 <Field icon={Phone} label="Phone Number *" name="phone" type="tel" inputMode="tel" maxLength={13} value={formData.phone} onChange={handleChange} placeholder="+639171234567 or 09171234567" inputClass={inputClass} />
               </div>
               <div className="mt-1.5 grid gap-1.5 md:grid-cols-2">
