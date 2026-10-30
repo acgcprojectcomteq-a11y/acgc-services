@@ -1026,7 +1026,7 @@ function LandingPage() {
   };
 
   return (
-  <div className="landing-page-shell flex min-h-screen flex-col overflow-x-hidden bg-white pb-[calc(10rem+env(safe-area-inset-bottom))] text-gray-900 lg:pb-0">
+  <div className="landing-page-shell flex min-h-screen flex-col overflow-x-hidden bg-white text-gray-900">
       <Toaster position="bottom-right" />
 
       {/* NAVBAR */}

@@ -5,7 +5,7 @@ import {
   FileDown,
   CheckCircle,
   Eye,
-  BookSearch,
+  Search,
   EyeClosed,
   Pencil,
   Lock,
@@ -2358,7 +2358,7 @@ function Transactions() {
                               >
                                 <div className={`mx-auto flex flex-nowrap justify-center gap-2 overflow-hidden transition-[width,opacity,transform] duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none ${showTransactionActions ? "translate-x-0 opacity-100" : "translate-x-2 opacity-0 pointer-events-none"}`} style={{ width: showTransactionActions ? "168px" : "0px" }}>
                                   <button type="button" onClick={() => setFeedbackPreviewOrder(order)} className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${darkMode ? "bg-blue-500/15 text-blue-300 hover:bg-blue-500/25" : "bg-blue-100 text-blue-600 hover:bg-blue-200"}`} aria-label={`View feedback for ${order.reviewProductName || "order"} from ${customerName}`} title="View feedback">
-                                    <BookSearch size={17} aria-hidden="true" />
+                                    <Search size={20} strokeWidth={2.6} aria-hidden="true" />
                                   </button>
                                   {canManageFeedbackVisibility && <button type="button" onClick={() => openFeedbackReply(order)} className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 ${darkMode ? "bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25" : "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"}`} aria-label={`${order.review?.adminResponse ? "Edit" : "Reply to"} feedback for ${order.reviewProductName || "order"} from ${customerName}`} title={order.review?.adminResponse ? "Edit Admin Response" : "Reply to Feedback"}>
                                     <MessageSquare size={17} aria-hidden="true" />
@@ -2396,7 +2396,7 @@ function Transactions() {
                               <td
                                 className={`${showTransactionActions ? "p-4" : "px-1 py-4"} text-center transition-[width,padding] duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none`}
                                 style={{ width: showTransactionActions ? ("190px") : "56px" }}
-                              ><div className={`mx-auto flex flex-nowrap justify-center gap-2 overflow-hidden transition-[width,opacity,transform] duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none ${showTransactionActions ? "translate-x-0 opacity-100" : "translate-x-2 opacity-0 pointer-events-none"}`} style={{ width: showTransactionActions ? ("128px") : "0px" }}><button title="View Transaction" onClick={() => openContractModal(order)} className="shrink-0 p-2 rounded-lg bg-blue-100 text-blue-600 hover:bg-blue-200 transition"><BookSearch size={18} /></button>{isFullyPaid ? (<button type="button" title="Fully paid" aria-label="Fully paid. Payment editing is locked." disabled className={`shrink-0 cursor-not-allowed rounded-lg p-2 ${darkMode ? "bg-slate-700 text-slate-400" : "bg-slate-100 text-slate-500"}`}><Lock size={18} aria-hidden="true" /></button>) : (<button type="button" title="Add Payment" aria-label="Add Payment" onClick={() => openEditPaymentModal(order)} className="shrink-0 p-2 rounded-lg bg-violet-100 text-violet-700 hover:bg-violet-200 transition"><Pencil size={18} /></button>)}<button type="button" title="View Contract" aria-label="View Contract" onClick={() => openReadOnlyContract(order)} className="shrink-0 p-2 rounded-lg bg-amber-100 text-amber-700 hover:bg-amber-200 transition"><FileText size={18} /></button></div></td>
+                              ><div className={`mx-auto flex flex-nowrap justify-center gap-2 overflow-hidden transition-[width,opacity,transform] duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none ${showTransactionActions ? "translate-x-0 opacity-100" : "translate-x-2 opacity-0 pointer-events-none"}`} style={{ width: showTransactionActions ? ("128px") : "0px" }}><button title="View Transaction" onClick={() => openContractModal(order)} className="shrink-0 p-2 rounded-lg bg-blue-100 text-blue-600 hover:bg-blue-200 transition"><Search size={20} strokeWidth={2.6} /></button>{isFullyPaid ? (<button type="button" title="Fully paid" aria-label="Fully paid. Payment editing is locked." disabled className={`shrink-0 cursor-not-allowed rounded-lg p-2 ${darkMode ? "bg-slate-700 text-slate-400" : "bg-slate-100 text-slate-500"}`}><Lock size={18} aria-hidden="true" /></button>) : (<button type="button" title="Add Payment" aria-label="Add Payment" onClick={() => openEditPaymentModal(order)} className="shrink-0 p-2 rounded-lg bg-violet-100 text-violet-700 hover:bg-violet-200 transition"><Pencil size={18} /></button>)}<button type="button" title="View Contract" aria-label="View Contract" onClick={() => openReadOnlyContract(order)} className="shrink-0 p-2 rounded-lg bg-amber-100 text-amber-700 hover:bg-amber-200 transition"><FileText size={18} /></button></div></td>
                             </>
                           )}
                         </tr>
@@ -2432,7 +2432,7 @@ function Transactions() {
                         {order.review?.hiddenFromCustomers === true && <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-bold text-amber-800">Hidden from customers</span>}
                         <div className="flex gap-2">
                           <button type="button" onClick={() => setFeedbackPreviewOrder(order)} aria-label={`View feedback for ${order.reviewProductName || "order"}`} className={`inline-flex h-9 w-9 items-center justify-center rounded-lg ${darkMode ? "bg-blue-500/15 text-blue-300" : "bg-blue-100 text-blue-600"}`}>
-                            <BookSearch size={17} aria-hidden="true" />
+                            <Search size={20} strokeWidth={2.6} aria-hidden="true" />
                           </button>
                           {canManageFeedbackVisibility && <button type="button" onClick={() => openFeedbackReply(order)} aria-label={`${order.review?.adminResponse ? "Edit" : "Reply to"} feedback for ${order.reviewProductName || "order"}`} title={order.review?.adminResponse ? "Edit Admin Response" : "Reply to Feedback"} className={`inline-flex h-9 w-9 items-center justify-center rounded-lg ${darkMode ? "bg-emerald-500/15 text-emerald-300" : "bg-emerald-100 text-emerald-700"}`}>
                             <MessageSquare size={17} aria-hidden="true" />
@@ -2489,7 +2489,7 @@ function Transactions() {
                       </div>
                     )}
                     <div className="mt-3 flex justify-end gap-2">
-                      <button title="View Transaction" onClick={() => openContractModal(order)} className="p-2 rounded-lg bg-blue-100 text-blue-600 hover:bg-blue-200 transition"><BookSearch size={18} /></button>
+                      <button title="View Transaction" onClick={() => openContractModal(order)} className="p-2 rounded-lg bg-blue-100 text-blue-600 hover:bg-blue-200 transition"><Search size={20} strokeWidth={2.6} /></button>
                       {isFullyPaid ? (
                         <button type="button" title="Fully paid" aria-label="Fully paid. Payment editing is locked." disabled className="cursor-not-allowed rounded-lg bg-slate-100 p-2 text-slate-500">
                           <Lock size={18} aria-hidden="true" />

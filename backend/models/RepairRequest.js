@@ -72,6 +72,7 @@ const RepairRequestSchema = new mongoose.Schema({
     proofRejectionReason: { type: String, default: "", trim: true },
   },
   schedule: { date: { type: Date, default: null }, startDate: { type: Date, default: null }, finishDate: { type: Date, default: null }, notes: { type: String, default: "", trim: true } },
+  startedAt: { type: Date, default: null },
   completion: { notes: { type: String, default: "", trim: true }, amountPaid: { type: Number, min: 0, default: null }, evidenceUrls: { type: [String], default: [] }, completedAt: { type: Date, default: null } },
   invoiceNumber: { type: String, default: "", trim: true },
   receipt: {

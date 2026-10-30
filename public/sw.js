@@ -1,5 +1,5 @@
-const CACHE_NAME = 'acgc-shell-v3'
-const APP_SHELL = ['./', './index.html', './favicon.svg', './manifest.webmanifest']
+const CACHE_NAME = 'acgc-shell-v5'
+const APP_SHELL = ['./', './index.html', './pwa-192x192.png', './pwa-512x512.png', './manifest.webmanifest']
 
 self.addEventListener('install', (event) => {
 	event.waitUntil(

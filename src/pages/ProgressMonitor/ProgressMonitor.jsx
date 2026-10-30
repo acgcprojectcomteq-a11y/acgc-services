@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import {
   Search,
-  BookSearch,
   Pencil,
   Play,
 } from "lucide-react";
@@ -980,7 +979,7 @@ function ProgressMonitor() {
                         <td className="py-3 pl-4 pr-6">
                           <div className="flex justify-end gap-2.5">
                             <button onClick={() => { setSelectedProject(project); setShowViewModal(true); }} className={`rounded-lg p-2 ${darkMode ? "bg-blue-950/60 text-blue-300 hover:bg-blue-900/70" : "bg-blue-100 text-blue-600"}`} aria-label={`View ${project.product} progress`}>
-                              <BookSearch size={18} />
+                              <Search size={20} strokeWidth={2.6} />
                             </button>
                             {project.status === "Pending" ? (
                               <button onClick={() => setStartConfirm(project)} disabled={startingProjectId === project.id} className={`rounded-lg p-2 disabled:cursor-wait disabled:opacity-50 ${darkMode ? "bg-emerald-950/60 text-emerald-300 hover:bg-emerald-900/70" : "bg-emerald-100 text-emerald-700"}`} title="Start project at Cutting" aria-label={`Start ${project.product} at Cutting`}>
@@ -1051,7 +1050,7 @@ function ProgressMonitor() {
                   </div>
                   <div className="mt-3 flex justify-end gap-2.5 pr-1">
                     <button onClick={() => { setSelectedProject(project); setShowViewModal(true); }} className={`rounded-lg p-2 ${darkMode ? "bg-blue-950/60 text-blue-300 hover:bg-blue-900/70" : "bg-blue-100 text-blue-600"}`} aria-label={`View ${project.product} progress`}>
-                      <BookSearch size={18} />
+                      <Search size={20} strokeWidth={2.6} />
                     </button>
                     {project.status === "Pending" ? (
                       <button onClick={() => setStartConfirm(project)} disabled={startingProjectId === project.id} className={`rounded-lg p-2 disabled:cursor-wait disabled:opacity-50 ${darkMode ? "bg-emerald-950/60 text-emerald-300 hover:bg-emerald-900/70" : "bg-emerald-100 text-emerald-700"}`} title="Start project at Cutting" aria-label={`Start ${project.product} at Cutting`}>

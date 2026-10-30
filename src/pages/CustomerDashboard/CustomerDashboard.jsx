@@ -4108,8 +4108,8 @@ function CustomerDashboard() {
     }
     if (!batchOrderAgreed) return;
     const checkoutAddress = normalizeFullAddress(batchOrderForm.shipping_address || buildFullAddress(user));
-    if (!isValidFullAddress(checkoutAddress)) {
-      setCheckoutError(getFullAddressError(checkoutAddress));
+    if (!checkoutAddress || !isValidStreetAddress(checkoutAddress)) {
+      setCheckoutError(getStreetAddressError(checkoutAddress) || "Please enter a full installation address.");
       return;
     }
     if (!isValidPhilippinePhone(batchOrderForm.phone)) {
@@ -4556,6 +4556,35 @@ function CustomerDashboard() {
 
   const getConfirmationItemDimensionText = (item) => {
     return formatOrderItemMeasurements(item);
+  };
+
+  const getConfirmationItemDimensions = (item) => {
+    const product = item?.product_id && typeof item.product_id === "object"
+      ? item.product_id
+      : item?.product || {};
+    const dimensions = item?.dimensions || {};
+    const productDimensions = product?.dimensions || {};
+    const width = Number(dimensions.width ?? item?.width ?? productDimensions.width ?? product?.width) || 0;
+    const height = Number(dimensions.height ?? item?.height ?? productDimensions.height ?? product?.height) || 0;
+    const unit = String(
+      dimensions.unit || item?.measurementUnit || item?.measurement_unit ||
+      productDimensions.unit || product?.measurementUnit || product?.measurement_unit || "in"
+    ).toLowerCase();
+    const unitLabel = unit === "in" ? '"' : ` ${unit}`;
+    const quantity = Math.max(1, Number(item?.quantity || item?.qty || dimensions.quantity) || 1);
+    const area = Number(item?.area || dimensions.area) || (
+      unit === "in" ? (width * height * quantity) / 144
+        : unit === "cm" ? (width * height * quantity) / 929.0304
+          : unit === "m" ? width * height * quantity * 10.7639
+            : width * height * quantity
+    );
+
+    if (!(width > 0 && height > 0)) return null;
+    return {
+      width: `${width.toLocaleString(undefined, { maximumFractionDigits: 2 })}${unitLabel}`,
+      height: `${height.toLocaleString(undefined, { maximumFractionDigits: 2 })}${unitLabel}`,
+      area: area.toLocaleString(undefined, { maximumFractionDigits: 2 }),
+    };
   };
 
   function isBladePricingProduct(product) {
@@ -5064,14 +5093,14 @@ function CustomerDashboard() {
   const estimateTotalCost = estimateResult.estimated_price || 0;
   const orderReviewMeasurementText = reviewOrderMode === "orderNow"
     ? (() => {
-        if (!orderNowProduct) return `Qty: ${Math.max(1, Number(orderNowQuantity) || 1)}`;
+        if (!orderNowProduct) return `Quantity: ${Math.max(1, Number(orderNowQuantity) || 1)}`;
         const quantity = Math.max(1, Number(orderNowQuantity) || 1);
         if (isBladePricingProduct(orderNowProduct)) {
-          return getBladeOrderSummaryText(orderNowProduct, getDefaultBladeSelections(orderNowProduct), quantity) || `Qty: ${quantity}`;
+          return getBladeOrderSummaryText(orderNowProduct, getDefaultBladeSelections(orderNowProduct), quantity) || `Quantity: ${quantity}`;
         }
         const defaultDims = getProductDefaultDimensions(orderNowProduct, Math.max(1, Number(orderNowQuantity) || 1));
         if (!defaultDims || Number(defaultDims.width) <= 0 || Number(defaultDims.height) <= 0) {
-          return `Qty: ${Math.max(1, Number(orderNowQuantity) || 1)}`;
+          return `Quantity: ${Math.max(1, Number(orderNowQuantity) || 1)}`;
         }
 
         const unit = defaultDims.unit || "in";
@@ -5096,7 +5125,7 @@ function CustomerDashboard() {
         });
       })()
     : isBladePricingProduct(cartDecisionProduct)
-      ? getBladeOrderSummaryText(cartDecisionProduct, estimateForm, estimateQuantity) || `Qty: ${estimateQuantity}`
+      ? getBladeOrderSummaryText(cartDecisionProduct, estimateForm, estimateQuantity) || `Quantity: ${estimateQuantity}`
       : getConfirmationItemDimensionText({
           width: estimateWidth,
           height: estimateHeight,
@@ -5181,7 +5210,8 @@ function CustomerDashboard() {
     deliveryConfirmForm.street_address.trim() &&
     isValidStreetAddress(deliveryConfirmForm.shipping_address || buildDeliveryAddress(deliveryConfirmForm))
   );
-  const isBatchOrderAddressValid = isValidFullAddress(batchOrderForm.shipping_address || buildFullAddress(user));
+  const batchOrderAddress = normalizeFullAddress(batchOrderForm.shipping_address || buildFullAddress(user));
+  const isBatchOrderAddressValid = Boolean(batchOrderAddress) && isValidStreetAddress(batchOrderAddress);
 
   const cartQuantity = cartItems.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
   const showFeaturedSection = activeTab === "home";
@@ -7396,6 +7426,15 @@ function CustomerDashboard() {
                               </div>
                             </div>
                           </div>
+
+                          <div className={`mt-4 rounded-xl border p-3 text-sm leading-relaxed ${darkMode ? "border-blue-800 bg-blue-950/50 text-blue-100" : "border-blue-200 bg-blue-50 text-slate-800"}`}>
+                            Final pricing will be confirmed during shop discussion or site inspection.
+                            {customerPaymentContactPhone && (
+                              <span className="ml-1 inline-flex flex-wrap items-center gap-1">
+                                Contact: <a href={`tel:${customerPaymentContactPhone.replace(/[^\d+]/g, "")}`} className={`inline-flex items-center gap-1 font-bold underline underline-offset-2 ${darkMode ? "text-blue-200" : "text-blue-800"}`}><Phone size={13} aria-hidden="true" />{customerPaymentContactPhone}</a>
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -7589,13 +7628,13 @@ function CustomerDashboard() {
 
             {showBatchOrderModal && canRequestOrders && (
               <div className="customer-modal-overlay mobile-fullscreen-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-2 backdrop-blur-sm sm:p-4">
-                <div className={`mobile-fullscreen-dialog order-flow-modal flex max-h-[calc(100dvh-1rem)] w-full max-w-4xl flex-col overflow-hidden rounded-3xl shadow-2xl sm:max-h-[88vh] ${darkMode ? "order-flow-modal-dark bg-slate-900" : "bg-white"}`}>
-                  <div className={`flex-shrink-0 border-b px-4 py-3 sm:px-5 ${darkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-white"}`}>
+                <div className={`mobile-fullscreen-dialog order-flow-modal flex max-h-[calc(100dvh-1rem)] w-full max-w-6xl flex-col overflow-hidden rounded-2xl shadow-2xl ring-1 ring-black/5 sm:max-h-[92vh] ${darkMode ? "order-flow-modal-dark bg-slate-900" : "bg-white"}`}>
+                  <div className={`flex-shrink-0 border-b px-5 py-2 sm:px-8 ${darkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-[#faf9f7]"}`}>
                     <div className="flex items-center justify-between gap-4">
                       <button
                         type="button"
                         onClick={requestCloseBatchOrder}
-                        className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm font-semibold transition ${darkMode ? "text-slate-200 hover:bg-slate-800" : "text-slate-700 hover:bg-slate-100"}`}
+                        className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm font-semibold transition ${darkMode ? "text-slate-200 hover:bg-slate-800" : "text-slate-700 hover:bg-slate-100"}`}
                       >
                         <ArrowLeft size={16} />
                         Back to Cart
@@ -7604,49 +7643,50 @@ function CustomerDashboard() {
                         type="button"
                         onClick={requestCloseBatchOrder}
                         aria-label="Close order request"
-                        className={`rounded-full border p-2 transition ${darkMode ? "border-slate-600 text-slate-300 hover:bg-slate-800" : "border-slate-200 text-slate-500 hover:bg-slate-100"}`}
+                        className={`rounded-full border p-1.5 transition ${darkMode ? "border-slate-600 text-slate-300 hover:bg-slate-800" : "border-slate-200 text-slate-500 hover:bg-slate-100"}`}
                       >
                         <X size={18} />
                       </button>
                     </div>
-                    <h3 className={`text-2xl font-bold ${darkMode ? "text-white" : "text-slate-900"}`}>
+                    <h3 className={`mt-0.5 text-lg font-bold tracking-tight ${darkMode ? "text-white" : "text-slate-900"}`}>
                       {selectedItemCount === 1 ? "Place Order Request" : "Place Batch Order Request"}
                     </h3>
-                    <p className={`mt-1 text-sm ${darkMode ? "text-slate-300" : "text-slate-600"}`}>
+                    <p className={`mt-0.5 text-xs ${darkMode ? "text-slate-300" : "text-slate-600"}`}>
                       {selectedItemCount === 1
                         ? "Review your contact data and selected item before submitting your request."
                         : "Review your contact data and selected items to compile requests."}
                     </p>
                   </div>
 
-                  <div className={`min-h-0 flex-1 overflow-y-auto p-4 sm:p-5 ${darkMode ? "bg-slate-950" : "bg-slate-50"}`}>
-                    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.8fr)] xl:gap-6">
+                  <div className={`min-h-0 flex-1 overflow-y-auto p-6 sm:p-8 ${darkMode ? "bg-slate-950" : "bg-[#f2f3f1]"}`}>
+                    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.8fr)] xl:gap-7">
                       <div className="flex flex-col gap-5">
-                        <div className={`space-y-4 rounded-3xl border p-5 shadow-sm ${darkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-white"}`}>
+                        <div className={`space-y-4 rounded-2xl border p-6 shadow-sm sm:p-7 ${darkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-[#fcfbf9] shadow-slate-300/40"}`}>
                           <div>
                             <h4 className={`text-lg font-semibold ${darkMode ? "text-white" : "text-gray-900"}`}>Customer Information</h4>
                             <p className={`mt-1 text-sm ${darkMode ? "text-slate-400" : "text-gray-500"}`}>Review your details before submitting your request.</p>
                           </div>
 
-                          <div className="space-y-4">
+                          <div className="grid grid-cols-2 gap-x-3 gap-y-4">
                             <div>
-                              <label className={`mb-2 block text-sm font-medium ${darkMode ? "text-slate-300" : "text-slate-600"}`}>Full Name</label>
+                              <label className={`mb-2 block text-[11px] font-bold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Full Name</label>
                               <input
                                 value={`${profileForm.first_name || user?.first_name || ""} ${profileForm.last_name || user?.last_name || ""}`.trim() || ""}
                                 readOnly
-                                className={`w-full cursor-not-allowed rounded-xl border px-3 py-3 outline-none ${darkMode ? "border-slate-700 bg-slate-900 text-slate-400" : "border-slate-200 bg-slate-100 text-slate-500"}`}
+                                className={`w-full cursor-not-allowed rounded-xl border px-3 py-3 text-sm outline-none ${darkMode ? "border-slate-700 bg-slate-800/80 text-slate-400" : "border-slate-200 bg-slate-100/80 text-slate-500"}`}
                               />
                             </div>
                             <div>
-                              <label className={`mb-2 block text-sm font-medium ${darkMode ? "text-slate-300" : "text-slate-600"}`}>Email Address</label>
+                              <label className={`mb-2 block text-[11px] font-bold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Email Address</label>
                               <input
                                 value={profileForm.email || user?.email || ""}
                                 readOnly
-                                className={`w-full cursor-not-allowed rounded-xl border px-3 py-3 outline-none ${darkMode ? "border-slate-700 bg-slate-900 text-slate-400" : "border-slate-200 bg-slate-100 text-slate-500"}`}
+                                className={`w-full cursor-not-allowed rounded-xl border px-3 py-3 text-sm outline-none ${darkMode ? "border-slate-700 bg-slate-800/80 text-slate-400" : "border-slate-200 bg-slate-100/80 text-slate-500"}`}
                               />
                             </div>
-                            <div>
-                              <label className={`mb-2 block text-sm font-medium ${darkMode ? "text-slate-300" : "text-slate-600"}`}>Phone Number *</label>
+                            <div className="col-span-full mt-1 border-t border-slate-200 pt-4 dark:border-slate-700">
+                              <h5 className={`mb-4 text-xs font-bold uppercase tracking-wide ${darkMode ? "text-slate-200" : "text-slate-800"}`}>Contact &amp; Installation Details</h5>
+                              <label className={`mb-2 block text-[11px] font-bold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Contact Number <span className="text-red-600">*</span></label>
                               <input
                                 name="phone"
                                 type="tel"
@@ -7655,27 +7695,31 @@ function CustomerDashboard() {
                                 value={batchOrderForm.phone}
                                 onChange={(event) => setBatchOrderForm((current) => ({ ...current, phone: normalizePhoneInput(event.target.value) }))}
                                 placeholder="+639171234567 or 09171234567"
-                                className={`w-full rounded-xl border px-3 py-3 outline-none focus:border-red-500 focus:ring-2 focus:ring-red-100 ${darkMode ? "border-slate-700 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-800"}`}
+                                className={`w-full rounded-lg border px-3 py-2.5 outline-none transition focus:border-red-500 focus:ring-4 focus:ring-red-500/10 ${darkMode ? "border-slate-700 bg-slate-950 text-white" : "border-slate-300 bg-transparent text-slate-800"}`}
                               />
                             </div>
-                            <div>
+                            <div className="col-span-full">
                               <FullAddressField
-                                label="Complete Installation Address *"
+                                label="Full Address *"
                                 name="shipping_address"
                                 value={batchOrderForm.shipping_address}
+                                minimumLength={0}
+                                showError={false}
+                                showHelperMessage={false}
                                 onChange={(event) => setBatchOrderForm((current) => ({ ...current, shipping_address: event.target.value }))}
-                                labelClassName={`mb-2 text-sm font-medium ${darkMode ? "text-slate-300" : "text-slate-600"}`}
+                                labelClassName={`mb-2 text-[11px] font-bold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`}
                                 helperClassName={darkMode ? "text-slate-400" : "text-slate-500"}
-                                className={`w-full rounded-xl border px-3 py-3 outline-none focus:border-red-500 focus:ring-2 focus:ring-red-100 ${darkMode ? "border-slate-700 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-800"}`}
+                                className={`w-full rounded-lg border px-3 py-2.5 outline-none transition focus:border-red-500 focus:ring-4 focus:ring-red-500/10 ${darkMode ? "border-slate-700 bg-slate-950 text-white" : "border-slate-300 bg-transparent text-slate-800"}`}
                               />
                             </div>
-                            <div>
-                              <label className={`mb-2 block text-sm font-medium ${darkMode ? "text-slate-300" : "text-slate-600"}`}>Special Instructions / Engineering Notes (Optional)</label>
+                            <div className="col-span-full">
+                              <label className={`mb-2 block text-[11px] font-bold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Special Instructions / Engineering Notes <span className="font-medium normal-case tracking-normal text-slate-400">(Optional)</span></label>
                               <textarea
                                 name="notes"
                                 value={batchOrderForm.notes}
                                 onChange={(event) => setBatchOrderForm((current) => ({ ...current, notes: event.target.value }))}
-                                className={`min-h-[100px] w-full resize-none rounded-xl border px-3 py-3 outline-none focus:border-red-500 focus:ring-2 focus:ring-red-100 ${darkMode ? "border-slate-700 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-800"}`}
+                                placeholder="Add notes about structure elevations, framing colors, glass thickness preferences, etc."
+                                className={`min-h-[96px] w-full resize-y rounded-lg border px-3 py-2.5 outline-none transition focus:border-red-500 focus:ring-4 focus:ring-red-500/10 ${darkMode ? "border-slate-700 bg-slate-950 text-white placeholder:text-slate-500" : "border-slate-300 bg-transparent text-slate-800 placeholder:text-slate-400"}`}
                               />
                             </div>
                           </div>
@@ -7683,15 +7727,15 @@ function CustomerDashboard() {
                       </div>
 
                       <div className="flex flex-col gap-5">
-                        <div className={`space-y-4 rounded-3xl border p-5 shadow-sm ${darkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-white"}`}>
-                          <div className="mb-4 flex items-center gap-2 text-sm font-bold uppercase tracking-[0.2em] text-red-600">
-                            <ClipboardList size={16} />
+                        <div className={`space-y-4 rounded-2xl border p-6 shadow-sm sm:p-7 ${darkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-[#fcfbf9] shadow-slate-300/40"}`}>
+                          <div className="mb-4 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-red-600">
+                            <ClipboardList size={17} />
                             {selectedItemCount === 1 ? "Order Review (1 item)" : `Batch Review (${selectedItemCount} items)`}
                           </div>
 
                           <div className={`max-h-[320px] space-y-3 overflow-y-auto pr-2`}>
                             {selectedCartItems.map((item) => (
-                              <div key={item.cartId || item._id} className={`rounded-xl border p-3 ${darkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-white"}`}>
+                              <div key={item.cartId || item._id} className={`rounded-2xl border p-3.5 transition-colors ${darkMode ? "border-slate-700 bg-slate-950/60 hover:border-slate-600" : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/50"}`}>
                                 <div className="flex items-start gap-3">
                                   <div className={`h-16 w-16 flex-shrink-0 overflow-hidden rounded-lg border ${darkMode ? "border-slate-700 bg-slate-800" : "border-slate-200 bg-slate-100"}`}>
                                     <img
@@ -7709,18 +7753,18 @@ function CustomerDashboard() {
                                     <div className="min-w-0">
                                       <div className={`truncate text-base font-bold ${darkMode ? "text-white" : "text-slate-900"}`}>{item.name}</div>
                                       <div className={`mt-1 text-sm ${darkMode ? "text-slate-300" : "text-slate-600"}`}>
-                                        {["blade", "per_blade"].includes(String(item.pricing_method || item.unit).toLowerCase())
-                                          ? formatOrderItemMeasurements(item)
-                                          : item.is_estimate && item.width && item.height
-                                          ? `${item.width} x ${item.height} = ${Number(item.area || ((Number(item.width) * Number(item.height)) / 144)).toLocaleString(undefined, { maximumFractionDigits: 2 })} sq.ft`
-                                          : item.dimensions?.width && item.dimensions?.height
-                                            ? `${item.dimensions.width} x ${item.dimensions.height} = ${Number(item.dimensions.area || ((Number(item.dimensions.width) * Number(item.dimensions.height)) / 144)).toLocaleString(undefined, { maximumFractionDigits: 2 })} sq.ft`
-                                            : "Customized measurement"}
+                                        {(() => {
+                                          const dimensions = getConfirmationItemDimensions(item);
+                                          if (dimensions && !["blade", "per_blade"].includes(String(item.pricing_method || item.unit).toLowerCase())) {
+                                            return <>Dimension: Width: <strong className={darkMode ? "text-slate-200" : "text-slate-700"}>{dimensions.width}</strong> x Height: <strong className={darkMode ? "text-slate-200" : "text-slate-700"}>{dimensions.height}</strong> ({dimensions.area} sq ft)</>;
+                                          }
+                                          return formatOrderItemMeasurements(item);
+                                        })()}
                                       </div>
                                     </div>
                                     <div className="flex-shrink-0 text-right">
-                                      <div className="text-base font-bold text-red-600">{formatCurrency(getItemPriceValue(item))}</div>
-                                      <div className={`text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>x{item.quantity}</div>
+                                      <span className={`inline-flex items-center rounded-lg border px-2 py-1 text-xs font-bold ${darkMode ? "border-blue-800 bg-blue-950/60 text-blue-200" : "border-blue-200 bg-blue-50 text-blue-800"}`}>Quantity: {item.quantity || 1}x</span>
+                                      <div className="mt-1 text-base font-bold text-red-600">{formatCurrency(getItemPriceValue(item))}</div>
                                     </div>
                                   </div>
                                 </div>
@@ -7728,19 +7772,22 @@ function CustomerDashboard() {
                             ))}
                           </div>
 
-                          <div className={`mt-5 rounded-xl border p-4 ${darkMode ? "border-red-900 bg-red-950/50" : "border-red-200 bg-red-50"}`}>
+                          <div className={`mt-5 rounded-2xl border p-4 sm:p-5 ${darkMode ? "border-red-900/80 bg-gradient-to-br from-red-950/60 to-slate-900" : "border-red-200 bg-gradient-to-br from-red-50 to-rose-50/40"}`}>
                             <div className={`flex items-center justify-between text-base font-bold ${darkMode ? "text-white" : "text-slate-900"}`}>
                               <span>Grand Estimated Total</span>
                               <span className="text-red-600">₱{Number(selectedSubtotal || 0).toLocaleString()}</span>
                             </div>
                             <div className={`mt-3 flex items-center justify-between text-sm ${darkMode ? "text-slate-300" : "text-slate-700"}`}>
-                              <span>50% Requred Downpayment</span>
+                              <span>50% Required Downpayment</span>
                               <span>₱{Number((selectedSubtotal || 0) * 0.5).toLocaleString()}</span>
                             </div>
                           </div>
 
-                          <div className={`mt-5 rounded-xl border p-3 text-sm ${darkMode ? "border-slate-700 bg-slate-900 text-slate-300" : "border-slate-200 bg-white text-slate-600"}`}>
-                            Final pricing will be confirmed during shop discussion or site inspection. Contact: 09123456789
+                          <div className={`mt-5 rounded-2xl border p-4 text-sm leading-relaxed ${darkMode ? "border-blue-800 bg-blue-950/50 text-blue-100" : "border-blue-200 bg-blue-50 text-slate-800"}`}>
+                            Final pricing will be confirmed during shop discussion or site inspection.{" "}
+                            {customerPaymentContactPhone && (
+                              <>Contact: <a href={`tel:${customerPaymentContactPhone.replace(/[^\d+]/g, "")}`} className={`inline-flex items-center gap-1 whitespace-nowrap font-bold underline underline-offset-2 ${darkMode ? "text-blue-200" : "text-blue-800"}`}><Phone size={13} aria-hidden="true" />{customerPaymentContactPhone}</a></>
+                            )}
                           </div>
                         </div>
 
@@ -7748,11 +7795,11 @@ function CustomerDashboard() {
                     </div>
                   </div>
 
-                  <div className={`sticky bottom-0 z-10 flex flex-shrink-0 flex-col-reverse gap-2 border-t px-4 py-3 sm:flex-row sm:justify-end sm:gap-3 sm:px-5 ${darkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-slate-50"}`}>
+                  <div className={`sticky bottom-0 z-10 flex flex-shrink-0 flex-col-reverse gap-2 border-t px-6 py-4 sm:flex-row sm:justify-end sm:gap-3 sm:px-10 ${darkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-[#faf9f7]"}`}>
                     <button
                       type="button"
                       onClick={requestCloseBatchOrder}
-                      className={`w-full rounded-xl border px-5 py-3 text-sm font-semibold transition sm:w-auto ${darkMode ? "border-slate-600 bg-slate-800 text-slate-200 hover:bg-slate-700" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"}`}
+                      className={`w-full rounded-xl border px-5 py-3 text-sm font-semibold transition hover:-translate-y-0.5 sm:w-auto ${darkMode ? "border-slate-600 bg-slate-800 text-slate-200 hover:bg-slate-700" : "border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50"}`}
                     >
                       Cancel
                     </button>
@@ -7760,7 +7807,7 @@ function CustomerDashboard() {
                       type="button"
                       onClick={handleCheckout}
                       disabled={checkoutLoading || selectedItemCount === 0}
-                      className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-red-600 to-red-700 px-5 py-3 text-sm font-semibold text-white shadow-lg transition hover:from-red-700 hover:to-red-800 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-red-600 to-red-700 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-red-600/20 transition hover:-translate-y-0.5 hover:from-red-700 hover:to-red-800 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                     >
                       <CheckCircle size={18} />
                       {selectedItemCount === 1 ? "Submit Order Request" : "Submit Order Requests"}
@@ -7800,13 +7847,22 @@ function CustomerDashboard() {
                           <div key={item.cartId || item._id || item.name} className={`flex items-center justify-between gap-3 rounded-sm border px-3 py-2 ${darkMode ? "border-slate-700 bg-slate-800" : "border-slate-200"}`}>
                             <div className="min-w-0">
                               <p className={`truncate font-semibold ${darkMode ? "text-white" : "text-slate-800"}`}>{item.name}</p>
-                              <p className={`text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>
-                                {getConfirmationItemDimensionText(item)}
-                              </p>
+                              {(() => {
+                                const dimensions = getConfirmationItemDimensions(item);
+                                return dimensions ? (
+                                  <p className={`mt-1 text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>
+                                    Dimension: Width: <strong className={darkMode ? "text-slate-200" : "text-slate-700"}>{dimensions.width}</strong> x Height: <strong className={darkMode ? "text-slate-200" : "text-slate-700"}>{dimensions.height}</strong> ({dimensions.area} sq ft)
+                                  </p>
+                                ) : (
+                                  <p className={`text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>
+                                    {getConfirmationItemDimensionText(item)}
+                                  </p>
+                                );
+                              })()}
                             </div>
                             <div className="shrink-0 text-right">
-                              <p className={`text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>x{item.quantity || 1}</p>
-                              <p className={`font-semibold ${darkMode ? "text-slate-200" : "text-slate-700"}`}>{formatCurrency(getItemPriceValue(item))}</p>
+                              <span className={`inline-flex items-center rounded-lg border px-2 py-1 text-xs font-bold ${darkMode ? "border-blue-800 bg-blue-950/60 text-blue-200" : "border-blue-200 bg-blue-50 text-blue-800"}`}>Quantity: {item.quantity || 1}x</span>
+                              <p className="mt-1 font-bold text-red-600">{formatCurrency(getItemPriceValue(item))}</p>
                             </div>
                           </div>
                         ))}
@@ -7839,7 +7895,9 @@ function CustomerDashboard() {
 
                     <div className={`rounded-md border px-3 py-2 text-xs ${darkMode ? "border-amber-700 bg-amber-950/40 text-amber-100" : "border-amber-300 bg-amber-50 text-slate-600"}`}>
                       <p>Final pricing will be confirmed during shop discussion or site inspection.</p>
-                      <p className="mt-1">Contact: <span className="font-semibold">09123456789</span></p>
+                      {customerPaymentContactPhone && (
+                        <p className="mt-1">Contact: <a href={`tel:${customerPaymentContactPhone.replace(/[^\d+]/g, "")}`} className="inline-flex items-center gap-1 font-semibold underline underline-offset-2"><Phone size={13} aria-hidden="true" />{customerPaymentContactPhone}</a></p>
+                      )}
                     </div>
 
                     {checkoutError && (
@@ -7960,19 +8018,36 @@ function CustomerDashboard() {
                             <p className={`truncate font-semibold ${darkMode ? "text-white" : "text-slate-800"}`}>
                               {(reviewOrderMode === "orderNow" ? orderNowProduct : cartDecisionProduct)?.name || "Selected product"}
                             </p>
-                            <p className={`mt-1 text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>
-                              {orderReviewMeasurementText}
+                            {(() => {
+                              const selectedProduct = reviewOrderMode === "orderNow" ? orderNowProduct : cartDecisionProduct;
+                              const quantity = reviewOrderMode === "orderNow" ? orderNowQuantity : estimateQuantity;
+                              const measurement = reviewOrderMode === "orderNow"
+                                ? getProductDefaultDimensions(selectedProduct, Math.max(1, Number(quantity) || 1))
+                                : { width: estimateWidth, height: estimateHeight, measurementUnit: estimateForm.unit };
+                              const dimensions = isBladePricingProduct(selectedProduct) ? null : getConfirmationItemDimensions(measurement);
+                              return dimensions ? (
+                                <p className={`mt-1 text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>
+                                  Dimension: Width: <strong className={darkMode ? "text-slate-200" : "text-slate-700"}>{dimensions.width}</strong> x Height: <strong className={darkMode ? "text-slate-200" : "text-slate-700"}>{dimensions.height}</strong> ({dimensions.area} sq ft)
+                                </p>
+                              ) : (
+                                <p className={`mt-1 text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>
+                                  {!orderReviewMeasurementText.startsWith("Quantity:") && orderReviewMeasurementText}
+                                </p>
+                              );
+                            })()}
+                          </div>
+                          <div className="shrink-0 text-right">
+                            <span className={`inline-flex items-center rounded-lg border px-2 py-1 text-xs font-bold ${darkMode ? "border-blue-800 bg-blue-950/60 text-blue-200" : "border-blue-200 bg-blue-50 text-blue-800"}`}>Quantity: {Math.max(1, Number(reviewOrderMode === "orderNow" ? orderNowQuantity : estimateQuantity) || 1)}x</span>
+                            <p className="mt-1 text-base font-bold text-red-600">
+                              {reviewOrderMode === "orderNow"
+                                ? orderNowProduct
+                                  ? formatCurrency(orderNowSubtotal)
+                                  : "\u20B10.00"
+                                : estimateTotalCost
+                                  ? `\u20B1${estimateTotalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                  : "\u20B10.00"}
                             </p>
                           </div>
-                          <p className="shrink-0 text-base font-bold text-red-600">
-                            {reviewOrderMode === "orderNow"
-                              ? orderNowProduct
-                                ? formatCurrency(orderNowSubtotal)
-                                : "₱0.00"
-                              : estimateTotalCost
-                                ? `₱${estimateTotalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                                : "₱0.00"}
-                          </p>
                         </div>
                       </div>
                     </section>
@@ -8009,7 +8084,9 @@ function CustomerDashboard() {
 
                     <div className={`rounded-md border px-3 py-3 text-xs ${darkMode ? "border-amber-700 bg-amber-950/40 text-amber-100" : "border-amber-300 bg-amber-50 text-slate-600"}`}>
                       <p>Final pricing will be confirmed during shop discussion or site inspection.</p>
-                      <p className="mt-1">Contact: <span className="font-semibold">09123456789</span></p>
+                      {customerPaymentContactPhone && (
+                        <p className="mt-1">Contact: <a href={`tel:${customerPaymentContactPhone.replace(/[^\d+]/g, "")}`} className="inline-flex items-center gap-1 font-semibold underline underline-offset-2"><Phone size={13} aria-hidden="true" />{customerPaymentContactPhone}</a></p>
+                      )}
                     </div>
 
                     <div className={`rounded-xl border p-3 ${darkMode ? "border-slate-700 bg-slate-800" : "border-slate-200 bg-slate-50"}`}>
@@ -8211,7 +8288,7 @@ function CustomerDashboard() {
                   };
                   const isBatchOrder = orderItems.length > 1;
                   const orderDisplayName = isBatchOrder ? "Batch Order" : product.name || product.product_name || "Project item";
-                  const orderDisplayQuantity = isBatchOrder ? `${orderItems.length} items` : product.quantity ? `Qty ${product.quantity}` : "Qty 1";
+                  const orderDisplayQuantity = isBatchOrder ? `${orderItems.length} items` : `Quantity: ${product.quantity || 1}x`;
                   const orderPreviewItem = isBatchOrder
                     ? orderItems.find((item) => getOrderItemImage(item) !== PRODUCT_IMAGE_PLACEHOLDER) || product
                     : product;
@@ -8237,9 +8314,9 @@ function CustomerDashboard() {
                       && paymentProofOpenOrderId !== orderId
                       && latestPaymentProof.status !== "pending"
                       && latestPaymentProof.status !== "rejected";
-                    const panelMetricCardClassName = `min-w-0 rounded-xl border p-3 ${darkMode ? "border-slate-700 bg-slate-800/80" : "border-slate-200 bg-white"}`;
-                    const panelMetricLabelClassName = `text-[10px] font-semibold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`;
-                    const panelMetricNoteClassName = `text-[10px] ${darkMode ? "text-slate-400" : "text-slate-500"}`;
+                    const panelMetricCardClassName = `min-w-0 rounded-xl border p-4 ${darkMode ? "border-slate-700 bg-slate-800/80" : "border-slate-200 bg-white"}`;
+                    const panelMetricLabelClassName = `text-xs font-bold uppercase tracking-wide ${darkMode ? "text-slate-300" : "text-slate-600"}`;
+                    const panelMetricNoteClassName = `text-xs font-medium leading-relaxed ${darkMode ? "text-slate-200" : "text-slate-700"}`;
                     const panelNeutralButtonClassName = `inline-flex h-[34px] shrink-0 items-center justify-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition ${darkMode ? "border-slate-600 bg-slate-800 text-slate-200 hover:bg-slate-700" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`;
                     const contractActionButtonClassName = `inline-flex h-[34px] shrink-0 items-center justify-center rounded-lg border px-4 text-xs font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2 ${darkMode ? "border-slate-600 bg-slate-800 text-slate-100 hover:bg-slate-700" : "border-[#d8d2c6] bg-white text-slate-900 hover:bg-[#f8f6f1]"}`;
                     const declineContractButtonClassName = `inline-flex h-[34px] shrink-0 items-center justify-center rounded-lg border border-slate-300 px-4 text-xs font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:ring-offset-2 ${darkMode ? "bg-slate-800 text-red-300 hover:bg-red-500/10" : "bg-white text-red-700 hover:bg-red-50"}`;
@@ -8297,7 +8374,7 @@ function CustomerDashboard() {
                             <div className={`mt-1 flex flex-wrap items-center gap-x-2 text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>
                               <span>{order.tracking || order._id || "—"}</span>
                               <span aria-hidden="true">·</span>
-                              <span>{orderDisplayQuantity}</span>
+                              <span className={`inline-flex items-center rounded-md border px-2 py-0.5 font-bold ${darkMode ? "border-blue-800 bg-blue-950/50 text-blue-200" : "border-blue-200 bg-blue-50 text-blue-800"}`}>{orderDisplayQuantity}</span>
                             </div>
                           </div>
                         </div>
@@ -8505,30 +8582,30 @@ function CustomerDashboard() {
                           <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
                             <div className={panelMetricCardClassName}>
                               <span className={panelMetricLabelClassName}>Total project cost</span>
-                              <span className="mt-1 block text-lg font-bold text-red-600">{formatCurrency(orderTotal)}</span>
+                              <span className="mt-1 block text-xl font-bold text-red-600">{formatCurrency(orderTotal)}</span>
                               <span className={`${panelMetricNoteClassName} mt-1 block`}>Confirmed order total</span>
                             </div>
                             <div className={`${panelMetricCardClassName} border-l-4 ${darkMode ? "border-l-amber-400" : "border-l-amber-500"}`}>
                               <span className={panelMetricLabelClassName}>{order.payment_terms === "full_payment" ? "Required full payment" : "Required downpayment"}</span>
-                              <span className={`mt-1 block text-lg font-bold ${darkMode ? "text-amber-300" : "text-amber-700"}`}>{formatCurrency(requiredPaymentAmount)}</span>
+                              <span className={`mt-1 block text-xl font-bold ${darkMode ? "text-amber-300" : "text-amber-700"}`}>{formatCurrency(requiredPaymentAmount)}</span>
                               <span className={`${panelMetricNoteClassName} mt-1 block`}>Site Inspection terms: {getSavedPaymentTermsLabel(order.payment_terms)}</span>
                             </div>
                             <div className={panelMetricCardClassName}>
                               <span className={panelMetricLabelClassName}>Amount already paid</span>
-                              <span className="mt-1 block text-lg font-bold text-emerald-600">{formatCurrency(downpaymentAmount)}</span>
+                              <span className="mt-1 block text-xl font-bold text-emerald-600">{formatCurrency(downpaymentAmount)}</span>
                               <span className={`${panelMetricNoteClassName} mt-1 block`}>Verified payments only</span>
                             </div>
                             <div className={panelMetricCardClassName}>
                               <span className={panelMetricLabelClassName}>Downpayment remaining</span>
-                              <span className={`mt-1 block text-lg font-bold ${darkMode ? "text-amber-300" : "text-amber-700"}`}>{formatCurrency(downpaymentBalance)}</span>
+                              <span className={`mt-1 block text-xl font-bold ${darkMode ? "text-amber-300" : "text-amber-700"}`}>{formatCurrency(downpaymentBalance)}</span>
                             </div>
                             <div className={panelMetricCardClassName}>
                               <span className={panelMetricLabelClassName}>Remaining project balance</span>
-                              <span className="mt-1 block text-lg font-bold text-red-600">{formatCurrency(balanceAmount)}</span>
+                              <span className="mt-1 block text-xl font-bold text-red-600">{formatCurrency(balanceAmount)}</span>
                             </div>
                             <div className={panelMetricCardClassName}>
                               <span className={`${panelMetricLabelClassName} block`}>Payment status</span>
-                              <span className={`${statusBadgeBaseClassName} mt-2 w-fit ${paymentStatus.className}`}>
+                              <span className={`${statusBadgeBaseClassName} mt-2 w-fit text-xs ${paymentStatus.className}`}>
                                 {paymentStatus.label}
                               </span>
                             </div>
@@ -9368,7 +9445,6 @@ function CustomerDashboard() {
 
                             return (
                               <div className={`mt-1 flex flex-wrap items-center gap-3 text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>
-                                <span>Qty: {item.quantity}</span>
                                 {item.is_estimate && item.width && item.height && (
                                   <span>{item.width} {item.measurementUnit || item.unit || ""} x {item.height} {item.measurementUnit || item.unit || ""}</span>
                                 )}
@@ -9387,6 +9463,7 @@ function CustomerDashboard() {
                           )}
                         </div>
                         <div className="col-span-3 flex items-center justify-between gap-3 sm:col-span-1 sm:justify-end">
+                          <span className={`inline-flex shrink-0 items-center rounded-lg border px-2 py-1 text-xs font-bold ${darkMode ? "border-blue-800 bg-blue-950/60 text-blue-200" : "border-blue-200 bg-blue-50 text-blue-800"}`}>Quantity: {item.quantity || 1}x</span>
                           <div className={`inline-flex items-center overflow-hidden rounded-lg border ${darkMode ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>
                             <button
                               type="button"
@@ -9829,7 +9906,7 @@ function CustomerDashboard() {
                     const product = orderItems[0] || {};
                     const isBatchOrder = orderItems.length > 1;
                     const orderDisplayName = isBatchOrder ? "Batch Order" : product.name || product.product_name || "Project item";
-                    const orderDisplayQuantity = isBatchOrder ? `${orderItems.length} items` : product.quantity ? `Qty ${product.quantity}` : "Qty 1";
+                    const orderDisplayQuantity = isBatchOrder ? `${orderItems.length} items` : `Quantity: ${product.quantity || 1}x`;
                     const orderPreviewItem = isBatchOrder
                       ? orderItems.find((item) => getOrderItemImage(item) !== PRODUCT_IMAGE_PLACEHOLDER) || product
                       : product;
@@ -9864,7 +9941,7 @@ function CustomerDashboard() {
                               <div className={`mt-1 flex flex-wrap items-center gap-x-2 text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>
                                 <span>{order.tracking || order._id || "—"}</span>
                                 <span aria-hidden="true">·</span>
-                                <span>{orderDisplayQuantity}</span>
+                                <span className={`inline-flex items-center rounded-md border px-2 py-0.5 font-bold ${darkMode ? "border-blue-800 bg-blue-950/50 text-blue-200" : "border-blue-200 bg-blue-50 text-blue-800"}`}>{orderDisplayQuantity}</span>
                               </div>
                             </div>
                           </div>

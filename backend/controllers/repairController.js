@@ -83,6 +83,7 @@ const publicCustomer = (repair) => ({
   customerName: repair.customerName, customerEmail: repair.customerEmail, customerPhone: repair.customerPhone,
   issueDescription: repair.issueDescription, mediaUrls: repair.mediaUrls, installationDate: repair.installationDate, workflowType: repair.workflowType,
   warranty: repair.warranty, status: repair.status, inspection: repair.inspection, quotation: repair.quotation,
+  startedAt: repair.startedAt || null,
   payment: {
     method: repair.payment?.method || "", status: repair.payment?.status || "pending", receivedAt: repair.payment?.receivedAt || null,
     verifiedAmount: verifiedRepairAmount(repair), verifiedAt: repair.payment?.verifiedAt || null,
@@ -607,12 +608,19 @@ export const scheduleRepair = async (req, res) => {
   const startValue = text(req.body?.startDate || req.body?.date, 10);
   if (repair.status === "scheduled" && req.body?.reschedule !== true) return res.status(409).json({ success: false, message: "This repair already has a schedule. Confirm that you are editing or rescheduling the existing appointment." });
   if (repair.status !== "scheduled" && req.body?.reschedule === true) return res.status(409).json({ success: false, message: "Only an already scheduled repair can be rescheduled." });
-  const finishValue = text(req.body?.finishDate || req.body?.startDate || req.body?.date, 10);
+  // Require the finish date explicitly. Falling back to startDate silently
+  // collapsed multi-day repairs into a single-day schedule.
+  const finishValue = text(req.body?.finishDate, 10);
   const manilaDateParts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
   const manilaDateValues = Object.fromEntries(manilaDateParts.map(({ type, value }) => [type, value]));
   const todayInManila = `${manilaDateValues.year}-${manilaDateValues.month}-${manilaDateValues.day}`;
-  const startDate = /^\d{4}-\d{2}-\d{2}$/.test(startValue) ? new Date(`${startValue}T12:00:00.000Z`) : new Date(NaN);
-  const finishDate = /^\d{4}-\d{2}-\d{2}$/.test(finishValue) ? new Date(`${finishValue}T12:00:00.000Z`) : new Date(NaN);
+  const parseScheduleDate = (value) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return new Date(NaN);
+    const parsed = new Date(`${value}T12:00:00.000Z`);
+    return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value ? parsed : new Date(NaN);
+  };
+  const startDate = parseScheduleDate(startValue);
+  const finishDate = parseScheduleDate(finishValue);
   if (Number.isNaN(startDate.getTime()) || Number.isNaN(finishDate.getTime()) || startDate.toISOString().slice(0, 10) !== startValue || finishDate.toISOString().slice(0, 10) !== finishValue || finishDate < startDate) return res.status(400).json({ success: false, message: "Choose valid start and finish dates. Finish date cannot be before start date." });
   if (startValue < todayInManila) return res.status(400).json({ success: false, message: "Repair schedules cannot start in the past." });
   const previousSchedule = repair.schedule?.startDate || repair.schedule?.date;
@@ -632,6 +640,7 @@ export const startRepair = async (req, res) => {
   const repair = await getRepair(req.params.repairId);
   if (!repair) return res.status(404).json({ success: false, message: "Repair request not found." });
   if (repair.status !== "scheduled") return res.status(409).json({ success: false, message: "Only a scheduled repair can be started." });
+  repair.startedAt = new Date();
   repair.status = "in_progress";
   event(repair, "in_progress", "Repair work started.", req.user);
   await repair.save();
@@ -646,6 +655,7 @@ export const completeRepair = async (req, res) => {
   if (!notes) return res.status(400).json({ success: false, message: "Add completion notes." });
   const amountPaid = repair.workflowType === "warranty" ? 0 : verifiedRepairAmount(repair);
   const evidenceUrls = Array.isArray(req.body?.evidenceUrls) ? req.body.evidenceUrls.slice(0, 10).map((url) => text(url, 1200)).filter((url) => /^https:\/\//i.test(url)) : [];
+  // completedAt is the actual completion instant. Schedule dates remain separately stored.
   repair.completion = { notes, amountPaid, evidenceUrls, completedAt: new Date() };
   if (repair.workflowType === "warranty") {
     repair.payment.status = "not_required";

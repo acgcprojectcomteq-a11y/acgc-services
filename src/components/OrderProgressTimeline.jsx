@@ -215,6 +215,10 @@ export default function OrderProgressTimeline({
       {items.map((item, itemIndex) => {
         const productName = item?.name || item?.product_name || `Product ${itemIndex + 1}`;
         const productSize = getItemDimension?.(item) || formatOrderItemMeasurements(item);
+        const dimensionMatch = productSize.match(/^(?:Size:\s*)?(.+?)\s+x\s+(.+?)(\s+\([\d,.]+\s+sq ft\))?(.*)$/i);
+        const labeledProductSize = dimensionMatch
+          ? `Dimension: Width: ${dimensionMatch[1]} x Height: ${dimensionMatch[2]}${dimensionMatch[3] || ""}${dimensionMatch[4] || ""}`
+          : productSize;
         const isBatchOrder = items.length > 1;
         const progressSteps = buildCustomerOrderTimelineSteps(order, item, itemIndex);
         const delayedSteps = progressSteps.filter((step) => step.status === "delayed");
@@ -239,7 +243,7 @@ export default function OrderProgressTimeline({
                 </div>
                 <div className="min-w-0">
                   <p className="truncate text-[15px] font-medium text-foreground">{productName}</p>
-                  <p className="mt-0.5 break-words text-[13px] text-muted-foreground">{productSize}</p>
+                  <p className="mt-0.5 break-words text-[13px] text-muted-foreground">{labeledProductSize}</p>
                 </div>
               </div>
             </div>

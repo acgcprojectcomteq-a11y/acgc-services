@@ -14,6 +14,7 @@ export default function FullAddressField({
   labelClassName = "",
   helperClassName = "",
   showError = true,
+  showHelperMessage = true,
   minimumLength = FULL_ADDRESS_MIN_LENGTH,
   ...props
 }) {
@@ -44,10 +45,12 @@ export default function FullAddressField({
         />
       </div>
       <div id={`${props.id || props.name}-address-help`} className={`mt-1 flex flex-wrap items-start justify-between gap-x-3 gap-y-1 text-xs ${helperClassName}`}>
-        <span className={showError && validationError ? "text-red-600" : "text-slate-500"}>
-          {showError && validationError ? validationError : minimumLength === 0 ? "Maximum 100 characters." : "Enter 50-100 characters."}
-        </span>
-        <span className="shrink-0 text-slate-500" aria-live="polite">{trimmedAddress.length}/{FULL_ADDRESS_MAX_LENGTH}</span>
+        {showHelperMessage && (
+          <span className={showError && validationError ? "text-red-600" : "text-slate-500"}>
+            {showError && validationError ? validationError : minimumLength === 0 ? "Maximum 100 characters." : "Enter 50-100 characters."}
+          </span>
+        )}
+        <span className="ml-auto shrink-0 text-right text-slate-500" aria-live="polite">{trimmedAddress.length}/{FULL_ADDRESS_MAX_LENGTH}</span>
       </div>
     </div>
   );

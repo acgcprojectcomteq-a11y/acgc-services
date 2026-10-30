@@ -9,17 +9,18 @@ const getItemName = (item, index) => item?.name || item?.product_name || `Produc
 const getSizeLabel = (item, getItemDimension) => {
   if (Number(item?.widthIn) > 0 && Number(item?.heightIn) > 0) {
     const area = Number(item?.sqFt);
-    return `${item.widthIn}" × ${item.heightIn}"${Number.isFinite(area) && area > 0 ? ` · ${area.toLocaleString(undefined, { maximumFractionDigits: 2 })} sq ft` : ""}`;
+    return `Dimension: Width: ${item.widthIn}" x Height: ${item.heightIn}"${Number.isFinite(area) && area > 0 ? ` (${area.toLocaleString(undefined, { maximumFractionDigits: 2 })} sq ft)` : ""}`;
   }
 
   const value = getItemDimension?.(item) || formatOrderItemMeasurements(item) || "";
-  const formatted = value || "Measurements not provided";
-  return formatted
-    .replace(/^Size:\s*/i, "")
-    .replace(/\s*x\s*/gi, " × ")
-    .replace(/\s*\(([^()]*)\)/, " · $1");
-};
+  const dimensions = value.match(/^(?:Size:\s*)?(.+?)\s+x\s+(.+?)(\s+\([\d,.]+\s+sq ft\))?(.*)$/i);
+  if (dimensions) {
+    return `Dimension: Width: ${dimensions[1]} x Height: ${dimensions[2]}${dimensions[3] || ""}${dimensions[4] || ""}`;
+  }
 
+  const formatted = value || "Measurements not provided";
+  return formatted;
+};
 const getChipLabel = (stages) => {
   const active = stages.find((stage) => getTimelineStageStatus(stage) === "current");
   if (active) return active.label || active.name || "In progress";
@@ -193,7 +194,7 @@ export default function ItemCard({
                 {getChipLabel(stages)}
               </span>
             </span>
-            <span className={`mt-0.5 block truncate text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>{size} · {done} of {total} done</span>
+            <span className={`mt-0.5 block truncate text-xs font-medium ${darkMode ? "text-slate-200" : "text-slate-700"}`}>{size} · {done} of {total} done</span>
           </span>
           <ChevronDown size={17} className={`shrink-0 transition-transform ${darkMode ? "text-slate-400" : "text-slate-500"} ${isExpanded ? "rotate-180" : ""}`} aria-hidden="true" />
         </span>

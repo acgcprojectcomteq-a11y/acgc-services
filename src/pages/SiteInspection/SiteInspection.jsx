@@ -4,7 +4,6 @@ import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
   Search,
   Plus,
-  BookSearch,
   Pencil,
   FileText,
   Send,
@@ -38,7 +37,7 @@ import { toSquareFeet } from "@/lib/estimator";
 import { getMeasuredProductLineTotal, getProductLineBreakdown, getProductSizeLimitWarnings } from "@/lib/productPricing";
 import UnsavedChangesDialog from "@/components/UnsavedChangesDialog";
 import FullAddressField from "@/components/FullAddressField";
-import { getFullAddressError, isValidFullAddress, normalizeFullAddress } from "@/lib/fullAddressValidation";
+import { getStreetAddressError, isValidStreetAddress, normalizeFullAddress } from "@/lib/fullAddressValidation";
 import { createUnsavedSnapshot } from "@/lib/unsavedSnapshot";
 import { getSystemSettings, searchCustomers } from "@/api/users";
 import { uploadFiles } from "@/api/uploads";
@@ -773,7 +772,7 @@ export const validateInspectionPayload = (payload = {}, { requireScheduleTimes =
   else if (!isValidPhilippinePhone(payload.phone)) nextErrors.phone = getPhilippinePhoneError(payload.phone);
   if (validateSiteAddress) {
     if (!payload.siteAddress?.trim()) nextErrors.siteAddress = "Site address is required.";
-    else if (!isValidFullAddress(payload.siteAddress)) nextErrors.siteAddress = getFullAddressError(payload.siteAddress);
+    else if (!isValidStreetAddress(payload.siteAddress)) nextErrors.siteAddress = getStreetAddressError(payload.siteAddress);
   }
   if (!payload.inspection_date) nextErrors.inspection_date = "Inspection date is required.";
   if (!Number.isFinite(Number(payload.inspection_duration_minutes)) || Number(payload.inspection_duration_minutes) < 30) nextErrors.inspection_duration_minutes = "Inspection duration must be at least 30 minutes.";
@@ -4048,7 +4047,7 @@ function SiteInspection() {
           title="View inspection"
           aria-label="View inspection"
         >
-          <BookSearch size={16} strokeWidth={2.2} />
+          <Search size={20} strokeWidth={2.6} />
         </button>
         {!isCancelledTab && (
           <>
@@ -4772,6 +4771,8 @@ function SiteInspection() {
                           type="text"
                           name="new-site-address"
                           label="Site Address *"
+                          minimumLength={0}
+                          showHelperMessage={false}
                           placeholder="e.g. 45 Magsaysay Dr."
                           className={fieldClass}
                           labelClassName={`mb-2 text-[14px] font-bold ${labelClass}`}
@@ -5475,8 +5476,19 @@ function SiteInspection() {
             const paymentStatusLabel = getPaymentStatusLabel(viewInspection.payment_terms);
             const paymentTermsText = getPaymentTermsLabel(viewInspection.payment_terms);
             const isPerProductWarranty = inspectionItems.length > 1 && viewInspection.warranty_assignment_mode === "per_product";
-            const warrantyPeriod = isPerProductWarranty
-              ? "Different per product"
+            const itemWarrantyLabels = inspectionItems.map((item) => {
+              const period = item.warranty_period ?? viewInspection.warranty_period ?? 90;
+              if (period === "No Warranty") return "No Warranty";
+              const days = period === "Custom"
+                ? Number(item.custom_warranty_days ?? viewInspection.custom_warranty_days) || 90
+                : getWarrantyPeriodDays(period) || 90;
+              return `${days} days`;
+            });
+            const hasDifferentItemWarranties = new Set(itemWarrantyLabels).size > 1;
+            const warrantyPeriod = hasDifferentItemWarranties
+              ? "Varies by product"
+              : isPerProductWarranty
+                ? "Per product"
               : viewInspection.warranty_period === "No Warranty"
               ? "No Warranty"
               : `${viewInspection.warranty_period === "Custom"
@@ -5487,14 +5499,14 @@ function SiteInspection() {
               ? {
                   label: "Need to be Called",
                   className: darkMode
-                    ? "border border-violet-500/30 bg-violet-500/10 px-3 py-2 text-xs font-bold uppercase tracking-[0.16em] text-violet-200"
-                    : "border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-bold uppercase tracking-[0.16em] text-violet-700",
+                    ? "border-violet-500/30 bg-violet-500/10 text-violet-200"
+                    : "border-violet-200 bg-violet-50 text-violet-700",
                 }
               : {
                   label: "Scheduled",
                   className: darkMode
-                    ? "border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-bold uppercase tracking-[0.16em] text-emerald-200"
-                    : "border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold uppercase tracking-[0.16em] text-emerald-700",
+                    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+                    : "border-emerald-200 bg-emerald-50 text-emerald-700",
                 };
             const downpaymentStatus = {
               label: getPaymentStatusLabel(paymentSummary.status),
@@ -5628,227 +5640,188 @@ function SiteInspection() {
                     </div>
                   )}
 
-                  <div className={`min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5 sm:py-5 ${darkMode ? "bg-[#0d1b2a]" : "bg-[#f4f3f1]"}`}>
-                    <div className={`rounded-[16px] border p-5 ${darkMode ? "border-slate-700 bg-[#122d42]" : "border-slate-200 bg-[#f9f9f9]"}`}>
-                      <div className="mb-4 flex items-center justify-between gap-3">
-                        <div className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">Client Information</div>
-                      </div>
+                  <div className={`min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-y-contain touch-pan-y px-3 pt-3 pb-20 sm:space-y-5 sm:px-5 sm:pt-5 sm:pb-10 ${darkMode ? "bg-[#0d1b2a]" : "bg-[#f4f3f1]"}`} style={{ WebkitOverflowScrolling: "touch" }}>
+                    <div className="rounded-[10px] border border-border bg-card p-4">
+                      <div className={`mb-3 text-[10.5px] font-bold uppercase tracking-[0.1em] ${darkMode ? "text-slate-200" : "text-slate-700"}`}>Client Information</div>
 
-                      <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
-                        <div>
-                          <div className={`mb-2 text-[11px] font-black uppercase tracking-[0.18em] ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Client Name</div>
-                          <div className={`text-lg font-bold ${darkMode ? "text-slate-100" : "text-slate-900"}`}>{customerName}</div>
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
+                        <div className="min-w-0">
+                          <div className={`text-[9.5px] font-semibold uppercase tracking-[0.06em] ${darkMode ? "text-slate-300" : "text-slate-600"}`}>Client Name</div>
+                          <div className="mt-1 break-words text-[12.5px] font-semibold text-foreground">{customerName}</div>
                         </div>
 
-                        <div>
-                          <div className={`mb-2 text-[11px] font-black uppercase tracking-[0.18em] ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Client Number</div>
-                          <div className={`text-lg font-semibold ${darkMode ? "text-slate-100" : "text-slate-900"}`}>{customerPhone}</div>
+                        <div className="min-w-0">
+                          <div className={`text-[9.5px] font-semibold uppercase tracking-[0.06em] ${darkMode ? "text-slate-300" : "text-slate-600"}`}>Client Number</div>
+                          <div className="mt-1 break-words text-[12.5px] font-semibold text-foreground">{customerPhone}</div>
                         </div>
 
-                        <div className="md:col-span-1">
-                          <div className={`mb-2 text-[11px] font-black uppercase tracking-[0.18em] ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Site Address</div>
-                          <div className={`text-sm leading-6 ${darkMode ? "text-slate-200" : "text-slate-700"}`}>{siteAddress}</div>
+                        <div className="min-w-0">
+                          <div className={`text-[9.5px] font-semibold uppercase tracking-[0.06em] ${darkMode ? "text-slate-300" : "text-slate-600"}`}>Site Address</div>
+                          <div className="mt-1 break-words text-[12px] leading-5 text-foreground">{siteAddress}</div>
                         </div>
                       </div>
 
-                      <div className="mt-5 grid grid-cols-1 gap-5 md:grid-cols-3">
-                        <div>
-                          <div className={`mb-2 text-[11px] font-black uppercase tracking-[0.18em] ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Inspection Date</div>
-                          <div className={`text-base font-medium ${darkMode ? "text-slate-200" : "text-slate-700"}`}>{inspectionDate}{inspectionTime && <span className={`ml-2 text-sm ${darkMode ? "text-slate-400" : "text-slate-500"}`}>{inspectionTime}</span>}</div>
+                      <div className="mt-3 grid grid-cols-1 gap-3 border-t border-border pt-3 sm:grid-cols-3 sm:gap-4">
+                        <div className="min-w-0">
+                          <div className={`text-[9.5px] font-semibold uppercase tracking-[0.06em] ${darkMode ? "text-slate-300" : "text-slate-600"}`}>Inspection Date</div>
+                          <div className={`mt-1 text-[12px] ${darkMode ? "text-slate-100" : "text-slate-900"}`}><span className="font-semibold">{inspectionDate}</span>{inspectionTime && <span className={`ml-1 font-medium ${darkMode ? "text-slate-300" : "text-slate-600"}`}>at {inspectionTime}</span>}</div>
                         </div>
 
-                        <div>
-                          <div className={`mb-2 text-[11px] font-black uppercase tracking-[0.18em] ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Est. Installation Date</div>
-                          <div className={`text-base font-medium ${darkMode ? "text-slate-200" : "text-slate-700"}`}>{installDate}{installationTime && <span className={`ml-2 text-sm ${darkMode ? "text-slate-400" : "text-slate-500"}`}>{installationTime}</span>}</div>
+                        <div className="min-w-0">
+                          <div className={`text-[9.5px] font-semibold uppercase tracking-[0.06em] ${darkMode ? "text-slate-300" : "text-slate-600"}`}>Est. Installation Date</div>
+                          <div className={`mt-1 text-[12px] ${darkMode ? "text-slate-100" : "text-slate-900"}`}><span className="font-semibold">{installDate}</span>{installationTime && <span className={`ml-1 font-medium ${darkMode ? "text-slate-300" : "text-slate-600"}`}>at {installationTime}</span>}</div>
                         </div>
 
-                        <div className="flex flex-wrap items-center justify-start gap-2 md:justify-end">
-                          <span className={`inline-flex items-center justify-center rounded-xl border px-3 py-2 text-xs font-bold uppercase tracking-[0.12em] ${statusBadge.className}`}>
-                            {!viewInspection.inspection_date && <Phone size={14} className="mr-1.5" aria-hidden="true" />}{statusBadge.label}
+                        <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-start">
+                          <span className={`inline-flex items-center justify-center rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] ${statusBadge.className}`}>
+                            {!viewInspection.inspection_date && <Phone size={12} className="mr-1" aria-hidden="true" />}{statusBadge.label}
                           </span>
                           {awaitingContractSignoff && <span className={`${statusBadgeBaseClassName} ${getContractSignoffBadgeClassName(darkMode)}`}>Awaiting Contract Sign-off</span>}
                         </div>
                       </div>
                     </div>
 
-                    <div className={`rounded-[16px] border p-0 overflow-hidden ${darkMode ? "border-slate-700 bg-[#122d42]" : "border-slate-200 bg-white"}`}>
-                      <div className={`px-4 py-3 text-[11px] font-black uppercase tracking-[0.18em] ${darkMode ? "bg-[#0d2033] text-slate-300" : "bg-slate-100 text-slate-500"}`}>
+                    <div className="overflow-hidden rounded-[16px] border border-border bg-card">
+                      <div className="bg-muted px-4 py-3 text-[11px] font-black uppercase tracking-[0.18em] text-muted-foreground">
                         Measurements
                       </div>
 
-                      <div className="hidden overflow-x-auto md:block">
-                        <table className="min-w-full text-left">
-                          <thead className={darkMode ? "bg-[#0d2033] text-slate-300" : "bg-slate-100 text-slate-600"}>
-                            <tr>
-                              <th className="px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em]">Product / Description</th>
-                              <th className="px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em]">Width / Blades</th>
-                              <th className="px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em]">Height / Glass</th>
-                              <th className="px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em]">Size / Sale mode</th>
-                              <th className="px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em]">Quantity</th>
-                              <th className="px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em]">Rate / Unit</th>
-                              {inspectionItems.length > 1 && <th className="px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em]">Warranty</th>}
-                              <th className="px-4 py-3 text-right text-[11px] font-black uppercase tracking-[0.14em]">Est. Total</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {measurementRows.length ? measurementRows.map((measurement) => (
-                              <tr key={measurement.key} className={darkMode ? "border-t border-slate-700 text-slate-200" : "border-t border-slate-200 text-slate-700"}>
-                                <td className="px-4 py-3 font-medium">
-                                  <div>{measurement.itemName}</div>
-                                  {(measurement.baseTotal > 0 || measurement.chargeOptions.length > 0) && (
-                                    <div className={`mt-1 space-y-0.5 text-xs font-normal ${darkMode ? "text-slate-400" : "text-slate-500"}`}>
-                                      <div>Base price: {formatCurrency(measurement.baseTotal)}</div>
-                                      {measurement.chargeOptions.map((charge, chargeIndex) => (
-                                        <div key={`${charge.name}-${chargeIndex}`}>
-                                          {charge.optional ? charge.selected ? "Selected" : "Not selected" : "Required"} · {charge.name}: {charge.selected ? formatCurrency(charge.amount) : `Excluded (${formatCurrency(charge.amount)})`}
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
-                                </td>
-                                <td className="px-4 py-3">{measurement.isBlade ? `${measurement.bladeDetails.bladeCount} blades` : measurement.width || "—"}</td>
-                                <td className="px-4 py-3">{measurement.isBlade ? measurement.bladeDetails.glassName : measurement.height || "—"}</td>
-                                <td className="px-4 py-3">{measurement.isBlade ? measurement.bladeDetails.saleMode === "frame" ? `${measurement.bladeDetails.frameName} frame` : "Blades only" : measurement.unit}</td>
-                                <td className="px-4 py-3">{measurement.qty}</td>
-                                <td className="px-4 py-3">{measurement.unitPrice ? `${formatCurrency(measurement.unitPrice)}${measurement.isBlade ? " / blade" : ""}` : "—"}</td>
-                                {inspectionItems.length > 1 && (
-                                  <td className="px-4 py-3 text-sm">
-                                    <div className="font-semibold">{measurement.warrantyPeriod}</div>
-                                    {measurement.warrantyPeriod !== "No Warranty" && (
-                                      <div className={darkMode ? "mt-1 text-xs text-slate-400" : "mt-1 text-xs text-slate-500"}>
-                                        <div>Start: {measurement.warrantyStartDate}</div>
-                                        <div>End: {measurement.warrantyExpiryDate}</div>
-                                      </div>
-                                    )}
-                                  </td>
-                                )}
-                                <td className="px-4 py-3 text-right font-semibold">{formatCurrency(measurement.lineTotal)}</td>
-                              </tr>
-                            )) : (
-                              <tr>
-                                <td colSpan={inspectionItems.length > 1 ? 8 : 7} className={`px-4 py-6 text-center text-sm ${darkMode ? "text-slate-400" : "text-slate-500"}`}>
-                                  No measurement rows available.
-                                </td>
-                              </tr>
-                            )}
-                          </tbody>
-                        </table>
-                      </div>
-
-                      <div className="space-y-3 p-3 md:hidden">
+                      <div className="space-y-3 p-3">
                         {measurementRows.length ? measurementRows.map((measurement, index) => (
-                          <article key={measurement.key} className={`min-w-0 rounded-xl border p-3 ${darkMode ? "border-slate-700 bg-[#0d2033]" : "border-slate-200 bg-slate-50"}`}>
-                            <h4 className={`break-words text-sm font-semibold ${darkMode ? "text-slate-100" : "text-slate-900"}`}>
-                              {measurement.itemName || `Item ${index + 1}`}
-                            </h4>
-                            {measurement.bladeDetails && (
-                              <div className={`mt-2 space-y-1 text-xs ${darkMode ? "text-slate-300" : "text-slate-600"}`}>
-                                <p>{measurement.bladeDetails.glassName} · {measurement.bladeDetails.bladeCount} blades · {measurement.bladeDetails.saleMode === "frame" ? `${measurement.bladeDetails.frameName} frame` : "Blades only"}</p>
-                                {measurement.bladeDetails.saleMode === "frame" && measurement.bladeDetails.framePrice > 0 && (
-                                  <p>Frame: {formatCurrency(measurement.bladeDetails.framePrice)}</p>
+                          <article key={measurement.key} className="overflow-hidden rounded-[10px] border border-border bg-card">
+                            <header className="flex flex-col gap-3 border-b border-border bg-muted px-3.5 py-3 sm:flex-row sm:items-start sm:justify-between">
+                              <div className="min-w-0 flex-1">
+                                <h4 className="break-words text-base font-bold text-foreground">
+                                  {measurement.itemName || `Item ${index + 1}`}
+                                </h4>
+                                {(measurement.baseTotal > 0 || measurement.chargeOptions.length > 0) && (
+                                  <div className="mt-2 flex min-w-0 flex-wrap gap-1.5">
+                                    {measurement.baseTotal > 0 && (
+                                      <span className={`max-w-full rounded-full border px-2.5 py-1 text-[11.5px] font-medium leading-tight ${darkMode ? "border-slate-600 bg-slate-800 text-slate-200" : "border-slate-300 bg-slate-50 text-slate-700"}`}>
+                                        Base price: {formatCurrency(measurement.baseTotal)}
+                                      </span>
+                                    )}
+                                    {measurement.chargeOptions.map((charge, chargeIndex) => (
+                                      <span key={`${charge.name}-${chargeIndex}`} className={`max-w-full whitespace-normal rounded-full border px-2.5 py-1 text-[11.5px] font-medium leading-tight ${charge.selected
+                                        ? darkMode ? "border-sky-700 bg-sky-950/40 text-sky-200" : "border-sky-200 bg-sky-50 text-sky-800"
+                                        : darkMode ? "border-slate-700 bg-slate-800 text-slate-300" : "border-slate-200 bg-slate-50 text-slate-600"}`}>
+                                        {charge.optional ? charge.selected ? "Selected" : "Not selected" : "Required"} · {charge.name}: {charge.selected ? formatCurrency(charge.amount) : `Excluded (${formatCurrency(charge.amount)})`}
+                                      </span>
+                                    ))}
+                                  </div>
                                 )}
-                                {measurement.bladeDetails.extraCharges.map((charge) => (
-                                  <p key={charge.name}>+ {charge.name}: {formatCurrency(charge.total)}</p>
-                                ))}
                               </div>
-                            )}
-                            <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-3">
-                              <div className="min-w-0">
-                                <dt className={measurementLabelClass}>{measurement.isBlade ? "Blade count" : "Width"}</dt>
-                                <dd className={`mt-1 text-sm font-medium ${darkMode ? "text-slate-200" : "text-slate-700"}`}>{measurement.isBlade ? `${measurement.bladeDetails.bladeCount} blades` : measurement.width || "—"}</dd>
+                              <div className="shrink-0 text-right sm:pl-4">
+                                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">Est. Total</p>
+                                <p className="mt-0.5 text-xl font-bold leading-tight text-foreground">{formatCurrency(measurement.lineTotal)}</p>
                               </div>
-                              <div className="min-w-0">
-                                <dt className={measurementLabelClass}>{measurement.isBlade ? "Glass" : "Height"}</dt>
-                                <dd className={`mt-1 text-sm font-medium ${darkMode ? "text-slate-200" : "text-slate-700"}`}>{measurement.isBlade ? measurement.bladeDetails.glassName : measurement.height || "—"}</dd>
-                              </div>
-                              <div className="min-w-0">
-                                <dt className={measurementLabelClass}>{measurement.isBlade ? "Sale mode" : "Unit"}</dt>
-                                <dd className={`mt-1 text-sm font-medium ${darkMode ? "text-slate-200" : "text-slate-700"}`}>{measurement.isBlade ? measurement.bladeDetails.saleMode === "frame" ? `${measurement.bladeDetails.frameName} frame` : "Blades only" : measurement.unit}</dd>
-                              </div>
-                              <div className="min-w-0">
-                                <dt className={measurementLabelClass}>Quantity</dt>
-                                <dd className={`mt-1 text-sm font-medium ${darkMode ? "text-slate-200" : "text-slate-700"}`}>{measurement.qty}</dd>
-                              </div>
-                              {inspectionItems.length > 1 && (
-                                <div className="col-span-2 min-w-0">
-                                  <dt className={measurementLabelClass}>Warranty</dt>
-                                  <dd className={`mt-1 text-sm font-semibold ${darkMode ? "text-slate-100" : "text-slate-800"}`}>{measurement.warrantyPeriod}</dd>
-                                  {measurement.warrantyPeriod !== "No Warranty" && (
-                                    <dd className={`mt-1 text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>
-                                      Start: {measurement.warrantyStartDate} · End: {measurement.warrantyExpiryDate}
-                                    </dd>
-                                  )}
-                                </div>
+                            </header>
+
+                            <dl className="grid grid-cols-[repeat(auto-fit,minmax(125px,1fr))] gap-x-4 gap-y-3.5 p-3.5">
+                              {measurement.isBlade ? (
+                                <>
+                                  <div className="min-w-0">
+                                    <dt className="text-[10.5px] font-bold uppercase tracking-[0.06em] text-muted-foreground">Blades</dt>
+                                    <dd className="mt-1 whitespace-nowrap text-[13.5px] font-semibold text-foreground">{measurement.bladeDetails.bladeCount} blades</dd>
+                                  </div>
+                                  <div className="min-w-0">
+                                    <dt className="text-[10.5px] font-bold uppercase tracking-[0.06em] text-muted-foreground">Glass</dt>
+                                    <dd className="mt-1 whitespace-nowrap text-[13.5px] font-semibold text-foreground">{measurement.bladeDetails.glassName}</dd>
+                                  </div>
+                                </>
+                              ) : (
+                                <>
+                                  <div className="min-w-0">
+                                    <dt className="text-[10.5px] font-bold uppercase tracking-[0.06em] text-muted-foreground">Width</dt>
+                                    <dd className="mt-1 whitespace-nowrap text-[13.5px] font-semibold text-foreground">{measurement.width || "—"}</dd>
+                                  </div>
+                                  <div className="min-w-0">
+                                    <dt className="text-[10.5px] font-bold uppercase tracking-[0.06em] text-muted-foreground">Height</dt>
+                                    <dd className="mt-1 whitespace-nowrap text-[13.5px] font-semibold text-foreground">{measurement.height || "—"}</dd>
+                                  </div>
+                                </>
                               )}
-                            </dl>
-                            <div className={`mt-3 grid grid-cols-2 gap-3 border-t pt-3 ${darkMode ? "border-slate-700" : "border-slate-200"}`}>
                               <div className="min-w-0">
-                                <p className={measurementLabelClass}>{measurement.isBlade ? "Rate / Blade" : "Rate / Unit"}</p>
-                                <p className={`mt-1 truncate text-sm font-medium ${darkMode ? "text-slate-200" : "text-slate-700"}`}>{measurement.unitPrice ? `${formatCurrency(measurement.unitPrice)}${measurement.isBlade ? " / blade" : ""}` : "—"}</p>
+                                <dt className="text-[10.5px] font-bold uppercase tracking-[0.06em] text-muted-foreground">Size / Sale Mode</dt>
+                                <dd className="mt-1 whitespace-nowrap text-[13.5px] font-semibold text-foreground">{measurement.isBlade ? measurement.bladeDetails.saleMode === "frame" ? `${measurement.bladeDetails.frameName} frame` : "Blades only" : measurement.unit}</dd>
                               </div>
-                              <div className="min-w-0 text-right">
-                                <p className={measurementLabelClass}>Estimated Total</p>
-                                <p className={`mt-1 truncate text-sm font-bold ${darkMode ? "text-white" : "text-slate-900"}`}>{formatCurrency(measurement.lineTotal)}</p>
+                              <div className="min-w-0">
+                                <dt className="text-[10.5px] font-bold uppercase tracking-[0.06em] text-muted-foreground">Quantity</dt>
+                                <dd className="mt-1 whitespace-nowrap text-[13.5px] font-semibold text-foreground">{measurement.qty}</dd>
                               </div>
-                            </div>
+                              <div className="min-w-0">
+                                <dt className="text-[10.5px] font-bold uppercase tracking-[0.06em] text-muted-foreground">Rate / Unit</dt>
+                                <dd className="mt-1 whitespace-nowrap text-[13.5px] font-semibold text-foreground">{measurement.unitPrice ? `${formatCurrency(measurement.unitPrice)}${measurement.isBlade ? " / blade" : ""}` : "—"}</dd>
+                              </div>
+                              <div className="min-w-0">
+                                <dt className="text-[10.5px] font-bold uppercase tracking-[0.06em] text-muted-foreground">Warranty</dt>
+                                <dd className="mt-1 whitespace-nowrap text-[13.5px] font-bold text-foreground">{measurement.warrantyPeriod}</dd>
+                                {measurement.warrantyPeriod !== "No Warranty" && (
+                                  <div className="mt-1 space-y-0.5 text-[11.5px] leading-snug text-muted-foreground">
+                                    <p>Start: {measurement.warrantyStartDate}</p>
+                                    <p>End: {measurement.warrantyExpiryDate}</p>
+                                  </div>
+                                )}
+                              </div>
+                            </dl>
                           </article>
                         )) : (
-                          <p className={`p-4 text-center text-sm ${darkMode ? "text-slate-400" : "text-slate-500"}`}>
-                            No measurement rows available.
-                          </p>
+                          <p className="p-4 text-center text-sm text-muted-foreground">No measurement rows available.</p>
                         )}
                       </div>
 
-                      <div className={`flex justify-end px-4 py-3 text-sm font-semibold ${darkMode ? "bg-[#0d2033] text-slate-200" : "bg-slate-50 text-slate-700"}`}>
-                        <span>Total: </span>
-                        <span className="ml-2 text-base font-black">{formatCurrency(estimatedTotal)}</span>
+                      <div className="mt-3.5 flex justify-end gap-2 border-t border-border px-4 py-3.5 text-foreground">
+                        <span className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Total:</span>
+                        <span className="text-xl font-bold leading-none">{formatCurrency(estimatedTotal)}</span>
                       </div>
                     </div>
+                    <div className={`rounded-[16px] border p-3 sm:p-5 ${darkMode ? "border-slate-700 bg-[#122d42]" : "border-slate-200 bg-white"}`}>
+                      <div className={`mb-3 text-[11px] font-black uppercase tracking-[0.18em] sm:mb-4 ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Payment Summary</div>
 
-                    <div className={`rounded-[16px] border p-5 ${darkMode ? "border-slate-700 bg-[#122d42]" : "border-slate-200 bg-[#f5f0f0]"}`}>
-                      <div className="mb-4 text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">Payment Summary</div>
+                      <div className="grid gap-3 sm:gap-4 md:grid-cols-2 md:gap-5">
+                        <div className="space-y-2 sm:space-y-3">
+                          <div className="flex items-center justify-between gap-3 text-xs sm:text-sm">
+                            <span className={darkMode ? "text-slate-300" : "text-slate-600"}>Final Project Cost</span>
+                            <span className={`shrink-0 font-bold ${darkMode ? "text-slate-100" : "text-slate-900"}`}>{formatCurrency(estimatedTotal)}</span>
+                          </div>
 
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between text-sm font-semibold">
-                          <span className={darkMode ? "text-slate-200" : "text-slate-700"}>Final Project Cost</span>
-                          <span className={darkMode ? "text-slate-100" : "text-slate-900"}>{formatCurrency(estimatedTotal)}</span>
-                        </div>
-
-                        <div className="relative h-10 overflow-hidden rounded-lg border border-rose-200 bg-rose-100">
-                          <div className="absolute inset-y-0 left-0 w-1/2 bg-rose-200" />
-                          <div className="relative flex h-full items-center justify-between px-3 text-sm font-semibold text-rose-700">
+                          <div className={`flex min-h-9 items-center justify-between gap-3 rounded-lg border border-l-[3px] px-2.5 text-xs font-semibold sm:min-h-10 sm:px-3 sm:text-sm ${darkMode ? "border-amber-700/60 border-l-amber-400 bg-amber-950/30 text-amber-200" : "border-amber-200 border-l-amber-700 bg-amber-50 text-amber-950"}`}>
                             <span>{isFullPaymentMethod ? "Full Payment Required" : "Downpayment to be Paid"}</span>
-                            <span>{formatCurrency(downPayment)}</span>
+                            <span className="shrink-0">{formatCurrency(downPayment)}</span>
+                          </div>
+
+                          <div className="flex items-center justify-between gap-3 text-xs sm:text-sm">
+                            <span className={darkMode ? "text-slate-300" : "text-slate-600"}>Balance</span>
+                            <span className={`shrink-0 font-bold ${darkMode ? "text-slate-100" : "text-slate-900"}`}>{isFullPaymentMethod ? "Paid in Full" : formatCurrency(balance)}</span>
                           </div>
                         </div>
 
-                        <div className="flex items-center justify-between text-sm font-semibold">
-                          <span className={darkMode ? "text-slate-200" : "text-slate-700"}>Balance</span>
-                          <span className={darkMode ? "text-slate-100" : "text-slate-900"}>{isFullPaymentMethod ? "Paid in Full" : formatCurrency(balance)}</span>
-                        </div>
-
-                        <div className="mt-4 flex items-center justify-between border-t border-slate-200 pt-4 text-sm text-slate-500">
-                          <span>Payment Terms</span>
-                          <span className={darkMode ? "text-slate-300" : "text-slate-600"}>{paymentTermsText}</span>
-                        </div>
-
-                        <div className="flex items-center justify-between text-sm">
-                          <span className={darkMode ? "text-slate-300" : "text-slate-600"}>Warranty Period</span>
-                          <span className={darkMode ? "font-semibold text-slate-100" : "font-semibold text-slate-800"}>{warrantyPeriod}</span>
-                        </div>
-
-                        {agreedPaymentDateValue && (
-                          <div className="mt-3 flex items-center justify-between text-sm text-slate-500">
-                            <span className={darkMode ? "text-slate-300" : "text-slate-600"}>Agreed Payment Date (optional)</span>
-                            <span className={darkMode ? "text-slate-200" : "text-slate-700"}>{agreedPaymentDateValue}</span>
+                        <div className={`space-y-2 border-t pt-2 text-xs sm:space-y-3 sm:pt-3 sm:text-sm md:border-l md:border-t-0 md:pl-5 md:pt-0 ${darkMode ? "border-slate-700" : "border-slate-200"}`}>
+                          <div className="grid grid-cols-[minmax(90px,0.7fr)_minmax(0,1.3fr)] items-start gap-3">
+                            <span className={darkMode ? "text-slate-400" : "text-slate-500"}>Payment Terms</span>
+                            <span className={`text-right font-semibold ${darkMode ? "text-slate-200" : "text-slate-900"}`}>{paymentTermsText}</span>
                           </div>
-                        )}
 
-                        <div className="mt-3 flex items-center justify-between text-sm">
-                          <span className={darkMode ? "text-slate-300" : "text-slate-600"}>{paymentStatusLabel}</span>
-                          <span className={`${statusBadgeBaseClassName} ${downpaymentStatus.className}`}>
-                            {downpaymentStatus.label}
-                          </span>
+                          <div className="grid grid-cols-[minmax(90px,0.7fr)_minmax(0,1.3fr)] items-start gap-3">
+                            <span className={darkMode ? "text-slate-400" : "text-slate-500"}>Warranty Period</span>
+                            <span className={`text-right font-semibold ${darkMode ? "text-slate-100" : "text-slate-900"}`}>{warrantyPeriod}</span>
+                          </div>
+
+                          {agreedPaymentDateValue && (
+                            <div className="grid grid-cols-[minmax(90px,0.7fr)_minmax(0,1.3fr)] items-start gap-3">
+                              <span className={darkMode ? "text-slate-400" : "text-slate-500"}>Agreed Payment Date (optional)</span>
+                              <span className={`text-right ${darkMode ? "text-slate-200" : "text-slate-700"}`}>{agreedPaymentDateValue}</span>
+                            </div>
+                          )}
+
+                          <div className="grid grid-cols-[minmax(90px,0.7fr)_minmax(0,1.3fr)] items-center gap-3">
+                            <span className={darkMode ? "text-slate-400" : "text-slate-500"}>{paymentStatusLabel}</span>
+                            <span className="justify-self-end">
+                              <span className={`${statusBadgeBaseClassName} ${downpaymentStatus.className}`}>
+                                {downpaymentStatus.label}
+                              </span>
+                            </span>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -5960,6 +5933,8 @@ function SiteInspection() {
                           type="text"
                           name="edit-site-address"
                           label="Site Address"
+                          minimumLength={0}
+                          showHelperMessage={false}
                           className={fieldClass}
                           labelClassName={`mb-2 text-[14px] font-bold ${labelClass}`}
                           helperClassName={darkMode ? "text-slate-400" : "text-slate-500"}

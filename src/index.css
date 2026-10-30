@@ -1625,11 +1625,6 @@ body:has(.mobile-fullscreen-overlay) .customer-mobile-navigation {
     scroll-padding-bottom: calc(10rem + env(safe-area-inset-bottom)) !important;
   }
 
-  .landing-page-shell {
-    padding-bottom: calc(10rem + env(safe-area-inset-bottom));
-    scroll-padding-bottom: calc(10rem + env(safe-area-inset-bottom));
-  }
-
   body:has(nav[aria-label="Customer navigation"]) .fixed.inset-0:not(.mobile-fullscreen-overlay) {
     box-sizing: border-box;
     overflow-x: hidden;
