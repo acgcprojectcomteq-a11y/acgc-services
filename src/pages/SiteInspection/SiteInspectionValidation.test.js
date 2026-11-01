@@ -14,8 +14,36 @@ import {
   resolveInspectionProductPrice,
   formatInspectionDateForDisplay,
   parseInspectionDateFromDisplay,
+  validateInspectionMeasurementRows,
 } from "./SiteInspection";
 import { buildOrderTimelineStages } from "@/lib/orderTimeline";
+
+describe("Finished Door inspection measurements", () => {
+  const doorRow = {
+    product_id: "door-1",
+    name: "Finished Door",
+    product_type: "Finished Door",
+    pricing_method: "per_piece",
+    qty: 1,
+    finished_door_pricing: { enabled: true, standard_size_cm: 190 },
+    door_measurement: { mode: "standard", actual_measurement_cm: 190 },
+  };
+
+  it("accepts the saved 190 cm standard measurement", () => {
+    expect(validateInspectionMeasurementRows([doorRow]).valid).toBe(true);
+  });
+
+  it("blocks a custom measurement until a positive exact value is entered", () => {
+    expect(validateInspectionMeasurementRows([{
+      ...doorRow,
+      door_measurement: { mode: "custom", actual_measurement_cm: "" },
+    }]).valid).toBe(false);
+    expect(validateInspectionMeasurementRows([{
+      ...doorRow,
+      door_measurement: { mode: "custom", actual_measurement_cm: 200 },
+    }]).valid).toBe(true);
+  });
+});
 
 describe("isSiteInspectionVisible", () => {
   it("includes walk-in and no-account records while they are still pending", () => {

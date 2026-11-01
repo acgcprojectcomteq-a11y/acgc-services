@@ -115,6 +115,13 @@ const ProductSchema = new mongoose.Schema(
       trim: true,
       default: "",
     },
+    finished_door_pricing: {
+      enabled: { type: Boolean, default: false },
+      measurement_dimension: { type: String, enum: ["width", "height", "length"], default: "height" },
+      standard_size_cm: { type: Number, min: 0, default: 190 },
+      standard_price_per_piece: { type: Number, min: 0, default: 0 },
+      additional_price_per_cm: { type: Number, min: 0, default: 0 },
+    },
     width: {
       type: Number,
       default: 0,

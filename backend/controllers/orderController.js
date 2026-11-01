@@ -618,6 +618,10 @@ const requiresOrderItemDimensions = (product = {}, item = {}) => {
 
 const hasValidOrderItemPricingInput = (product = {}, item = {}) => {
   const pricingMethod = getOrderItemPricingMethod(product, item);
+  const isFinishedDoor = product.finished_door_pricing?.enabled === true
+    && /finished\s*door/i.test([product.product_type, product.product_name, product.name].filter(Boolean).join(" "));
+  if (isFinishedDoor && item.door_measurement?.mode === "custom"
+    && (!Number.isFinite(Number(item.door_measurement.actual_measurement_cm)) || Number(item.door_measurement.actual_measurement_cm) <= 0)) return false;
   const isBladeProduct = pricingMethod === "blade" || pricingMethod === "per_blade";
   if (pricingMethod === "per_meter" || pricingMethod === "meter") return hasValidMeterLength(item);
   if (["per_piece", "piece", "per_set", "set"].includes(pricingMethod)) return Number(item.dimensions?.quantity) > 0;
@@ -693,6 +697,10 @@ const sanitizeOrderItems = (items = []) => {
       extra_charges: Array.isArray(item.extra_charges) ? item.extra_charges : [],
       additional_project_charges: normalizedProductCharges.charges,
       size_limits: item.size_limits || {},
+      door_measurement: item.door_measurement && typeof item.door_measurement === "object" ? {
+        mode: item.door_measurement.mode === "custom" ? "custom" : "standard",
+        actual_measurement_cm: Number(item.door_measurement.actual_measurement_cm),
+      } : null,
       line_total: Number(item.line_total) || 0,
       unit: item.unit || "piece",
       category: item.category || "",
@@ -795,7 +803,7 @@ const repriceInspectionItems = async (items) => {
   }
   const products = productIds.length
     ? await Product.find({ _id: { $in: productIds } })
-        .select("pricing_method unit unit_price base_price price_per_sqft price_per_blade blade_count blade_glass_types sell_blades_only sell_with_frame blade_frame_types allow_custom_frame_size custom_frame_price minimum_blades maximum_blades customer_can_choose_blade_count default_blade_glass_type default_sale_mode default_frame_type show_price_per_blade customization customization_fee extra_charges size_limits estimated_price estimated_price_override width height measurement_unit")
+        .select("pricing_method unit unit_price base_price price_per_sqft price_per_blade blade_count blade_glass_types sell_blades_only sell_with_frame blade_frame_types allow_custom_frame_size custom_frame_price minimum_blades maximum_blades customer_can_choose_blade_count default_blade_glass_type default_sale_mode default_frame_type show_price_per_blade customization customization_fee extra_charges size_limits estimated_price estimated_price_override width height measurement_unit product_type product_name name finished_door_pricing")
         .lean()
     : [];
   const productsById = new Map(products.map((product) => [String(product._id), product]));
@@ -813,6 +821,16 @@ const repriceInspectionItems = async (items) => {
       throw error;
     }
     const pricingMethod = getOrderItemPricingMethod(product, item);
+    if (product.finished_door_pricing?.enabled === true && /finished\s*door/i.test([product.product_type, product.product_name, product.name].filter(Boolean).join(" "))) {
+      const mode = item.door_measurement?.mode === "custom" ? "custom" : "standard";
+      const standard = Number(product.finished_door_pricing.standard_size_cm) || 190;
+      const actual = mode === "custom" ? Number(item.door_measurement?.actual_measurement_cm) : standard;
+      if (!Number.isFinite(actual) || actual <= 0) {
+        const error = new Error(`Measurement ${index + 1}: custom door measurement must be greater than zero.`);
+        error.statusCode = 400;
+        throw error;
+      }
+    }
     const requiredDimensions = pricingMethod === "per_meter" || pricingMethod === "meter"
       ? [["width", "Length"]]
       : requiresOrderItemDimensions(product, item)
@@ -833,7 +851,9 @@ const repriceInspectionItems = async (items) => {
     const pricedItem = applyCatalogExtraChargeSelections(product, item, { allowAmountOverrides: true });
 
     const priceSnapshot = buildProductPriceSnapshot(product, pricedItem);
-    const itemOverride = pricedItem.estimation_mode === "manual"
+    const isConfiguredFinishedDoor = product.finished_door_pricing?.enabled === true
+      && /finished\s*door/i.test([product.product_type, product.product_name, product.name].filter(Boolean).join(" "));
+    const itemOverride = !isConfiguredFinishedDoor && pricedItem.estimation_mode === "manual"
       ? Number(pricedItem.manual_estimated_total) || 0
       : 0;
     const lineTotal = itemOverride > 0
@@ -843,6 +863,7 @@ const repriceInspectionItems = async (items) => {
     return {
       ...pricedItem,
       ...priceSnapshot,
+      door_measurement: priceSnapshot.door_measurement,
       // Keep admin-entered charge amounts from the sanitized inspection item.
       // The product price snapshot is for pricing fields and must not restore catalog defaults.
       extra_charges: pricedItem.extra_charges,
@@ -902,7 +923,7 @@ export const listOrders = async (req, res) => {
     const orders = await Order.find(filter)
       .sort({ createdAt: -1 })
       .populate("customer", "first_name last_name email phone street_address city province zip_code customer_cancellation_count online_order_cooldown_until")
-      .populate("items.product_id", "image_url image images name product_name category product_type unit pricing_method unit_price base_price price_per_sqft price_per_blade blade_count blade_glass_types sell_blades_only sell_with_frame blade_frame_types allow_custom_frame_size custom_frame_price minimum_blades maximum_blades customer_can_choose_blade_count default_blade_glass_type default_sale_mode default_frame_type show_price_per_blade customization customization_fee extra_charges size_limits estimated_price estimated_price_override estimated_area width height measurement_unit standard_size")
+      .populate("items.product_id", "image_url image images name product_name category product_type unit pricing_method unit_price base_price price_per_sqft price_per_blade blade_count blade_glass_types sell_blades_only sell_with_frame blade_frame_types allow_custom_frame_size custom_frame_price minimum_blades maximum_blades customer_can_choose_blade_count default_blade_glass_type default_sale_mode default_frame_type show_price_per_blade customization customization_fee extra_charges size_limits estimated_price estimated_price_override estimated_area width height measurement_unit standard_size finished_door_pricing")
       .lean();
 
     orders.forEach(attachOrderScheduleOverdue);
@@ -992,7 +1013,7 @@ export const createOrder = async (req, res) => {
 
     const products = productIds.length
       ? await Product.find({ _id: { $in: productIds }, is_active: { $ne: false } })
-          .select("pricing_method unit unit_price base_price price_per_sqft price_per_blade blade_count blade_glass_types sell_blades_only sell_with_frame blade_frame_types allow_custom_frame_size custom_frame_price minimum_blades maximum_blades customer_can_choose_blade_count default_blade_glass_type default_sale_mode default_frame_type show_price_per_blade customization customization_fee extra_charges estimated_price estimated_price_override width height measurement_unit")
+          .select("name product_name product_type finished_door_pricing pricing_method unit unit_price base_price price_per_sqft price_per_blade blade_count blade_glass_types sell_blades_only sell_with_frame blade_frame_types allow_custom_frame_size custom_frame_price minimum_blades maximum_blades customer_can_choose_blade_count default_blade_glass_type default_sale_mode default_frame_type show_price_per_blade customization customization_fee extra_charges estimated_price estimated_price_override width height measurement_unit")
           .lean()
       : [];
     const productsById = new Map(products.map((product) => [String(product._id), product]));
@@ -1295,7 +1316,7 @@ export const trackOrder = async (req, res) => {
       : { tracking };
     const order = await Order.findOne(orderQuery)
       .populate("customer", "first_name last_name email phone street_address city province zip_code")
-      .populate("items.product_id", "image_url image images name product_name category product_type unit unit_price price_per_sqft price_per_blade width height measurement_unit standard_size");
+      .populate("items.product_id", "image_url image images name product_name category product_type unit unit_price price_per_sqft price_per_blade width height measurement_unit standard_size finished_door_pricing");
     if (!order) {
       return res.status(404).json({ success: false, message: "Order not found" });
     }
@@ -1453,7 +1474,7 @@ export const getAdminOrders = async (req, res) => {
 
     const query = Order.find(filter)
       .select(selectedFields)
-      .populate("items.product_id", "image_url image images name category product_type width height measurement_unit standard_size")
+      .populate("items.product_id", "image_url image images name category product_type width height measurement_unit standard_size finished_door_pricing")
       .populate("customer", "first_name last_name email phone street_address city province zip_code customer_cancellation_count online_order_cooldown_until")
       .sort({ createdAt: -1 })
       .lean();
@@ -1507,7 +1528,7 @@ export const getAdminOrderById = async (req, res) => {
     if (isStaff) orderQuery.select(staffFields[detailModule]);
     const order = await orderQuery
       .populate("customer", "first_name last_name email phone street_address city province zip_code customer_cancellation_count online_order_cooldown_until")
-      .populate("items.product_id", "image_url image images name category product_type width height measurement_unit standard_size");
+      .populate("items.product_id", "image_url image images name category product_type width height measurement_unit standard_size finished_door_pricing");
 
     if (!order) {
       return res.status(404).json({ success: false, message: "Order not found" });
@@ -4554,4 +4575,3 @@ export const sendWalkInApprovalEmail = async (req, res) => {
     res.status(500).json({ success: false, message: "Unable to send email", error: error.message });
   }
 };
-

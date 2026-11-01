@@ -8,6 +8,41 @@ const toNonNegativeNumber = (value) => {
 const getQuantity = (item = {}) =>
   Math.max(1, Number(item.quantity ?? item.dimensions?.quantity) || 1);
 
+export const isFinishedDoorPricingEnabled = (product = {}) =>
+  product.finished_door_pricing?.enabled === true
+  && /finished\s*door/i.test([product.product_type, product.product_name, product.name].filter(Boolean).join(" "));
+
+export const getFinishedDoorMeasurementBreakdown = (product = {}, item = {}) => {
+  if (!isFinishedDoorPricingEnabled(product)) return null;
+  const config = product.finished_door_pricing;
+  const mode = item.door_measurement?.mode === "custom" ? "custom" : "standard";
+  const configuredStandard = Number(config.standard_size_cm);
+  const standardSizeCm = configuredStandard > 0 ? configuredStandard : 190;
+  const entered = Number(item.door_measurement?.actual_measurement_cm);
+  const actualMeasurementCm = mode === "custom" ? entered : standardSizeCm;
+  const standardPricePerPiece = toNonNegativeNumber(config.standard_price_per_piece);
+  const additionalPricePerCm = toNonNegativeNumber(config.additional_price_per_cm);
+  const isValidMeasurement = Number.isFinite(actualMeasurementCm) && actualMeasurementCm > 0;
+  const excessMeasurementCm = isValidMeasurement ? Math.max(actualMeasurementCm - standardSizeCm, 0) : 0;
+  const additionalCharge = excessMeasurementCm * additionalPricePerCm;
+  const finalPricePerPiece = isValidMeasurement ? standardPricePerPiece + additionalCharge : 0;
+  const quantity = getQuantity(item);
+  return {
+    mode,
+    standard_size_cm: standardSizeCm,
+    standard_price_per_piece: standardPricePerPiece,
+    measurement_mode: mode,
+    actual_measurement_cm: actualMeasurementCm,
+    excess_measurement_cm: excessMeasurementCm,
+    additional_price_per_cm: additionalPricePerCm,
+    additional_charge: Math.round(additionalCharge * 100) / 100,
+    quantity,
+    final_price_per_piece: Math.round(finalPricePerPiece * 100) / 100,
+    final_item_price: Math.round(finalPricePerPiece * quantity * 100) / 100,
+    measurement_dimension: config.measurement_dimension || "height",
+  };
+};
+
 const toMeters = (value, unit) => {
   const factors = { in: 0.0254, ft: 0.3048, cm: 0.01, m: 1 };
   return (Number(value) || 0) * (factors[unit] || 1);
@@ -106,6 +141,8 @@ export const getBladePriceOverrideRate = (product = {}, item = {}) => {
 export const getProductLineTotal = (product = {}, item = {}, options = {}) => {
   const quantity = getQuantity(item);
   const method = getPricingMethod(product, item);
+  const doorBreakdown = getFinishedDoorMeasurementBreakdown(product, item);
+  if (doorBreakdown && !(Number(doorBreakdown.actual_measurement_cm) > 0)) return 0;
   const bladePricing = ["blade", "per_blade"].includes(method) ? getBladePricing(product, item) : null;
   const productPriceOverride = toNonNegativeNumber(product.estimated_price_override ?? item.estimated_price_override);
   const overrideCoreSubtotal = productPriceOverride > 0
@@ -132,7 +169,7 @@ export const getProductLineTotal = (product = {}, item = {}, options = {}) => {
   const fixedOverrideRatio = method === "fixed" && standardArea > 0 && measuredArea > 0
     ? measuredArea / standardArea
     : 1;
-  let subtotal = overridePrice > 0 ? overridePrice * fixedOverrideRatio * quantity : 0;
+  let subtotal = doorBreakdown ? doorBreakdown.final_item_price : overridePrice > 0 ? overridePrice * fixedOverrideRatio * quantity : 0;
 
   if (measuredPriceOverride > 0) {
     const pricedArea = measuredArea || standardArea;
@@ -179,7 +216,7 @@ export const getProductLineTotal = (product = {}, item = {}, options = {}) => {
     const savedEstimate = toNonNegativeNumber(product.estimated_price ?? item.estimated_price);
     const basePrice = toNonNegativeNumber(product.base_price ?? item.base_price);
     const fixedPrice = basePrice || toNonNegativeNumber(product.unit_price ?? item.unit_price) || savedEstimate;
-    subtotal = fixedPrice * quantity;
+    subtotal = doorBreakdown ? doorBreakdown.final_item_price : fixedPrice * quantity;
   }
 
   if (subtotal <= 0 && productPriceOverride <= 0) {
@@ -411,7 +448,10 @@ export const buildProductPriceSnapshot = (product, item) => {
     Number(product.length ?? product.width) || 0,
     product.measurement_unit || product.unit || "m",
   );
-  const unitPrice = overridePrice > 0
+  const doorBreakdown = getFinishedDoorMeasurementBreakdown(product, item);
+  const unitPrice = doorBreakdown
+    ? doorBreakdown.standard_price_per_piece
+    : overridePrice > 0
     ? overridePrice
     : ["sqft", "per_sqft"].includes(method)
     ? toNonNegativeNumber(product.price_per_sqft)
@@ -430,7 +470,7 @@ export const buildProductPriceSnapshot = (product, item) => {
     price_per_blade: overridePrice > 0 && ["blade", "per_blade"].includes(method)
       ? bladePricing.bladeRate
       : toNonNegativeNumber(product.price_per_blade),
-    base_price: toNonNegativeNumber(product.base_price),
+    base_price: doorBreakdown ? doorBreakdown.standard_price_per_piece : toNonNegativeNumber(product.base_price),
     blade_count: toNonNegativeNumber(item.blade_count ?? product.blade_count),
     blade_glass_type: item.blade_glass_type || product.default_blade_glass_type || "",
     sale_mode: item.sale_mode || product.default_sale_mode || "blades_only",
@@ -456,6 +496,8 @@ export const buildProductPriceSnapshot = (product, item) => {
     customization_fee: toNonNegativeNumber(product.customization_fee),
     extra_charges: extraCharges,
     size_limits: product.size_limits || {},
+    finished_door_pricing: product.finished_door_pricing || { enabled: false },
+    door_measurement: getFinishedDoorMeasurementBreakdown(product, item),
     line_total: lineTotal,
   };
 };

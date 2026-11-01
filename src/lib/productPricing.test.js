@@ -2,6 +2,52 @@ import { describe, expect, it } from "vitest";
 import { buildProductPriceSnapshot, getDefaultBladeCount, getDefaultProductLineTotal, getMeasuredProductLineTotal, getProductLineBreakdown, getProductLineTotal, getProductSizeLimitWarnings } from "./productPricing";
 
 describe("getProductLineTotal", () => {
+  const finishedDoor = {
+    name: "Finished Door",
+    product_type: "Finished Door",
+    pricing_method: "per_piece",
+    base_price: 100,
+    finished_door_pricing: {
+      enabled: true,
+      measurement_dimension: "height",
+      standard_size_cm: 190,
+      standard_price_per_piece: 100,
+      additional_price_per_cm: 5,
+    },
+  };
+
+  it.each([[150, 100], [190, 100], [200, 150]])("prices a custom Finished Door measurement of %s cm as %s per piece", (measurement, expected) => {
+    expect(getProductLineTotal(finishedDoor, {
+      quantity: 1,
+      door_measurement: { mode: "custom", actual_measurement_cm: measurement },
+    })).toBe(expected);
+  });
+
+  it("uses the saved standard size by default and applies custom overage to each piece", () => {
+    expect(getProductLineTotal(finishedDoor, { quantity: 2 })).toBe(200);
+    expect(getProductLineTotal(finishedDoor, {
+      quantity: 2,
+      door_measurement: { mode: "custom", actual_measurement_cm: 200 },
+    })).toBe(300);
+  });
+
+  it("does not fall back to catalog price when a custom door measurement is invalid", () => {
+    expect(getProductLineTotal(finishedDoor, {
+      quantity: 1,
+      door_measurement: { mode: "custom", actual_measurement_cm: "" },
+    })).toBe(0);
+  });
+
+  it("does not apply Finished Door pricing to unrelated products", () => {
+    expect(getProductLineTotal({
+      name: "Window",
+      product_type: "Window",
+      pricing_method: "per_piece",
+      base_price: 250,
+      finished_door_pricing: finishedDoor.finished_door_pricing,
+    }, { quantity: 2 })).toBe(500);
+  });
+
   it("uses the admin square-foot rate, dimensions, and quantity", () => {
     expect(getProductLineTotal(
       { pricing_method: "sqft", price_per_sqft: 125 },

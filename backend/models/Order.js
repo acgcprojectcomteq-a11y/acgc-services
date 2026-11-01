@@ -118,6 +118,7 @@ const OrderItemSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.Mixed,
       default: {},
     },
+    door_measurement: { type: mongoose.Schema.Types.Mixed, default: null },
     line_total: {
       type: Number,
       default: 0,

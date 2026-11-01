@@ -63,21 +63,6 @@ app.use(
 app.use(express.json({ limit: "15mb" }));
 app.use(express.urlencoded({ extended: true }));
 
-app.use(async (req, res, next) => {
-  try {
-    await connectMongo();
-  } catch {
-    return next();
-  }
-  return next();
-});
-
-// Serve uploaded files
-app.use("/uploads", express.static(path.join(process.cwd(), "uploads"), {
-  maxAge: "1d",
-  immutable: true,
-}));
-
 const getHealthModel = () => {
   const readyStates = [
     "disconnected",
@@ -107,6 +92,23 @@ app.get("/", (req, res) => {
 
 app.get("/api/health", (req, res) => {
   return res.json(getHealthModel());
+});
+
+// Health and uploaded media do not depend on MongoDB. Keep these routes
+// responsive while the database is connecting so startup checks and media
+// requests do not appear as API proxy failures.
+app.use("/uploads", express.static(path.join(process.cwd(), "uploads"), {
+  maxAge: "1d",
+  immutable: true,
+}));
+
+app.use(async (req, res, next) => {
+  try {
+    await connectMongo();
+  } catch {
+    return next();
+  }
+  return next();
 });
 
 app.use("/api", (req, res, next) => {

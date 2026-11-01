@@ -29,6 +29,8 @@ const validateProductPayload = (payload, existingProduct = null) => {
   const pricingMethod = trimText(merged.pricing_method);
   const isJalousieBlade = isJalousiePerBladeProduct(merged);
   const allowCustomFrameSize = !isJalousieBlade && Boolean(merged.allow_custom_frame_size);
+  const doorPricing = merged.finished_door_pricing || {};
+  const isFinishedDoor = /finished\s*door/i.test(`${productType} ${productName}`);
   const frameTypes = Array.isArray(merged.blade_frame_types) ? merged.blade_frame_types : [];
   const sellWithFrame = Boolean(merged.sell_with_frame) && (!isJalousieBlade || frameTypes.length > 0);
   const defaultSaleMode = isJalousieBlade
@@ -48,6 +50,14 @@ const validateProductPayload = (payload, existingProduct = null) => {
   const allowedMethods = ["sqft", "blade", "fixed", "per_piece", "per_meter"];
   if (!allowedMethods.includes(pricingMethod)) {
     return "A valid pricing method is required.";
+  }
+
+  if (isFinishedDoor && doorPricing.enabled) {
+    if (pricingMethod !== "per_piece") return "Finished Door pricing must use Per Piece.";
+    if (!Number.isFinite(Number(doorPricing.standard_size_cm)) || Number(doorPricing.standard_size_cm) <= 0) return "Standard size must be greater than zero.";
+    if (!Number.isFinite(Number(doorPricing.standard_price_per_piece)) || Number(doorPricing.standard_price_per_piece) < 0) return "Standard price cannot be negative.";
+    if (!Number.isFinite(Number(doorPricing.additional_price_per_cm)) || Number(doorPricing.additional_price_per_cm) < 0) return "Additional price per centimeter cannot be negative.";
+    if (!["width", "height", "length"].includes(doorPricing.measurement_dimension)) return "Choose a valid Finished Door measurement dimension.";
   }
 
   if (merged.estimated_price_override != null && (!Number.isFinite(Number(merged.estimated_price_override)) || Number(merged.estimated_price_override) < 0)) {
@@ -109,7 +119,7 @@ const validateProductPayload = (payload, existingProduct = null) => {
     }
   }
 
-  if ((pricingMethod === "fixed" || pricingMethod === "per_piece") && toNonNegativeNumber(merged.base_price || merged.unit_price) <= 0) {
+  if ((pricingMethod === "fixed" || pricingMethod === "per_piece") && !(isFinishedDoor && doorPricing.enabled) && toNonNegativeNumber(merged.base_price || merged.unit_price) <= 0) {
     return "Base price is required for fixed price products.";
   }
 
@@ -167,7 +177,7 @@ export const listProducts = async (req, res) => {
 
     const productQuery = Product.find(filter).sort({ is_featured: -1, createdAt: -1 });
     if (adminOnly !== "true") {
-      productQuery.select("name sku category description unit_price unit measurement_unit stock_quantity is_featured image_url images product_type product_name pricing_method variant base_price price_per_sqft price_per_blade customization customization_fee extra_charges size_limits standard_size width height blade_count blade_glass_types sell_blades_only sell_with_frame blade_frame_types allow_custom_frame_size custom_frame_size_unit custom_frame_price minimum_blades maximum_blades customer_can_choose_blade_count default_blade_glass_type default_sale_mode default_frame_type show_price_per_blade estimated_area estimated_price estimated_price_override is_active");
+      productQuery.select("name sku category description unit_price unit measurement_unit stock_quantity is_featured image_url images product_type product_name pricing_method variant base_price price_per_sqft price_per_blade customization customization_fee extra_charges size_limits standard_size finished_door_pricing width height blade_count blade_glass_types sell_blades_only sell_with_frame blade_frame_types allow_custom_frame_size custom_frame_size_unit custom_frame_price minimum_blades maximum_blades customer_can_choose_blade_count default_blade_glass_type default_sale_mode default_frame_type show_price_per_blade estimated_area estimated_price estimated_price_override is_active");
     }
     const products = await productQuery.lean();
     res.json({ success: true, products });
@@ -215,6 +225,7 @@ export const createProduct = async (req, res) => {
       extra_charges,
       size_limits,
       standard_size,
+      finished_door_pricing,
       width,
       height,
       blade_count,
@@ -280,6 +291,7 @@ export const createProduct = async (req, res) => {
       extra_charges: Array.isArray(extra_charges) ? extra_charges : [],
       size_limits: isJalousieBlade ? {} : size_limits || {},
       standard_size: isJalousieBlade ? "" : standard_size || "",
+      finished_door_pricing: finished_door_pricing || { enabled: false },
       width: isJalousieBlade ? 0 : Number(width) || 0,
       height: isJalousieBlade ? 0 : Number(height) || 0,
       blade_count: Number(blade_count) || 0,
@@ -363,6 +375,7 @@ export const updateProduct = async (req, res) => {
       extra_charges: req.body.extra_charges != null ? req.body.extra_charges : product.extra_charges,
       size_limits: isJalousieBlade ? {} : req.body.size_limits != null ? req.body.size_limits : product.size_limits,
       standard_size: isJalousieBlade ? "" : req.body.standard_size != null ? String(req.body.standard_size) : product.standard_size,
+      finished_door_pricing: req.body.finished_door_pricing != null ? req.body.finished_door_pricing : product.finished_door_pricing,
       width: isJalousieBlade ? 0 : req.body.width != null ? Number(req.body.width) : product.width,
       height: isJalousieBlade ? 0 : req.body.height != null ? Number(req.body.height) : product.height,
       blade_count: req.body.blade_count != null ? Number(req.body.blade_count) : product.blade_count,

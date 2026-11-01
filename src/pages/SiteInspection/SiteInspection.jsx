@@ -36,7 +36,7 @@ import { buildContractSnapshot, hasContractSnapshotChanged, hasExistingContract 
 import { getCustomerPaymentProof, getPaymentSummary } from "@/pages/Transactions/paymentProofUtils";
 import { getProducts } from "@/api/products";
 import { toSquareFeet } from "@/lib/estimator";
-import { getMeasuredProductLineTotal, getProductLineBreakdown, getProductSizeLimitWarnings } from "@/lib/productPricing";
+import { getFinishedDoorMeasurementBreakdown, getMeasuredProductLineTotal, getProductLineBreakdown, getProductSizeLimitWarnings, isFinishedDoorPricingEnabled } from "@/lib/productPricing";
 import UnsavedChangesDialog from "@/components/UnsavedChangesDialog";
 import FullAddressField from "@/components/FullAddressField";
 import { getStreetAddressError, isValidStreetAddress, normalizeFullAddress } from "@/lib/fullAddressValidation";
@@ -704,6 +704,13 @@ export const validateInspectionMeasurementRows = (items = []) => {
     if (!normalizeProductId(item.product_id)) rowErrors.product_id = "Select a product.";
     if (!String(item.name || "").trim()) rowErrors.name = "Description is required.";
 
+    const doorConfig = item.finished_door_pricing;
+    if (doorConfig?.enabled === true) {
+      const mode = item.door_measurement?.mode === "custom" ? "custom" : "standard";
+      const value = mode === "custom" ? Number(item.door_measurement?.actual_measurement_cm) : Number(doorConfig.standard_size_cm);
+      if (!Number.isFinite(value) || value <= 0) rowErrors.door_measurement = "Door measurement must be greater than zero.";
+    }
+
     for (const field of getInspectionMeasurementFields(item)) {
       const value = item[field.key];
       if (value === "" || value === null || value === undefined || !Number.isFinite(Number(value)) || Number(value) <= 0) {
@@ -917,6 +924,7 @@ export const resolveInspectionProductPrice = (product = null, fallbackItem = {})
     estimated_price_override: Number(product?.estimated_price_override ?? fallbackItem?.estimated_price_override ?? 0) || 0,
     extra_charges: product?.extra_charges ?? fallbackItem?.extra_charges ?? [],
     size_limits: product?.size_limits ?? fallbackItem?.size_limits ?? {},
+    finished_door_pricing: product?.finished_door_pricing ?? fallbackItem?.finished_door_pricing ?? { enabled: false },
   };
 
   switch (pricingMethod) {
@@ -1603,6 +1611,10 @@ function SiteInspection() {
       manual_estimated_total: item.manual_estimated_total ?? (estimationMode === "manual" ? String(item.estimated_price || "") : ""),
       category: selectedProduct?.category || item.category || item.product_type || "",
       product_type: selectedProduct?.product_type || item.product_type || "",
+      finished_door_pricing: selectedProduct?.finished_door_pricing || item.finished_door_pricing || { enabled: false },
+      door_measurement: selectedProduct?.finished_door_pricing?.enabled
+        ? item.door_measurement || { mode: "standard", actual_measurement_cm: Number(selectedProduct.finished_door_pricing.standard_size_cm) || 190 }
+        : item.door_measurement || null,
       base_price: selectedProduct ? Number(selectedProduct.base_price) || 0 : Number(item.base_price) || 0,
       price_per_sqft: selectedProduct ? Number(selectedProduct.price_per_sqft) || 0 : Number(item.price_per_sqft) || 0,
       price_per_blade: selectedProduct ? Number(selectedProduct.price_per_blade) || 0 : Number(item.price_per_blade) || 0,
@@ -1632,6 +1644,10 @@ function SiteInspection() {
       // Keep the customer's saved optional-charge selections when loading the order for admin editing.
       extra_charges: orderExtraCharges,
       size_limits: selectedProduct?.size_limits || item.size_limits || {},
+      finished_door_pricing: selectedProduct?.finished_door_pricing || item.finished_door_pricing || { enabled: false },
+      door_measurement: selectedProduct?.finished_door_pricing?.enabled
+        ? item.door_measurement || { mode: "standard", actual_measurement_cm: Number(selectedProduct.finished_door_pricing.standard_size_cm) || 190 }
+        : item.door_measurement || null,
       variant: selectedProduct?.variant || item.variant || "",
     };
   };
@@ -1646,6 +1662,12 @@ function SiteInspection() {
   };
 
   const getInspectionItemTotal = (item) => {
+    const product = getInspectionProductForItem(item) || item;
+    if (isFinishedDoorPricingEnabled(product)) {
+      const breakdown = getFinishedDoorMeasurementBreakdown(product, { ...item, quantity: item.qty ?? item.quantity });
+      if (!breakdown || !Number.isFinite(Number(breakdown.actual_measurement_cm)) || breakdown.actual_measurement_cm <= 0) return 0;
+      return breakdown.final_item_price + getItemAdditionalChargesTotal(item);
+    }
     const manualTotal = Number(item.manual_estimated_total ?? 0);
     if (item.estimation_mode === "manual" && Number.isFinite(manualTotal) && manualTotal > 0) {
       const quantity = Number(item.qty ?? item.quantity ?? 1) || 1;
@@ -1675,7 +1697,83 @@ function SiteInspection() {
   const calculateRowSubtotal = (item) => {
     const normalizedProductId = normalizeProductId(item.product_id);
     const product = products.find((p) => String(p._id || p.id) === normalizedProductId) || null;
+    if (isFinishedDoorPricingEnabled(product || item)) {
+      return getFinishedDoorMeasurementBreakdown(product || item, { ...item, quantity: item.qty ?? item.quantity })?.final_item_price || 0;
+    }
     return calculateMeasurementSubtotal(item, product);
+  };
+
+  const isFinishedDoorInspectionItem = (item) => {
+    const product = getInspectionProductForItem(item) || item;
+    return isFinishedDoorPricingEnabled(product);
+  };
+
+  const changeDoorMeasurementMode = (handler, item, mode) => {
+    const config = item.finished_door_pricing || getInspectionProductForItem(item)?.finished_door_pricing || {};
+    handler(item.id, "door_measurement", {
+      mode,
+      actual_measurement_cm: mode === "custom" ? item.door_measurement?.actual_measurement_cm ?? "" : Number(config.standard_size_cm) || 190,
+    });
+  };
+
+  const renderDoorMeasurementControls = (item, handler) => {
+    if (!isFinishedDoorInspectionItem(item)) return null;
+    const config = item.finished_door_pricing || {};
+    const mode = item.door_measurement?.mode || "standard";
+    const standard = Number(config.standard_size_cm) || 190;
+    const actual = mode === "custom" ? item.door_measurement?.actual_measurement_cm ?? "" : standard;
+    const breakdown = getFinishedDoorMeasurementBreakdown(getInspectionProductForItem(item) || item, { ...item, quantity: item.qty ?? item.quantity });
+    const classes = darkMode ? "rounded-lg border border-slate-700 bg-[#122d42] px-3 py-2 text-sm text-slate-100" : "rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900";
+    const priceBehavior = [
+      [`Below ${standard} cm`, "Same standard price"],
+      [`Exactly ${standard} cm`, "Same standard price"],
+      [`Above ${standard} cm`, "Add excess-size charge"],
+    ];
+    return <div className={`col-span-full rounded-xl border p-3 ${darkMode ? "border-blue-400/30 bg-blue-400/5" : "border-blue-200 bg-blue-50/60"}`}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className={`text-sm font-bold ${darkMode ? "text-slate-100" : "text-slate-900"}`}>Finished Door - Measurement</p>
+        <p className={`text-xs font-semibold ${darkMode ? "text-blue-200" : "text-blue-800"}`}>Standard Price: {formatCurrency(Number(config.standard_price_per_piece) || 0)} / piece</p>
+      </div>
+      <div className={`mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border px-3 py-2 ${darkMode ? "border-slate-700 bg-slate-900/40" : "border-blue-200 bg-white/80"}`}>
+        <div>
+          <p className={`text-[11px] font-bold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Standard Size (Default)</p>
+          <p className={`text-2xl font-extrabold leading-tight ${darkMode ? "text-slate-100" : "text-slate-900"}`}># {standard} cm</p>
+        </div>
+        <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${mode === "standard" ? darkMode ? "bg-emerald-400/15 text-emerald-200" : "bg-emerald-100 text-emerald-800" : darkMode ? "bg-slate-700 text-slate-200" : "bg-slate-100 text-slate-700"}`}>
+          {mode === "standard" ? "Standard Size Selected" : "Custom Measurement Selected"}
+        </span>
+      </div>
+      <div className="mt-3">
+        <p className={`mb-2 text-xs font-bold ${darkMode ? "text-slate-200" : "text-slate-800"}`}>If adjustment is needed</p>
+        <div className="grid gap-2 sm:grid-cols-[minmax(180px,0.7fr)_minmax(180px,1fr)]">
+          <label className="text-xs font-semibold">Measurement Setting
+            <CustomerDropdown darkMode value={mode} onChange={(event) => changeDoorMeasurementMode(handler, item, event.target.value)} className={`${classes} mt-1 w-full`}>
+              <option value="standard">Standard Size (Default)</option><option value="custom">Custom Measurement (Optional)</option>
+            </CustomerDropdown>
+          </label>
+          <label className="text-xs font-semibold">Measurement
+            {mode === "standard"
+              ? <span className={`${classes} mt-1 block`}>{standard} cm (Default)</span>
+              : <input type="number" min="0.01" step="0.01" value={actual} onChange={(event) => handler(item.id, "door_measurement", { mode: "custom", actual_measurement_cm: event.target.value })} className={`${classes} mt-1 w-full`} placeholder="Example exact measurement: 200 cm" />}
+          </label>
+        </div>
+      </div>
+      <div className="mt-3">
+        <p className={`mb-2 text-xs font-bold ${darkMode ? "text-slate-200" : "text-slate-800"}`}>Price behavior</p>
+        <div className={`overflow-hidden rounded-lg border text-xs ${darkMode ? "border-slate-700" : "border-slate-200"}`} role="table" aria-label="Finished Door measurement price behavior">
+          {priceBehavior.map(([measurement, behavior], index) => (
+            <div key={measurement} role="row" className={`grid grid-cols-2 gap-3 px-3 py-2 ${index > 0 ? darkMode ? "border-t border-slate-700" : "border-t border-slate-200" : ""}`}>
+              <span role="cell" className={darkMode ? "text-slate-300" : "text-slate-600"}>{measurement}</span>
+              <span role="cell" className={`font-semibold ${darkMode ? "text-slate-100" : "text-slate-900"}`}>{behavior}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+      {mode === "custom" && breakdown && <p className={`mt-2 text-xs ${darkMode ? "text-slate-300" : "text-slate-700"}`}>Actual: {actual || "-"} cm | Excess: {Number.isFinite(breakdown.excess_measurement_cm) ? breakdown.excess_measurement_cm : 0} cm | Additional charge: {formatCurrency(breakdown.additional_charge)} | Final per piece: {formatCurrency(breakdown.final_price_per_piece)}</p>}
+      <p className={`mt-3 text-xs leading-relaxed ${darkMode ? "text-slate-400" : "text-slate-600"}`}>
+        Ang 190 cm ay default standard size lang para sa applicable Finished Door products. Ang custom measurement ay para lang sa order o inspection na ito at hindi binabago ang master product configuration.
+      </p>
+    </div>;
   };
 
   const getItemAdditionalCharges = (item) => Array.isArray(item?.additional_project_charges) ? item.additional_project_charges : [];
@@ -2352,6 +2450,8 @@ function SiteInspection() {
           extra_charges: item.extra_charges || [],
           additional_project_charges: getItemAdditionalCharges(item).filter((charge) => String(charge.name || "").trim() || String(charge.amount ?? "").trim()).map((charge) => ({ name: String(charge.name || "").trim(), amount: Number(charge.amount), note: String(charge.note || "").trim() })),
           size_limits: item.size_limits || {},
+          finished_door_pricing: item.finished_door_pricing || { enabled: false },
+          door_measurement: item.door_measurement || null,
           measurement_unit: item.measurement_unit || item.measurementUnit || item.dimensions?.unit || "in",
           width: Number(item.width) || 0,
           height: Number(item.height) || 0,
@@ -2453,6 +2553,9 @@ function SiteInspection() {
       items: prev.items.map((item) => {
         if (item.id !== id) return item;
         const updated = { ...item, [field]: value };
+        if (field === "door_measurement" && value?.mode === "standard") {
+          updated.door_measurement = { ...value, actual_measurement_cm: Number(item.finished_door_pricing?.standard_size_cm) || 190 };
+        }
         if (field === "sale_mode" && value === "blades_only") {
           updated.custom_frame_size = false;
           updated.frame_price = 0;
@@ -2538,6 +2641,9 @@ function SiteInspection() {
       items: (prev.items || []).map((item) => {
         if (item.id !== id) return item;
         const updated = { ...item, [field]: value };
+        if (field === "door_measurement" && value?.mode === "standard") {
+          updated.door_measurement = { ...value, actual_measurement_cm: Number(item.finished_door_pricing?.standard_size_cm) || 190 };
+        }
         if (field === "sale_mode" && value === "blades_only") {
           updated.custom_frame_size = false;
           updated.frame_price = 0;
@@ -3889,6 +3995,8 @@ function SiteInspection() {
             extra_charges: item.extra_charges || [],
             additional_project_charges: getItemAdditionalCharges(item).filter((charge) => String(charge.name || "").trim() || String(charge.amount ?? "").trim()).map((charge) => ({ name: String(charge.name || "").trim(), amount: Number(charge.amount), note: String(charge.note || "").trim() })),
             size_limits: item.size_limits || {},
+            finished_door_pricing: item.finished_door_pricing || { enabled: false },
+            door_measurement: item.door_measurement || null,
             measurement_unit: item.measurement_unit || item.measurementUnit || item.dimensions?.unit || "in",
             width: Number(item.width) || 0,
             height: Number(item.height) || 0,
@@ -5080,6 +5188,7 @@ function SiteInspection() {
                               </CustomerDropdown>
                               {renderBladeMeasurementOptions(item, handleItemFieldChange, index)}
                             </div>
+                            {renderDoorMeasurementControls(item, handleItemFieldChange)}
                             <div className="col-span-2 grid grid-cols-2 gap-3">
                               {getInspectionMeasurementFields(item).map((field) => (
                                 <label key={field.key} className="min-w-0">
@@ -5215,6 +5324,7 @@ function SiteInspection() {
                                   <option key={String(product._id || product.id)} value={String(product._id || product.id)}>{product.name}</option>
                                 ))}
                               </CustomerDropdown>
+                              {renderDoorMeasurementControls(item, handleItemFieldChange)}
                               {renderBladeMeasurementOptions(item, handleItemFieldChange, index)}
                               {renderOptionalChargeOptions(item, handleItemFieldChange)}
                               {renderItemAdditionalCharges(item, index, handleItemFieldChange)}
@@ -6251,6 +6361,7 @@ function SiteInspection() {
                               {renderBladeMeasurementOptions(item, handleEditItemFieldChange, index)}
                             </div>
 
+                            {renderDoorMeasurementControls(item, handleEditItemFieldChange)}
                             <div className="col-span-2 grid grid-cols-2 gap-2">
                               {getInspectionMeasurementFields(item).map((field) => (
                                 <label key={field.key} className="min-w-0">
@@ -6392,6 +6503,7 @@ function SiteInspection() {
                                   <option key={String(product._id || product.id)} value={String(product._id || product.id)}>{product.name}</option>
                                 ))}
                               </CustomerDropdown>
+                              {renderDoorMeasurementControls(item, handleEditItemFieldChange)}
                               {renderBladeMeasurementOptions(item, handleEditItemFieldChange, index)}
                               {renderOptionalChargeOptions(item, handleEditItemFieldChange)}
                               {renderItemAdditionalCharges(item, index, handleEditItemFieldChange)}

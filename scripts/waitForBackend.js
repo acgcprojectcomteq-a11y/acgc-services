@@ -1,6 +1,6 @@
 const http = require('http');
 
-const url = process.env.BACKEND_URL || 'http://localhost:5000/';
+const url = process.env.BACKEND_URL || 'http://localhost:5000/api/health';
 const timeout = Number(process.env.WAIT_TIMEOUT_MS) || 30000;
 const interval = Number(process.env.WAIT_INTERVAL_MS) || 500;
 
