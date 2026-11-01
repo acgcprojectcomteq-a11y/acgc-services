@@ -303,6 +303,9 @@ function ProductFormModal({
   saveCatalogOption,
   editCatalogOption,
   deleteCatalogOption,
+  canAddProducts,
+  canEditProducts,
+  canDeleteProducts,
 }) {
   const { darkMode } = useAdminTheme();
   const initialProductSnapshot = useRef(createUnsavedSnapshot({ ...newProduct, imageFiles: Object.keys(newProduct.imageFiles || {}) }));
@@ -2110,6 +2113,14 @@ function Products() {
         ? "blade"
         : ""
     );
+    const isJalousiePerBladeProduct = pricingMethod === "blade"
+      && /jalousie/i.test(productName);
+    const defaultSaleMode = isJalousiePerBladeProduct
+      && newProduct.default_sale_mode === "frame"
+      && !(newProduct.blade_frame_types || []).some((frame) => frame.name === newProduct.default_frame_type)
+      && newProduct.sell_blades_only
+      ? "blades_only"
+      : newProduct.default_sale_mode || (newProduct.sell_blades_only ? "blades_only" : "frame");
 
     if (!selectedProductType) {
       setModalError("Product type is required.");
@@ -2198,12 +2209,6 @@ function Products() {
         return;
       }
       const defaultGlass = newProduct.default_blade_glass_type || glassTypes[0]?.name;
-  const defaultSaleMode = isJalousiePerBladeProduct
-    && newProduct.default_sale_mode === "frame"
-    && !(newProduct.blade_frame_types || []).some((frame) => frame.name === newProduct.default_frame_type)
-    && newProduct.sell_blades_only
-    ? "blades_only"
-    : newProduct.default_sale_mode || (newProduct.sell_blades_only ? "blades_only" : "frame");
       if (!glassTypes.some((glass) => glass.name === defaultGlass)) {
         setModalError("Choose a default glass type from the configured glass types.");
         return;
@@ -2705,6 +2710,9 @@ function Products() {
           saveCatalogOption={saveCatalogOption}
           editCatalogOption={editCatalogOption}
           deleteCatalogOption={deleteCatalogOption}
+          canAddProducts={canAddProducts}
+          canEditProducts={canEditProducts}
+          canDeleteProducts={canDeleteProducts}
         />
       )}
 

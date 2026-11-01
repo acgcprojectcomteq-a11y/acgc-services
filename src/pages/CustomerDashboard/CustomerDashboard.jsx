@@ -6151,7 +6151,7 @@ function CustomerDashboard() {
                           <div>
                             <h3 className="line-clamp-2 text-[16.5px] font-extrabold leading-tight text-[var(--product-text)]" title={product.name}>{product.name}</h3>
                             <p className="mt-1 truncate text-[12.5px] font-medium text-[var(--product-muted)]">{product.product_type || product.category || "General"}</p>
-                            </div>
+                          </div>
 
                           {canAccessCustomerRatings && (
                             <div className="customer-product-rating mt-[10px] flex min-w-0 items-center gap-1.5">
@@ -6181,7 +6181,6 @@ function CustomerDashboard() {
                                 </span>
                               </p>
                             </>}
-
                             <p className="flex items-center justify-between gap-2 py-1.5 first:pt-0 last:pb-0">
                               <span className="font-medium text-[var(--product-muted)]">Unit rate</span>
                               <span className="font-bold text-[var(--product-text)]">{getProductUnitRate(product)}</span>
@@ -6308,35 +6307,35 @@ function CustomerDashboard() {
             </div>
 
             {selectedProduct && (
-              <div className="customer-modal-overlay mobile-fullscreen-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-2 sm:p-4">
-                <div className={`mobile-fullscreen-dialog order-flow-modal relative flex w-full flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ${!isProductModalReadOnly && isBladePricingProduct(selectedProduct) ? "max-h-[92vh] max-w-7xl" : "max-h-[88vh] max-w-5xl"} ${darkMode ? "order-flow-modal-dark" : ""}`}>
+              <div className={`customer-modal-overlay mobile-fullscreen-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-2 sm:p-4 ${!isProductModalReadOnly && isBladePricingProduct(selectedProduct) ? "max-[759px]:!items-stretch max-[759px]:!justify-start max-[759px]:!p-0" : ""}`}>
+                <div className={`mobile-fullscreen-dialog order-flow-modal relative flex w-full flex-col overflow-hidden ${!isProductModalReadOnly && isBladePricingProduct(selectedProduct) ? "max-h-[92vh] max-w-[1000px] rounded-[18px] max-[759px]:!h-dvh max-[759px]:!max-h-dvh max-[759px]:!max-w-none max-[759px]:!rounded-none" : "max-h-[88vh] max-w-5xl rounded-2xl"} bg-white shadow-2xl ${darkMode ? `order-flow-modal-dark ${!isProductModalReadOnly && isBladePricingProduct(selectedProduct) ? "blade-product-modal-dark" : ""}` : ""}`}>
                   {/* Header with cleaner elevated styling */}
                   {!isProductModalReadOnly && (
-                    <div className="flex-shrink-0 border-b border-red-500/30 bg-gradient-to-r from-red-700 via-red-600 to-red-600 px-4 py-2.5 shadow-[0_8px_18px_rgba(220,38,38,0.16)] sm:px-5 sm:py-3">
+                    <div className={`flex-shrink-0 border-b border-red-500/30 shadow-[0_8px_18px_rgba(220,38,38,0.16)] ${isBladePricingProduct(selectedProduct) ? "bg-[linear-gradient(135deg,#dc2626,#991b1b)] px-5 py-3.5" : "bg-gradient-to-r from-red-700 via-red-600 to-red-600 px-4 py-2.5 sm:px-5 sm:py-3"}`}>
                       <div className="flex min-w-0 items-center justify-between gap-4">
-                        <div className="flex min-w-0 items-center gap-2.5 text-white">
-                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/12 ring-1 ring-white/20">
+                        <div className={`flex min-w-0 items-center gap-2.5 ${darkMode && isBladePricingProduct(selectedProduct) ? "text-[#e8ebf2]" : "text-white"}`}>
+                          <div className={`flex shrink-0 items-center justify-center rounded-xl ring-1 ring-white/20 ${isBladePricingProduct(selectedProduct) ? "h-10 w-10 bg-white/18" : "h-9 w-9 bg-white/12"}`}>
                             <Package size={18} aria-hidden="true" />
                           </div>
                           <div className="min-w-0">
                             <p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-red-100">Product details</p>
-                            <h3 className="truncate text-base font-bold leading-tight sm:text-lg">{selectedProduct.name}</h3>
+                            <h3 className={`truncate text-base font-bold leading-tight sm:text-lg ${darkMode && isBladePricingProduct(selectedProduct) ? "text-[#e8ebf2]" : ""}`}>{selectedProduct.name}</h3>
                           </div>
                         </div>
                         <button
                           type="button"
                           onClick={requestCloseProductModal}
                           aria-label="Close product details"
-                          className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-white/10 text-white transition hover:bg-white/15 focus:outline-none focus:ring-2 focus:ring-white/60 sm:h-9 sm:w-9"
+                          className={`flex flex-shrink-0 items-center justify-center rounded-full transition focus:outline-none focus:ring-2 focus:ring-white/60 ${darkMode && isBladePricingProduct(selectedProduct) ? "text-[#e8ebf2]" : "text-white"} ${isBladePricingProduct(selectedProduct) ? "h-[34px] w-[34px] bg-white/18 hover:bg-white/25" : "h-8 w-8 bg-white/10 hover:bg-white/15 sm:h-9 sm:w-9"}`}
                         >
                           <X size={20} aria-hidden="true" />
                         </button>
                       </div>
                       <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                        <span className="rounded-full border border-white/30 bg-white/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.1em] text-white">
+                        <span className={`rounded-full border border-white/30 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.1em] ${isBladePricingProduct(selectedProduct) ? "bg-white/20" : "bg-white/10"} ${darkMode && isBladePricingProduct(selectedProduct) ? "text-[#e8ebf2]" : "text-white"}`}>
                           {selectedProduct.category || selectedProduct.product_type || "General"}
                         </span>
-                        <span className="flex items-center gap-1.5 text-xs font-medium text-red-50"><span className="h-1.5 w-1.5 rounded-full bg-emerald-300" aria-hidden="true" />Ready for inquiry</span>
+                        <span className={`flex items-center gap-1.5 text-xs font-medium ${darkMode && isBladePricingProduct(selectedProduct) ? "text-[#e8ebf2]" : "text-red-50"}`}><span className="h-1.5 w-1.5 rounded-full bg-emerald-300" aria-hidden="true" />Ready for inquiry</span>
                       </div>
                     </div>
                   )}
@@ -6359,11 +6358,14 @@ function CustomerDashboard() {
                         <p className="mt-1 text-sm leading-5">{renderAdminContactMessage(onlineOrderCooldownMessage)}</p>
                       </div>
                     )}
-                    <div className={`grid items-start gap-5 p-4 sm:p-5 ${isProductModalReadOnly ? "md:grid-cols-[minmax(0,1.1fr)_minmax(300px,0.9fr)] lg:gap-8 lg:p-7" : isBladePricingProduct(selectedProduct) ? "md:grid-cols-[minmax(0,1fr)_minmax(400px,1fr)] lg:gap-7 lg:p-6" : "md:grid-cols-[minmax(0,1.3fr)_minmax(300px,0.9fr)] lg:gap-7 lg:p-6"}`}>
+                    <div className={`grid items-start gap-4 p-[18px] sm:p-5 ${isProductModalReadOnly ? "md:grid-cols-[minmax(0,1.1fr)_minmax(300px,0.9fr)] lg:gap-8 lg:p-7" : isBladePricingProduct(selectedProduct) ? "min-[560px]:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]" : "md:grid-cols-[minmax(0,1.3fr)_minmax(300px,0.9fr)] lg:gap-7 lg:p-6"}`}>
                       {/* Left: Product Image & Description */}
                       <div className={`min-w-0 space-y-4 ${isProductModalReadOnly ? darkMode ? "rounded-xl bg-slate-800 p-2" : "rounded-xl bg-slate-50 p-2" : ""}`}>
                         <div className="space-y-2">
-                          <div className="relative aspect-[3/2] w-full overflow-hidden rounded-2xl bg-white shadow-sm">
+                          <div
+                            style={!isProductModalReadOnly && isBladePricingProduct(selectedProduct) ? { height: "clamp(200px, 32vh, 360px)", maxHeight: "360px" } : undefined}
+                            className={`relative w-full overflow-hidden rounded-2xl border bg-white shadow-sm ${!isProductModalReadOnly && isBladePricingProduct(selectedProduct) ? `min-h-[200px] rounded-[14px] ${darkMode ? "border-[#3d4862]" : "border-slate-200"}` : "aspect-[3/2] border-transparent"}`}
+                          >
                             <div data-product-image-skeleton className="absolute inset-0 animate-pulse bg-slate-200 motion-reduce:animate-none" />
                             <img
                                                             onLoad={handleProductImageLoad}
@@ -6375,7 +6377,7 @@ function CustomerDashboard() {
                               height="900"
                               loading="eager"
                               decoding="async"
-                              className="h-full w-full object-fill"
+                              className={`h-full w-full ${!isProductModalReadOnly && isBladePricingProduct(selectedProduct) ? "object-cover" : "object-fill"}`}
                               onError={(event) => {
                                 event.currentTarget.onerror = null;
                                 event.currentTarget.src = PRODUCT_IMAGE_PLACEHOLDER;
@@ -6399,45 +6401,79 @@ function CustomerDashboard() {
                             </div>
                           )}
                         </div>
-                        {!isProductModalReadOnly && <>
-                        <div className={`rounded-2xl border p-4 ${darkMode ? "border-slate-700 bg-slate-800" : "border-slate-300 bg-slate-50"}`}>
-                            <h4 className={`text-base font-bold ${darkMode ? "text-white" : "text-slate-900"}`}>Product Details</h4>
-                            <p className={`mt-1.5 text-sm leading-6 ${darkMode ? "text-slate-300" : "text-slate-600"}`}>
+                        {!isProductModalReadOnly && !isBladePricingProduct(selectedProduct) && <>
+                          <div className={`rounded-2xl border p-5 ${darkMode ? "border-slate-600 bg-slate-800" : "border-slate-300 bg-slate-100"}`}>
+                            <h4 className={`text-lg font-bold ${darkMode ? "text-white" : "text-slate-900"}`}>Product Details</h4>
+                            <p className={`mt-2 text-base leading-7 ${darkMode ? "text-slate-200" : "text-slate-700"}`}>
                               {selectedProduct.description || "No description available."}
                             </p>
-                        </div>
-                        <div className="grid gap-2 sm:grid-cols-3">
-                          <div className={`min-w-0 rounded-xl border p-3 ${darkMode ? "border-slate-700 bg-slate-800" : "border-slate-300 bg-white"}`}>
-                            <p className={`text-[10px] font-semibold uppercase tracking-[0.14em] ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Type</p>
-                            <p className={`mt-1 truncate text-sm font-bold ${darkMode ? "text-white" : "text-slate-900"}`}>{selectedProduct.type || selectedProduct.product_type || "N/A"}</p>
                           </div>
-                          {!isBladePricingProduct(selectedProduct) && <div className={`min-w-0 rounded-xl border p-3 ${darkMode ? "border-slate-700 bg-slate-800" : "border-slate-300 bg-white"}`}>
-                            <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-end gap-2 text-center">
-                              <div className="min-w-0 text-center">
-                                <p className={`text-[10px] font-semibold uppercase tracking-[0.14em] ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Width</p>
-                                <p className={`mt-1 truncate text-sm font-bold ${darkMode ? "text-white" : "text-slate-900"}`}>
-                                  {getProductDefaultDimensions(selectedProduct).width > 0 ? getProductDefaultDimensions(selectedProduct).width : "N/A"}
-                                </p>
-                              </div>
-                              <span className={`pb-0.5 text-base font-bold ${darkMode ? "text-slate-300" : "text-slate-700"}`} aria-hidden="true">×</span>
-                              <div className="min-w-0 text-center">
-                                <p className={`text-[10px] font-semibold uppercase tracking-[0.14em] ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Height</p>
-                                <p className={`mt-1 truncate text-sm font-bold ${darkMode ? "text-white" : "text-slate-900"}`}>
-                                  {getProductDefaultDimensions(selectedProduct).height > 0 ? getProductDefaultDimensions(selectedProduct).height : "N/A"}
-                                </p>
-                              </div>
+                          <div className="grid gap-2 sm:grid-cols-3">
+                            <div className={`min-w-0 rounded-xl border p-3 ${darkMode ? "border-slate-700 bg-slate-800" : "border-slate-300 bg-white"}`}>
+                              <p className={`text-[10px] font-semibold uppercase tracking-[0.14em] ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Type</p>
+                              <p className={`mt-1 truncate text-sm font-bold ${darkMode ? "text-white" : "text-slate-900"}`}>{selectedProduct.type || selectedProduct.product_type || "N/A"}</p>
                             </div>
-                          </div>}
-                          <div className={`min-w-0 rounded-xl border p-3 ${darkMode ? "border-slate-700 bg-slate-800" : "border-slate-300 bg-white"}`}>
-                            <p className={`text-[10px] font-semibold uppercase tracking-[0.14em] ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Unit Rate</p>
-                            <p className={`mt-1 truncate text-sm font-bold ${darkMode ? "text-white" : "text-slate-900"}`}>{getProductUnitRate(selectedProduct)}</p>
+                            {!isBladePricingProduct(selectedProduct) && <div className={`min-w-0 rounded-xl border p-3 ${darkMode ? "border-slate-700 bg-slate-800" : "border-slate-300 bg-white"}`}>
+                              <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-end gap-2 text-center">
+                                <div className="min-w-0 text-center">
+                                  <p className={`text-[10px] font-semibold uppercase tracking-[0.14em] ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Width</p>
+                                  <p className={`mt-1 truncate text-sm font-bold ${darkMode ? "text-white" : "text-slate-900"}`}>{getProductDefaultDimensions(selectedProduct).width > 0 ? getProductDefaultDimensions(selectedProduct).width : "N/A"}</p>
+                                </div>
+                                <span className={`pb-0.5 text-base font-bold ${darkMode ? "text-slate-300" : "text-slate-700"}`} aria-hidden="true">×</span>
+                                <div className="min-w-0 text-center">
+                                  <p className={`text-[10px] font-semibold uppercase tracking-[0.14em] ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Height</p>
+                                  <p className={`mt-1 truncate text-sm font-bold ${darkMode ? "text-white" : "text-slate-900"}`}>{getProductDefaultDimensions(selectedProduct).height > 0 ? getProductDefaultDimensions(selectedProduct).height : "N/A"}</p>
+                                </div>
+                              </div>
+                            </div>}
+                            <div className={`min-w-0 rounded-xl border p-3 ${darkMode ? "border-slate-700 bg-slate-800" : "border-slate-300 bg-white"}`}>
+                              <p className={`text-[10px] font-semibold uppercase tracking-[0.14em] ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Unit Rate</p>
+                              <p className={`mt-1 truncate text-sm font-bold ${darkMode ? "text-white" : "text-slate-900"}`}>{getProductUnitRate(selectedProduct)}</p>
+                            </div>
                           </div>
-                        </div>
                         </>}
+
+
                       </div>
 
                       {/* Right: Action Buttons & Info */}
-                      <div className={`min-w-0 space-y-3 ${isProductModalReadOnly ? darkMode ? "rounded-xl bg-slate-900 p-4 sm:p-5" : "rounded-xl bg-white p-4 sm:p-5" : ""}`}>
+                      <div className={`${!isProductModalReadOnly && isBladePricingProduct(selectedProduct) ? "contents" : `min-w-0 space-y-3 ${isProductModalReadOnly ? darkMode ? "rounded-xl bg-slate-900 p-4 sm:p-5" : "rounded-xl bg-white p-4 sm:p-5" : ""}`}`}>
+                        {!isProductModalReadOnly && <>
+                        {isBladePricingProduct(selectedProduct) ? (
+                          <div className="grid grid-cols-1 content-start gap-3">
+                            <div className={`min-w-0 rounded-xl border px-5 py-4 ${darkMode ? "border-[#3d4862] bg-red-950/20" : "border-red-200 bg-red-50"}`}>
+                              <p className={`text-[10.5px] font-bold uppercase tracking-[0.08em] ${darkMode ? "text-[#ff9f96]" : "text-red-700"}`}>Starting from</p>
+                              <p className={`mt-0.5 text-[28px] font-extrabold leading-tight ${darkMode ? "text-[#ff9f96]" : "text-red-700"}`}>{getProductPrice(selectedProduct)}</p>
+                              <p className={`mt-0.5 text-xs ${darkMode ? "text-[#a9b3c7]" : "text-slate-500"}`}>Price may vary based on specifications</p>
+                            </div>
+                            <div className={`overflow-hidden rounded-xl border ${darkMode ? "border-[#3d4862] bg-[#2a3246]" : "border-slate-200 bg-white"}`}>
+                              <div className={`px-4 py-3 ${darkMode ? "text-[#e8ebf2]" : "text-slate-900"}`}>
+                                <p className={`text-[10.5px] font-bold uppercase tracking-[0.08em] ${darkMode ? "text-[#a9b3c7]" : "text-slate-500"}`}>Type</p>
+                                <p className="mt-0.5 text-[15px] font-bold">{selectedProduct.type || selectedProduct.product_type || "N/A"}</p>
+                              </div>
+                              <div className={`border-t px-4 py-3 ${darkMode ? "border-[#3d4862] text-[#e8ebf2]" : "border-slate-200 text-slate-900"}`}>
+                                <p className={`text-[10.5px] font-bold uppercase tracking-[0.08em] ${darkMode ? "text-[#a9b3c7]" : "text-slate-500"}`}>Unit Rate</p>
+                                <p className="mt-0.5 text-[15px] font-bold">{getProductUnitRate(selectedProduct)}</p>
+                              </div>
+                            </div>
+                          </div>
+                        ) : null}
+                        </>}
+                        {!isProductModalReadOnly && isBladePricingProduct(selectedProduct) && (
+                          <div className={`min-w-0 rounded-xl border px-4 py-3 min-[560px]:col-span-full ${darkMode ? "border-[#3d4862] bg-[#2a3246]" : "border-slate-200 bg-white"}`}>
+                            <p className={`text-[10.5px] font-bold uppercase tracking-[0.08em] ${darkMode ? "text-[#a9b3c7]" : "text-slate-500"}`}>Product Details</p>
+                            <p className={`mt-1 text-sm ${darkMode ? "text-[#a9b3c7]" : "text-slate-600"}`}>
+                              {selectedProduct.description || "No description available."}
+                            </p>
+                          </div>
+                        )}
+                        {!isProductModalReadOnly && !isBladePricingProduct(selectedProduct) && (
+                          <div className={`rounded-2xl border p-4 ${darkMode ? "border-red-900 bg-red-950/40" : "border-red-200 bg-red-50"}`}>
+                            <p className={`text-[10px] font-bold uppercase tracking-[0.18em] ${darkMode ? "text-red-200" : "text-slate-500"}`}>Starting from</p>
+                            <p className={`mt-1 text-3xl font-black ${darkMode ? "text-white" : "text-red-700"}`}>{getProductPrice(selectedProduct)}</p>
+                            <p className={`mt-1 text-[11px] ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Price may vary based on specifications</p>
+                          </div>
+                        )}
                         {isProductModalReadOnly && (
                           <>
                             <div className="flex flex-wrap items-center gap-2 pr-10">
@@ -6469,27 +6505,6 @@ function CustomerDashboard() {
                               </div>
                             )}
                           </>
-                        )}
-                        {/* Price Card */}
-                        {!isProductModalReadOnly && <div className={`rounded-2xl border p-4 ${darkMode ? "border-red-900 bg-red-950/40" : "border-red-200 bg-red-50"}`}>
-                          <p className={`text-[10px] font-bold uppercase tracking-[0.18em] ${darkMode ? "text-red-200" : "text-slate-500"}`}>Starting from</p>
-                          <p className={`mt-1 text-3xl font-black ${darkMode ? "text-white" : "text-red-700"}`}>{getProductPrice(selectedProduct)}</p>
-                          <p className={`mt-1 text-[11px] ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Price may vary based on specifications</p>
-                        </div>}
-
-                        {canEstimatePricing && (
-                          <ProductPriceEstimator
-                            product={selectedProduct}
-                            form={productEstimatorForm}
-                            onFormChange={updateProductDetailsEstimatorForm}
-                            darkMode={darkMode}
-                            formatCurrency={formatCurrency}
-                            defaultMeasurements={(() => {
-                              const dimensions = getProductDefaultDimensions(selectedProduct, 1);
-                              const usesLength = ["meter", "per_meter"].includes(String(selectedProduct?.pricing_method || selectedProduct?.unit || "").toLowerCase());
-                              return dimensions.width > 0 && (usesLength || dimensions.height > 0) ? dimensions : null;
-                            })()}
-                          />
                         )}
                         {false && <section className={`overflow-hidden rounded-xl border border-t-2 p-3.5 ${darkMode ? "border-slate-700 border-t-red-500 bg-slate-900" : "border-slate-200 border-t-red-600 bg-white"}`} aria-labelledby="product-estimator-title">
                           <div className="flex items-center gap-2">
@@ -6670,9 +6685,37 @@ function CustomerDashboard() {
                           </p>
                         )}
 
-                        {/* Action Buttons */}
-                        {canRequestOrders && <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                        <button
+                        {canAccessCustomerRatings && !canRequestOrders && (
+                          <div className={`mt-2 flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-semibold ${isBladePricingProduct(selectedProduct) ? "min-[560px]:col-span-full" : ""} ${darkMode ? "border-slate-700 bg-slate-800 text-slate-300" : "border-slate-200 bg-slate-50 text-slate-600"}`}>
+                            <Phone size={14} aria-hidden="true" />
+                            <span>Call for inquiries: <strong className={darkMode ? "text-slate-100" : "text-slate-900"}>09123456789</strong></span>
+                          </div>
+                        )}
+                        {!canAccessCustomerRatings && (
+                          <div className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 text-xs ${isBladePricingProduct(selectedProduct) ? "min-[560px]:col-span-full" : ""} ${darkMode ? "border-slate-700 bg-slate-800 text-slate-400" : "border-slate-200 bg-slate-50 text-slate-500"}`}>
+                            <Info size={14} aria-hidden="true" />
+                            <span>Customer feedback and reviews will be available soon.</span>
+                          </div>
+                        )}
+                      <div
+                        className={`min-w-0 ${isBladePricingProduct(selectedProduct) ? "min-[560px]:col-span-full" : ""}`}
+                      >
+                        {!isProductModalReadOnly && canEstimatePricing && (
+                          <ProductPriceEstimator
+                            product={selectedProduct}
+                            form={productEstimatorForm}
+                            onFormChange={updateProductDetailsEstimatorForm}
+                            darkMode={darkMode}
+                            formatCurrency={formatCurrency}
+                            bladeModalLayout={isBladePricingProduct(selectedProduct)}
+                            defaultMeasurements={(() => {
+                              const dimensions = getProductDefaultDimensions(selectedProduct, 1);
+                              const usesLength = ["meter", "per_meter"].includes(String(selectedProduct?.pricing_method || selectedProduct?.unit || "").toLowerCase());
+                              return dimensions.width > 0 && (usesLength || dimensions.height > 0) ? dimensions : null;
+                            })()}
+                            footer={canRequestOrders && (
+                              <div className={`grid gap-2.5 ${isBladePricingProduct(selectedProduct) ? "grid-cols-2" : "grid-cols-1 sm:grid-cols-2"}`}>
+                                <button
                           type="button"
                           onClick={() => {
                             if (productEstimatorInputsInvalid) return;
@@ -6688,7 +6731,7 @@ function CustomerDashboard() {
                             closeProductModal();
                           }}
                           disabled={onlineOrderCooldownActive || productEstimatorInputsInvalid}
-                          className="flex w-full items-center justify-center gap-2 rounded-xl bg-red-600 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                          className={`flex w-full items-center justify-center gap-2 text-sm font-bold shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50 ${isBladePricingProduct(selectedProduct) ? "h-[46px] rounded-[10px] bg-red-600 text-white hover:bg-red-700" : "rounded-xl bg-red-600 py-3 text-white hover:bg-red-700"}`}
                         >
                           <Package size={20} />
                           Place Order
@@ -6741,31 +6784,21 @@ function CustomerDashboard() {
                             if (addedToCart) closeProductModal();
                           }}
                           disabled={onlineOrderCooldownActive || productEstimatorInputsInvalid}
-                          className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#101114] py-3 text-sm font-bold text-white shadow-sm transition hover:bg-[#050608] disabled:cursor-not-allowed disabled:opacity-50"
+                          className={`flex w-full items-center justify-center gap-2 text-sm font-bold shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50 ${isBladePricingProduct(selectedProduct) ? `h-[46px] rounded-[10px] border ${darkMode ? "border-[#3d4862] bg-[#2a3246] text-[#e8ebf2] hover:bg-[#343e55]" : "border-slate-200 bg-white text-slate-900 hover:bg-slate-50"}` : "rounded-xl bg-[#101114] py-3 text-white hover:bg-[#050608]"}`}
                         >
                           <ShoppingCart size={20} />
                           Add to Cart
                         </button>
-                        </div>}
-
-                        {canAccessCustomerRatings && !canRequestOrders && (
-                          <div className={`mt-2 flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-semibold ${darkMode ? "border-slate-700 bg-slate-800 text-slate-300" : "border-slate-200 bg-slate-50 text-slate-600"}`}>
-                            <Phone size={14} aria-hidden="true" />
-                            <span>Call for inquiries: <strong className={darkMode ? "text-slate-100" : "text-slate-900"}>09123456789</strong></span>
-                          </div>
+                              </div>
+                            )}
+                          />
                         )}
-                        {!canAccessCustomerRatings && (
-                          <div className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 text-xs ${darkMode ? "border-slate-700 bg-slate-800 text-slate-400" : "border-slate-200 bg-slate-50 text-slate-500"}`}>
-                            <Info size={14} aria-hidden="true" />
-                            <span>Customer feedback and reviews will be available soon.</span>
-                          </div>
-                        )}
-
+                      </div>
                       </div>
                       {canAccessCustomerRatings && (
-                        <section className={`md:col-span-2 mt-2 overflow-hidden rounded-xl border ${darkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-white"}`} aria-labelledby="product-ratings-heading">
+                        <section className={`md:col-span-full mt-2 overflow-hidden rounded-[14px] border ${darkMode ? "border-[#3d4862] bg-[#2a3246]" : "border-slate-200 bg-white"}`} aria-labelledby="product-ratings-heading">
                           <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-700 sm:px-6">
-                            <h3 id="product-ratings-heading" className={`text-lg font-bold ${darkMode ? "text-white" : "text-slate-900"}`}>Product Ratings</h3>
+                            <h3 id="product-ratings-heading" className={`text-base font-extrabold ${darkMode ? "text-[#e8ebf2]" : "text-slate-900"}`}>Product Ratings</h3>
                           </div>
                           <div className={`grid gap-4 border-b p-4 sm:p-5 md:grid-cols-[190px_minmax(0,1fr)] ${darkMode ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-rose-50/40"}`}>
                             <div className="flex flex-col items-center justify-center border-b pb-4 text-center md:border-b-0 md:border-r md:pb-0 md:pr-5">

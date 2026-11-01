@@ -1653,11 +1653,18 @@ function LandingPage() {
               className="h-full w-full object-fill"
             />
           </div>
-          {!isProductModalReadOnly && <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <h3 className="text-base font-bold text-slate-900">Product Details</h3>
-            <p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-600">
-              {selectedProduct.description || "No description available."}
-            </p>
+          {!isProductModalReadOnly && <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <h3 className="text-base font-bold text-slate-900">Product Details</h3>
+              <p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-600">
+                {selectedProduct.description || "No description available."}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-red-200 bg-red-50 p-4">
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">Starting from</p>
+              <p className="mt-1 text-2xl font-black text-red-700">{getProductPrice(selectedProduct)}</p>
+              <p className="mt-1 text-xs text-slate-500">Price may vary based on specifications.</p>
+            </div>
           </div>}
           {!isProductModalReadOnly && <div className={`grid gap-2 ${isBladeProduct(selectedProduct) ? "sm:grid-cols-2" : "sm:grid-cols-3"}`}>
             <div className="min-w-0 rounded-xl border border-slate-200 bg-white p-3">
@@ -1710,17 +1717,6 @@ function LandingPage() {
           <h3 className="text-2xl font-black leading-tight text-slate-900">
             {selectedProduct.product_name || selectedProduct.name || "Product"}
           </h3>
-          <div className="rounded-2xl border border-red-200 bg-red-50 p-4">
-            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">Starting from</p>
-            <p className="mt-1 text-2xl font-black text-red-700">{getProductPrice(selectedProduct)}</p>
-            <p className="mt-1 text-xs text-slate-500">Price may vary based on specifications.</p>
-          </div>
-          {customerPermissions.can_estimate_pricing && <ProductPriceEstimator
-            product={selectedProduct}
-            form={productEstimatorForm}
-            onFormChange={setProductEstimatorForm}
-            formatCurrency={formatCurrency}
-          />}
           {false && <section className="overflow-hidden rounded-xl border border-slate-200 border-t-2 border-t-red-600 bg-white p-4" aria-labelledby="landing-product-estimator-title">
             <div className="flex items-center gap-2">
               <Ruler size={16} className="text-red-600" aria-hidden="true" />
@@ -1900,35 +1896,43 @@ function LandingPage() {
               Final pricing is subject to negotiation during shop discussion or on-site inspection.
             </p>
           </section>}
-          {pendingActionError && (
-            <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-              {pendingActionError}
-            </p>
-          )}
-          {customerPermissions.can_request_orders && <div className="grid gap-3 sm:grid-cols-2">
-            <button
-              type="button"
-              onClick={() => continueProductActionAfterLogin("direct")}
-              disabled={Boolean(productEstimatorDimensionError || productEstimatorQuantityError || selectedEstimatorState?.bladeCountError)}
-              className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Package size={17} aria-hidden="true" /> Place Order
-            </button>
-            <button
-              type="button"
-              onClick={() => handleAddToCart(selectedProduct, productEstimatorForm)}
-              disabled={addingCartProductId === String(selectedProduct._id || selectedProduct.id || "") || Boolean(productEstimatorDimensionError || productEstimatorQuantityError || selectedEstimatorState?.bladeCountError)}
-              className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-3 text-sm font-bold text-white transition hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {addingCartProductId === String(selectedProduct._id || selectedProduct.id || "")
-                ? <LoaderCircle size={17} className="animate-spin" aria-hidden="true" />
-                : <ShoppingCart size={17} aria-hidden="true" />}
-              Add to Cart
-            </button>
-          </div>}
           </>}
         </aside>
       </div>
+      {!isProductModalReadOnly && (customerPermissions.can_estimate_pricing || customerPermissions.can_request_orders || pendingActionError) && <div className="mx-4 mb-4 sm:mx-5 lg:mx-6">
+        {customerPermissions.can_estimate_pricing && <ProductPriceEstimator
+            product={selectedProduct}
+            form={productEstimatorForm}
+            onFormChange={setProductEstimatorForm}
+            formatCurrency={formatCurrency}
+            footer={customerPermissions.can_request_orders && <div className="grid gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => continueProductActionAfterLogin("direct")}
+                disabled={Boolean(productEstimatorDimensionError || productEstimatorQuantityError || selectedEstimatorState?.bladeCountError)}
+                className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Package size={17} aria-hidden="true" /> Place Order
+              </button>
+              <button
+                type="button"
+                onClick={() => handleAddToCart(selectedProduct, productEstimatorForm)}
+                disabled={addingCartProductId === String(selectedProduct._id || selectedProduct.id || "") || Boolean(productEstimatorDimensionError || productEstimatorQuantityError || selectedEstimatorState?.bladeCountError)}
+                className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-3 text-sm font-bold text-white transition hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {addingCartProductId === String(selectedProduct._id || selectedProduct.id || "")
+                  ? <LoaderCircle size={17} className="animate-spin" aria-hidden="true" />
+                  : <ShoppingCart size={17} aria-hidden="true" />}
+                Add to Cart
+              </button>
+            </div>}
+          />}
+        {pendingActionError && (
+          <p role="alert" className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            {pendingActionError}
+          </p>
+        )}
+      </div>}
       {canSeeCustomerRatings && customerPermissions.can_upload_feedback && (
         <section className="mx-4 mb-5 overflow-hidden rounded-xl border border-slate-200 bg-white sm:mx-5 lg:mx-6" aria-labelledby="landing-product-ratings-heading">
             <div className="border-b border-slate-200 px-5 py-4 sm:px-6">

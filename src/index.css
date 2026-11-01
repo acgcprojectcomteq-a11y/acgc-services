@@ -1321,6 +1321,57 @@ body:has(.mobile-fullscreen-overlay) .customer-mobile-navigation {
   color: #e2e8f0;
 }
 
+.order-flow-modal-dark.blade-product-modal-dark {
+  border-color: #3d4862;
+  background-color: #2a3246;
+  color: #e8ebf2;
+}
+
+.order-flow-modal-dark.blade-product-modal-dark .bg-white {
+  background-color: #2a3246;
+}
+
+.order-flow-modal-dark.blade-product-modal-dark input,
+.order-flow-modal-dark.blade-product-modal-dark select,
+.order-flow-modal-dark.blade-product-modal-dark textarea {
+  border-color: #3d4862;
+  background-color: #343e55;
+  color: #e8ebf2;
+}
+
+.order-flow-modal-dark.blade-product-modal-dark input::placeholder,
+.order-flow-modal-dark.blade-product-modal-dark textarea::placeholder {
+  color: #a9b3c7;
+}
+
+.order-flow-modal-dark.blade-product-modal-dark .text-white,
+.order-flow-modal-dark.blade-product-modal-dark .text-slate-100,
+.order-flow-modal-dark.blade-product-modal-dark .text-slate-200 {
+  color: #e8ebf2;
+}
+
+.order-flow-modal-dark.blade-product-modal-dark .text-slate-300,
+.order-flow-modal-dark.blade-product-modal-dark .text-slate-400,
+.order-flow-modal-dark.blade-product-modal-dark .text-slate-500,
+.order-flow-modal-dark.blade-product-modal-dark .text-slate-600 {
+  color: #a9b3c7;
+}
+
+.order-flow-modal-dark.blade-product-modal-dark .bg-slate-900,
+.order-flow-modal-dark.blade-product-modal-dark .bg-slate-800 {
+  background-color: #343e55;
+}
+
+.order-flow-modal-dark.blade-product-modal-dark .border-slate-700,
+.order-flow-modal-dark.blade-product-modal-dark .border-slate-600 {
+  border-color: #3d4862;
+}
+
+.order-flow-modal-dark.blade-product-modal-dark .text-emerald-700,
+.order-flow-modal-dark.blade-product-modal-dark .dark\:text-emerald-400 {
+  color: #6fe0b0;
+}
+
 .order-flow-modal-dark .bg-white {
   background-color: #1e293b;
 }
