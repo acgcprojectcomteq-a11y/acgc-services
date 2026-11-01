@@ -1299,6 +1299,7 @@ export const trackOrder = async (req, res) => {
     if (!order) {
       return res.status(404).json({ success: false, message: "Order not found" });
     }
+
     if (req.query.itemIndex !== undefined) {
       const itemIndex = Number(req.query.itemIndex);
       if (!Number.isInteger(itemIndex) || itemIndex < 0 || itemIndex >= order.items.length) {
@@ -1434,15 +1435,15 @@ export const getAdminOrders = async (req, res) => {
       transactions: [
         "customer customer_name customer_email customer_phone shipping_address has_account_on_website items project_additional_charges total_amount estimated_cost final_project_cost manual_override",
         "payment_terms downpayment_amount required_downpayment_amount amount_paid payment_status payment_records payment_proof_amount payment_proof_submitted_at payment_proof_confirmed_at payment_proof_file_name payment_proof_file_url payment_method transaction_number",
-        "status cancellation_reason order_type contract_status contractStatus contractGenerated contractId contractVersion currentContractVersion contractGeneratedAt contractNeedsRegeneration contractSentAt contract_email_status contract_email_error contractDeclineReason contractDeclinedAt acceptedByCustomer acceptedAt acceptanceMethod acceptance_method transactionCreated transactionCreatedAt transaction_approved tracking warranty_period warranty_status signed_contract_url contract_number contract_signed_date createdAt updatedAt",
+        "status cancellation_reason cancellation_date cancellation_previous_status cancelled_by cancelled_by_name order_type contract_status contractStatus contractGenerated contractId contractVersion currentContractVersion contractGeneratedAt contractNeedsRegeneration contractSentAt contract_email_status contract_email_error contractDeclineReason contractDeclinedAt acceptedByCustomer acceptedAt acceptanceMethod acceptance_method transactionCreated transactionCreatedAt transaction_approved tracking warranty_period warranty_status estimated_installation_date estimated_installation_time installation_duration_minutes progress progress_stages signed_contract_url contract_number contract_signed_date createdAt updatedAt",
       ].join(" "),
       site_inspection: [
         "customer customer_name customer_email customer_phone items project_additional_charges total_amount estimated_cost final_project_cost manual_override",
-        "status cancellation_reason order_type contract_status contractStatus contractGenerated contractId contractVersion currentContractVersion contractGeneratedAt contractNeedsRegeneration contractSentAt contract_email_status contractDeclineReason acceptedByCustomer acceptedAt transactionCreated tracking",
+        "status cancellation_reason cancellation_date cancellation_previous_status cancelled_by cancelled_by_name order_type contract_status contractStatus contractGenerated contractId contractVersion currentContractVersion contractGeneratedAt contractNeedsRegeneration contractSentAt contract_email_status contractDeclineReason acceptedByCustomer acceptedAt transactionCreated tracking",
         "inspection_status inspection_completed_at inspection_date inspection_time inspection_duration_minutes inspection_travel_minutes estimated_installation_date estimated_installation_time installation_duration_minutes inspection_notes issues_found shipping_address warranty_period warranty_status createdAt updatedAt",
       ].join(" "),
       progress_monitoring: [
-        "customer customer_name customer_email customer_phone items status tracking progress progress_stages progress_notes progress_audit progress_activity_notes project_delay attachments",
+        "customer customer_name customer_email customer_phone items status cancellation_reason cancellation_date cancellation_previous_status cancelled_by cancelled_by_name contract_status acceptance_method acceptanceMethod acceptedByCustomer order_type signed_contract_url contract_signed_date tracking progress progress_stages progress_notes progress_audit progress_activity_notes project_delay attachments",
         "estimated_installation_date estimated_installation_time installation_duration_minutes inspection_date inspection_time inspection_duration_minutes inspection_travel_minutes createdAt updatedAt",
       ].join(" "),
     };
@@ -1498,8 +1499,8 @@ export const getAdminOrderById = async (req, res) => {
     const staffFields = {
       dashboard: "customer customer_name customer_email customer_phone items status is_rush_order contract_status contractStatus contractSentAt contractDeclineReason acceptedByCustomer acceptedAt transactionCreated tracking createdAt updatedAt",
       site_inspection: "customer customer_name customer_email customer_phone items status contract_status contractStatus tracking inspection_status inspection_completed_at inspection_date inspection_time inspection_duration_minutes inspection_travel_minutes estimated_installation_date estimated_installation_time installation_duration_minutes inspection_notes issues_found shipping_address warranty_period warranty_status createdAt updatedAt",
-      transactions: "customer customer_name customer_email customer_phone items project_additional_charges total_amount estimated_cost final_project_cost manual_override payment_terms downpayment_amount required_downpayment_amount amount_paid payment_status payment_records payment_proof_amount payment_proof_submitted_at payment_proof_confirmed_at payment_proof_file_name payment_proof_file_url payment_method transaction_number status contract_status contractStatus contractGenerated contractId contractVersion currentContractVersion contractGeneratedAt contractNeedsRegeneration contractSentAt contract_email_status contractDeclineReason acceptedByCustomer acceptedAt transactionCreated tracking warranty_period warranty_status createdAt updatedAt",
-      progress_monitoring: "customer customer_name customer_email customer_phone items status tracking progress progress_stages progress_notes progress_audit progress_activity_notes project_delay attachments estimated_installation_date estimated_installation_time installation_duration_minutes createdAt updatedAt",
+      transactions: "customer customer_name customer_email customer_phone items project_additional_charges total_amount estimated_cost final_project_cost manual_override payment_terms downpayment_amount required_downpayment_amount amount_paid payment_status payment_records payment_proof_amount payment_proof_submitted_at payment_proof_confirmed_at payment_proof_file_name payment_proof_file_url payment_method transaction_number status cancellation_reason cancellation_date cancellation_previous_status cancelled_by cancelled_by_name contract_status contractStatus contractGenerated contractId contractVersion currentContractVersion contractGeneratedAt contractNeedsRegeneration contractSentAt contract_email_status contractDeclineReason acceptedByCustomer acceptedAt transactionCreated tracking warranty_period warranty_status estimated_installation_date estimated_installation_time installation_duration_minutes progress progress_stages createdAt updatedAt",
+      progress_monitoring: "customer customer_name customer_email customer_phone items status cancellation_reason cancellation_date cancellation_previous_status cancelled_by cancelled_by_name contract_status acceptance_method acceptanceMethod acceptedByCustomer order_type signed_contract_url contract_signed_date tracking progress progress_stages progress_notes progress_audit progress_activity_notes project_delay attachments estimated_installation_date estimated_installation_time installation_duration_minutes createdAt updatedAt",
     };
     if (isStaff && !staffFields[detailModule]) return res.status(403).json({ success: false, message: "This staff module or action is disabled for your account." });
     const orderQuery = Order.findById(orderId);
@@ -1518,6 +1519,122 @@ export const getAdminOrderById = async (req, res) => {
   } catch (error) {
     console.error("Get admin order error:", error);
     res.status(500).json({ success: false, message: "Unable to fetch order", error: error.message });
+  }
+};
+
+export const cancelAdminOrder = async (req, res) => {
+  try {
+    const reason = String(req.body?.reason || req.body?.cancellation_reason || "").trim();
+    if (!reason) return res.status(400).json({ success: false, message: "A cancellation reason is required." });
+    if (reason.length > 1000) return res.status(400).json({ success: false, message: "Cancellation reason must be 1,000 characters or fewer." });
+
+    const orderId = req.params.orderId;
+    const order = await Order.findById(orderId).populate("customer", "first_name last_name email");
+    if (!order) return res.status(404).json({ success: false, message: "Order not found." });
+    const currentStatus = String(order.status || "").toLowerCase();
+    if (currentStatus === "cancelled") return res.status(409).json({ success: false, message: "This project has already been cancelled." });
+
+    const batchItems = Array.isArray(order.items) ? order.items : [];
+    const allBatchItemsCompleted = batchItems.length > 0 && batchItems.every((item) => {
+      const stages = Array.isArray(item?.progress_stages) ? item.progress_stages : [];
+      return stages.length > 0
+        ? stages.every((stage) => stage.completed === true || ["done", "completed"].includes(String(stage.status || "").toLowerCase()))
+        : Number(item?.progress) >= 100;
+    });
+    const orderStages = Array.isArray(order.progress_stages) ? order.progress_stages : [];
+    const allOrderStagesCompleted = orderStages.length > 0 && orderStages.every((stage) => (
+      stage.completed === true
+      || ["done", "completed"].includes(String(stage.status || "").toLowerCase())
+    ));
+    if (currentStatus === "completed" || Number(order.progress || 0) >= 100 || allBatchItemsCompleted || allOrderStagesCompleted) {
+      return res.status(409).json({ success: false, message: "Completed projects cannot be cancelled." });
+    }
+
+    const cancelledAt = new Date();
+    const actorId = String(req.user.id || req.user._id || "");
+    const actor = req.user.first_name || req.user.last_name || req.user.name
+      ? req.user
+      : await User.findById(actorId).select("first_name last_name name email").lean();
+    const actorName = [actor?.first_name, actor?.last_name].filter(Boolean).join(" ").trim()
+      || actor?.name
+      || actor?.email
+      || "Administrator";
+    const updatedOrder = await Order.findOneAndUpdate(
+      {
+        _id: order._id,
+        __v: order.__v,
+        status: order.status,
+        $and: [
+          { status: { $nin: ["cancelled", "completed"] } },
+          { $or: [{ progress: { $lt: 100 } }, { progress: null }, { progress: { $exists: false } }] },
+        ],
+      },
+      {
+        $set: {
+          status: "cancelled",
+          cancellation_reason: reason,
+          cancellation_date: cancelledAt,
+          cancellation_previous_status: order.status || "unknown",
+          cancelled_by: actorId,
+          cancelled_by_name: actorName,
+        },
+        $push: {
+          progress_audit: {
+            $each: [{
+              type: "project_cancelled",
+              at: cancelledAt,
+              by: actorId,
+              byName: actorName,
+              byRole: req.user.role,
+              reason,
+              previousStatus: order.status || "unknown",
+            }],
+            $slice: -500,
+          },
+        },
+        $inc: { __v: 1 },
+      },
+      { new: true, runValidators: true },
+    );
+    if (!updatedOrder) {
+      const latest = await Order.findById(order._id).select("status progress").lean();
+      if (latest?.status === "cancelled") return res.status(409).json({ success: false, message: "This project has already been cancelled." });
+      if (latest?.status === "completed" || Number(latest?.progress || 0) >= 100) return res.status(409).json({ success: false, message: "Completed projects cannot be cancelled." });
+      return res.status(409).json({ success: false, message: "This project changed while it was being cancelled. Refresh and try again." });
+    }
+
+    await ScheduleReservation.deleteMany({ orderId: updatedOrder._id });
+    if (updatedOrder.customer?._id) {
+      try {
+        await CustomerNotification.updateOne(
+          { order: updatedOrder._id, eventKey: "project_cancelled" },
+          { $setOnInsert: {
+            customer: updatedOrder.customer._id,
+            order: updatedOrder._id,
+            eventKey: "project_cancelled",
+            type: "order_cancelled",
+            title: "Project Cancelled",
+            message: `Project ${updatedOrder.tracking || updatedOrder._id} was cancelled. Reason: ${reason}`,
+            tracking: updatedOrder.tracking || "",
+            stageKey: "project_cancelled",
+            stageName: "Project Cancelled",
+          } },
+          { upsert: true },
+        );
+      } catch (notificationError) {
+        console.error("Failed to create project cancellation notification:", notificationError);
+      }
+    }
+
+    res.json({ success: true, order: updatedOrder });
+    void sendOrderNotification("order_cancelled", updatedOrder, {
+      customerEmail: updatedOrder.customer?.email || updatedOrder.customer_email,
+      date: cancelledAt,
+      reason,
+    });
+  } catch (error) {
+    console.error("Admin project cancellation error:", error);
+    return res.status(500).json({ success: false, message: "Unable to cancel this project." });
   }
 };
 
@@ -1565,6 +1682,20 @@ export const updateOrderStatus = async (req, res) => {
     const order = await Order.findById(orderId);
     if (!order) {
       return res.status(404).json({ success: false, message: "Order not found" });
+    }
+
+    const requestedProjectStatus = String(status || "").toLowerCase();
+    if (requestedProjectStatus === "cancelled" || requestedProjectStatus === "canceled") {
+      return res.status(400).json({ success: false, message: "Use the authorized project cancellation action and provide a cancellation reason." });
+    }
+    if (String(order.status || "").toLowerCase() === "cancelled" && (
+      status !== undefined
+      || contract_status !== undefined
+      || transaction_approval_action !== undefined
+      || transactionCreated === true
+      || acceptedByCustomer === true
+    )) {
+      return res.status(409).json({ success: false, message: "Cancelled projects cannot be reactivated or approved." });
     }
 
     if (amount_paid !== undefined || payment_amount !== undefined) {
@@ -1690,14 +1821,6 @@ export const updateOrderStatus = async (req, res) => {
           message: "Customer acceptance is required before this order can enter Transactions.",
         });
       }
-    }
-
-    const isOrderCompleted = order.status === "completed" || Number(order.progress) >= 100;
-    if (String(status || "").toLowerCase() === "cancelled" && isOrderCompleted) {
-      return res.status(400).json({
-        success: false,
-        message: "This project has already been completed and can no longer be cancelled.",
-      });
     }
 
     let paymentActionResult = null;
@@ -2704,6 +2827,9 @@ export const respondToContract = async (req, res) => {
     if (!order.customer || order.customer.toString() !== req.user.id) {
       return res.status(403).json({ success: false, message: "Not authorized to respond to this contract." });
     }
+    if (String(order.status || "").toLowerCase() === "cancelled") {
+      return res.status(409).json({ success: false, message: "Cancelled projects cannot accept or change contracts." });
+    }
 
     const orderStatus = (order.status || "").toString().toLowerCase();
     const contractStatus = (order.contract_status || "").toString().toLowerCase();
@@ -2847,7 +2973,24 @@ export const cancelCustomerOrder = async (req, res) => {
       { $set: {
         status: "cancelled",
         cancellation_reason: cancellationReason,
+        cancellation_date: cancellationDate,
+        cancellation_previous_status: order.status || "unknown",
+        cancelled_by: String(req.user.id),
+        cancelled_by_name: [req.user.first_name, req.user.last_name].filter(Boolean).join(" ").trim() || req.user.name || req.user.email || "Customer",
         ...(order.contract_status === "accepted" ? { contract_status: "declined" } : {}),
+      }, $push: {
+        progress_audit: {
+          $each: [{
+            type: "project_cancelled",
+            at: cancellationDate,
+            by: String(req.user.id),
+            byName: [req.user.first_name, req.user.last_name].filter(Boolean).join(" ").trim() || req.user.name || req.user.email || "Customer",
+            byRole: "customer",
+            reason: cancellationReason,
+            previousStatus: order.status || "unknown",
+          }],
+          $slice: -500,
+        },
       } },
       { new: true },
     );
@@ -2953,6 +3096,9 @@ export const submitCustomerPaymentProof = async (req, res) => {
     if (!order.customer || order.customer.toString() !== req.user.id) {
       return res.status(403).json({ success: false, message: "Not authorized to update payment proof for this order." });
     }
+    if (String(order.status || "").toLowerCase() === "cancelled") {
+      return res.status(409).json({ success: false, message: "Cancelled projects cannot receive new payment submissions. Existing payment history is preserved." });
+    }
 
     initializePaymentLedger(order);
     if ((order.payment_records || []).some((record) => record.status === "pending")) {
@@ -3015,6 +3161,9 @@ export const respondToInstallationSchedule = async (req, res) => {
     const order = await Order.findById(orderId);
     if (!order) {
       return res.status(404).json({ success: false, message: "Order not found" });
+    }
+    if (String(order.status || "").toLowerCase() === "cancelled") {
+      return res.status(409).json({ success: false, message: "Cancelled projects cannot be scheduled or rescheduled." });
     }
     const previousProgressStages = (order.progress_stages || []).map((stage) => stage.toObject?.() || { ...stage });
     const previousSchedule = {
@@ -3274,6 +3423,9 @@ export const updateOrderInspection = async (req, res) => {
     if (!order) {
       return res.status(404).json({ success: false, message: "Order not found" });
     }
+    if (String(order.status || "").toLowerCase() === "cancelled") {
+      return res.status(409).json({ success: false, message: "Cancelled projects cannot receive inspection or installation updates." });
+    }
     if (shipping_address !== undefined) {
       const normalizedShippingAddress = normalizeAddress(shipping_address || "");
       const addressChanged = normalizeFullAddress(normalizedShippingAddress) !== normalizeFullAddress(order.shipping_address);
@@ -3531,6 +3683,7 @@ export const updateProjectDelay = async (req, res) => {
     if (! ["admin", "super_admin"].includes(req.user?.role)) return res.status(403).json({ success: false, message: "Administrator access required." });
     const order = await Order.findById(req.params.orderId);
     if (!order) return res.status(404).json({ success: false, message: "Order not found." });
+    if (String(order.status || "").toLowerCase() === "cancelled") return res.status(409).json({ success: false, message: "Cancelled projects are read-only." });
     const actor = getProgressActor(req.user);
     const delay = order.project_delay || { is_delayed: false, history: [] };
     const history = Array.isArray(delay.history) ? delay.history : [];
@@ -3592,6 +3745,7 @@ export const updateProtectedProjectNotes = async (req, res) => {
     if (!["admin", "super_admin"].includes(req.user?.role)) return res.status(403).json({ success: false, message: "Only authorized administrators can edit protected project notes." });
     const order = await Order.findById(req.params.orderId);
     if (!order) return res.status(404).json({ success: false, message: "Order not found." });
+    if (String(order.status || "").toLowerCase() === "cancelled") return res.status(409).json({ success: false, message: "Cancelled projects are read-only." });
     const content = String(req.body.content || "").trim();
     if (content.length > 4000) return res.status(400).json({ success: false, message: "Protected notes must be 4,000 characters or fewer." });
     const actor = getProgressActor(req.user);
@@ -3613,6 +3767,7 @@ export const addProgressActivityNote = async (req, res) => {
     if (!["admin", "super_admin", "skilled_worker"].includes(req.user?.role)) return res.status(403).json({ success: false, message: "Staff access required." });
     const order = await Order.findById(req.params.orderId);
     if (!order) return res.status(404).json({ success: false, message: "Order not found." });
+    if (String(order.status || "").toLowerCase() === "cancelled") return res.status(409).json({ success: false, message: "Cancelled projects are read-only." });
     const content = String(req.body.content || "").trim();
     if (!content) return res.status(400).json({ success: false, message: "Enter a note before saving." });
     if (content.length > 2000) return res.status(400).json({ success: false, message: "Activity notes must be 2,000 characters or fewer." });
@@ -3643,6 +3798,7 @@ export const updateOrderProgress = async (req, res) => {
 
     const order = await Order.findById(orderId);
     if (!order) return res.status(404).json({ success: false, message: "Order not found" });
+    if (String(order.status || "").toLowerCase() === "cancelled") return res.status(409).json({ success: false, message: "Cancelled projects cannot receive further progress updates." });
 
     const previousSchedule = {
       inspection_date: order.inspection_date, inspection_time: order.inspection_time,
@@ -4199,6 +4355,9 @@ export const generateContract = async (req, res) => {
     const order = await Order.findById(orderId);
     if (!order) {
       return res.status(404).json({ success: false, message: "Order not found" });
+    }
+    if (String(order.status || "").toLowerCase() === "cancelled") {
+      return res.status(409).json({ success: false, message: "Cancelled projects cannot receive new contract approvals." });
     }
 
     const estimatedInstallationDate = order.estimated_installation_date

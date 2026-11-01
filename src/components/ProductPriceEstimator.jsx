@@ -1,4 +1,5 @@
 import { ClipboardList, Ruler } from "lucide-react";
+import CustomerDropdown from "@/components/CustomerDropdown";
 import { calculateEstimate, toSquareFeet } from "@/lib/estimator";
 import { getBladePriceOverrideRate, getDefaultExtraChargeSelections, getProductLineBreakdown, getProductLineTotal, getProductOverrideBaseSubtotal } from "@/lib/productPricing";
 import { getProductEstimatorQuantityError, MAX_PRODUCT_ESTIMATOR_QUANTITY } from "@/lib/productEstimatorQuantity";
@@ -277,12 +278,12 @@ function ProductPriceEstimator({ product, form, onFormChange, darkMode = false, 
           </label>
           <label className="min-w-0">
             <span className={labelClass}>Unit</span>
-            <select value={form.unit || "in"} onChange={(event) => updateForm({ unit: event.target.value })} className={fieldClass}>
+            <CustomerDropdown ariaLabel="Unit" darkMode={darkMode} value={form.unit || "in"} onChange={(event) => updateForm({ unit: event.target.value })} className={fieldClass}>
               <option value="in">in</option>
               <option value="ft">ft</option>
               <option value="cm">cm</option>
               <option value="m">m</option>
-            </select>
+            </CustomerDropdown>
           </label>
         </div>
       ) : (
@@ -298,12 +299,12 @@ function ProductPriceEstimator({ product, form, onFormChange, darkMode = false, 
           </label>
           <label className="col-span-3 min-w-0 sm:col-span-1">
             <span className={labelClass}>Unit</span>
-            <select value={form.unit || "in"} onChange={(event) => updateForm({ unit: event.target.value })} className={fieldClass}>
+            <CustomerDropdown ariaLabel="Unit" darkMode={darkMode} value={form.unit || "in"} onChange={(event) => updateForm({ unit: event.target.value })} className={fieldClass}>
               <option value="in">in</option>
               <option value="ft">ft</option>
               <option value="cm">cm</option>
               <option value="m">m</option>
-            </select>
+            </CustomerDropdown>
           </label>
         </div>
       ))}
@@ -330,10 +331,10 @@ function ProductPriceEstimator({ product, form, onFormChange, darkMode = false, 
         <div className={compact ? "space-y-3" : `${isBladeEstimator ? "" : "mt-4 "}space-y-3 rounded-lg border p-3 ${darkMode ? "border-slate-700 bg-slate-800" : "border-slate-200 bg-slate-50"}`}>
           <label className="block">
             <span className={labelClass}>Glass type</span>
-            <select value={form.blade_glass_type || selectedGlass?.name || ""} onChange={(event) => updateForm({ blade_glass_type: event.target.value })} className={fieldClass}>
+            <CustomerDropdown ariaLabel="Glass type" darkMode={darkMode} value={form.blade_glass_type || selectedGlass?.name || ""} onChange={(event) => updateForm({ blade_glass_type: event.target.value })} className={fieldClass}>
               <option value="">Choose glass type</option>
-              {glassTypes.map((glass) => <option key={glass.name} value={glass.name}>{glass.name} - {formatCurrency(glass.price_per_blade)} / blade</option>)}
-            </select>
+              {glassTypes.map((glass) => <option key={glass.name} value={glass.name}>{glass.name} - <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(glass.price_per_blade)}</span> / blade</option>)}
+            </CustomerDropdown>
           </label>
 
           <div>
@@ -361,7 +362,7 @@ function ProductPriceEstimator({ product, form, onFormChange, darkMode = false, 
                     onChange={() => updateForm({ sale_mode: "frame", custom_frame_size: false, frame_type: frame.name, blade_count: product.customer_can_choose_blade_count ? "" : Number(frame.blade_count) || minimumBlades })}
                     className="h-4 w-4 shrink-0 accent-red-700"
                   />
-                  <span className="leading-5">{frame.name} - {Number(frame.blade_count) || 0} blades - +{formatCurrency(frame.price)}</span>
+                  <span className="leading-5">{frame.name} - {Number(frame.blade_count) || 0} blades - +<span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(frame.price)}</span></span>
                 </label>
               ))}
               {product?.allow_custom_frame_size && (
@@ -371,7 +372,7 @@ function ProductPriceEstimator({ product, form, onFormChange, darkMode = false, 
                     : darkMode ? "border-slate-600 bg-slate-900 text-slate-200 hover:border-slate-500" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
                 }`}>
                   <input type="radio" checked={form.sale_mode === "frame" && Boolean(form.custom_frame_size)} onChange={() => updateForm({ sale_mode: "frame", custom_frame_size: true, frame_type: "", blade_count: product.customer_can_choose_blade_count ? "" : minimumBlades, unit: product.custom_frame_size_unit || form.unit || "in" })} className="h-4 w-4 shrink-0 accent-red-700" />
-                  <span className="leading-5">Custom size - +{formatCurrency(product.custom_frame_price)}</span>
+                  <span className="leading-5">Custom size - +<span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(product.custom_frame_price)}</span></span>
                 </label>
               )}
             </div>
@@ -455,16 +456,16 @@ function ProductPriceEstimator({ product, form, onFormChange, darkMode = false, 
           </div>
           {priceBreakdown.extraCharges.map((charge, index) => (
             <div key={`${charge.name}-${index}`} className="flex items-center justify-between gap-3 text-sm">
-              <span>{charge.name}</span><strong className={strongClass}>{formatCurrency(charge.total)}</strong>
+              <span>{charge.name}</span><strong className={strongClass}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(charge.total)}</span></strong>
             </div>
           ))}
           <div className={`flex items-center justify-between gap-3 rounded-xl border px-3 py-3 ${darkMode ? "border-red-900 bg-slate-800 text-red-300" : "border-red-100 bg-red-50 text-red-800"}`}>
             <span className="font-bold">Estimated Total</span>
-            <span className="text-base font-black">{formatCurrency(result.estimated_price)}</span>
+            <span className="text-base font-black"><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(result.estimated_price)}</span></span>
           </div>
           <div className="flex items-center justify-between gap-3 px-1">
             <span>50% Downpayment</span>
-            <span className={`font-bold ${darkMode ? "text-red-300" : "text-red-800"}`}>{formatCurrency(result.estimated_price * 0.5)}</span>
+            <span className={`font-bold ${darkMode ? "text-red-300" : "text-red-800"}`}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(result.estimated_price * 0.5)}</span></span>
           </div>
         </div>
       ) : (

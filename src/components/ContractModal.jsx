@@ -1,4 +1,4 @@
-import { FileText, X } from "lucide-react";
+﻿import { FileText, X } from "lucide-react";
 import logo from "@/assets/images/ACGCLOGO1.png";
 import approvedStamp from "@/assets/approved.png";
 import { formatDateToMMMDDYYYY } from "@/lib/dateUtils";
@@ -32,7 +32,7 @@ function ContractModal({ isOpen, onClose, inspection, contractData, onAccept, on
   const tableTopClass = "bg-[#68141b] text-white";
   const panelClass = "border-y border-slate-200 bg-slate-50 px-4 py-4 sm:px-6 sm:py-5";
   const minorPanelClass = "rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-[10px] text-emerald-900";
-  const footerClass = "mt-6 border-t border-slate-200 pt-4 text-center text-[9px] text-slate-500";
+  const footerClass = `mt-6 border-t pt-4 text-center text-xs leading-relaxed ${darkMode ? "border-slate-600 text-slate-300" : "border-slate-200 text-slate-600"}`;
 
   const formatDate = (value, fallback = "N/A") => {
     if (!value) return fallback;
@@ -162,7 +162,6 @@ function ContractModal({ isOpen, onClose, inspection, contractData, onAccept, on
 
           <div className={infoCardClass}>
             <div><span className={infoLabelClass}>Contract No.</span><p className={infoValueClass}>{inspection.contractId || contractData.contractNumber || "N/A"}</p></div>
-            <div><span className={infoLabelClass}>Contract Version</span><p className={infoValueClass}>{inspection.contractVersion || contractData.currentContractVersion || 1}</p></div>
             <div><span className={infoLabelClass}>Generated Date</span><p className={infoValueClass}>{inspection.contractGeneratedAt ? formatDate(inspection.contractGeneratedAt) : contractData.contractDate || "N/A"}</p></div>
             <div><span className={infoLabelClass}>Customer</span><p className={infoValueClass}>{customerName}</p></div>
             <div><span className={infoLabelClass}>Order ID</span><p className={`${infoValueClass} break-all`}>{inspection.tracking || inspection._id || inspection.id || contractData.orderNumber || "N/A"}</p></div>
@@ -215,7 +214,7 @@ function ContractModal({ isOpen, onClose, inspection, contractData, onAccept, on
                       {item.name || "Item"}
                       {bladeDetails.isBlade && !bladeDetails.hasPriceOverride && (
                         <div className={`mt-1 text-[10px] font-normal ${darkMode ? "text-slate-300" : "text-slate-500"}`}>
-                          <div>{bladeDetails.glassName || "Glass"} · {bladeDetails.bladeCount} blades × {formatCurrency(bladeDetails.bladeRate)}/blade</div>
+                          <div>{bladeDetails.glassName || "Glass"} · {bladeDetails.bladeCount} blades × <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(bladeDetails.bladeRate)}</span>/blade</div>
                           {bladeDetails.saleMode === "frame" && (
                             <div>Frame: {bladeDetails.frameName || "Selected frame"}{bladeDetails.framePrice > 0 ? ` · ${formatCurrency(bladeDetails.framePrice)}` : ""}</div>
                           )}
@@ -226,13 +225,13 @@ function ContractModal({ isOpen, onClose, inspection, contractData, onAccept, on
                       )}
                       {(item.additionalProjectCharges || []).map((charge, chargeIndex) => (
                         <div key={`item-charge-${index}-${chargeIndex}`} className={`mt-1 text-[9px] font-normal ${darkMode ? "text-amber-200" : "text-amber-800"}`}>
-                          + {charge.name}: {formatCurrency(charge.amount)}{charge.note ? ` · ${charge.note}` : ""}
+                          + {charge.name}: <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(charge.amount)}</span>{charge.note ? ` · ${charge.note}` : ""}
                         </div>
                       ))}
                     </td>
                     <td className="px-3 py-3 text-center">{item.width || 0} x {item.height || 0} ({item.unit || sourceItem.measurement_unit || "in"})</td>
                     <td className="px-3 py-3 text-center">{item.quantity || 1}</td>
-                    <td className="px-3 py-3 text-right">{bladeDetails.isBlade && !bladeDetails.hasPriceOverride ? <>{formatCurrency(bladeDetails.bladeRate)} / blade{bladeDetails.framePrice > 0 ? <div className="text-[10px]">+ {formatCurrency(bladeDetails.framePrice)} frame</div> : null}</> : formatCurrency(item.unitPrice)}</td>
+                    <td className="px-3 py-3 text-right">{bladeDetails.isBlade && !bladeDetails.hasPriceOverride ? <><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(bladeDetails.bladeRate)}</span> / blade{bladeDetails.framePrice > 0 ? <div className="text-[10px]">+ <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(bladeDetails.framePrice)}</span> frame</div> : null}</> : formatCurrency(item.unitPrice)}</td>
                     {isPerProductWarranty && (
                       <td className="px-3 py-3 text-center text-[10px]">
                         <div className="font-bold">{warranty.periodText}</div>
@@ -244,16 +243,16 @@ function ContractModal({ isOpen, onClose, inspection, contractData, onAccept, on
                         )}
                       </td>
                     )}
-                    <td className="px-3 py-3 text-right font-bold">{formatCurrency(item.amount)}</td>
+                    <td className="px-3 py-3 text-right font-bold"><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(item.amount)}</span></td>
                   </tr>
                   );
                 })}
-                {(inspection.project_additional_charges || []).map((charge, index) => <tr key={`project-charge-${index}`} className="border-b border-slate-200 bg-amber-50/60"><td className="px-3 py-2 text-slate-500">+</td><td className="px-3 py-2 font-semibold">{charge.name || "Additional project charge"}{charge.note && <div className="text-[9px] font-normal text-slate-500">{charge.note}</div>}</td><td className="px-3 py-2 text-center">—</td><td className="px-3 py-2 text-center">1</td><td className="px-3 py-2 text-right">{formatCurrency(charge.amount)}</td>{isPerProductWarranty && <td className="px-3 py-2 text-center">—</td>}<td className="px-3 py-2 text-right font-bold">{formatCurrency(charge.amount)}</td></tr>)}
+                {(inspection.project_additional_charges || []).map((charge, index) => <tr key={`project-charge-${index}`} className="border-b border-slate-200 bg-amber-50/60"><td className="px-3 py-2 text-slate-500">+</td><td className="px-3 py-2 font-semibold">{charge.name || "Additional project charge"}{charge.note && <div className="text-[9px] font-normal text-slate-500">{charge.note}</div>}</td><td className="px-3 py-2 text-center">—</td><td className="px-3 py-2 text-center">1</td><td className="px-3 py-2 text-right"><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(charge.amount)}</span></td>{isPerProductWarranty && <td className="px-3 py-2 text-center">—</td>}<td className="px-3 py-2 text-right font-bold"><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(charge.amount)}</span></td></tr>)}
               </tbody>
               <tfoot>
                 <tr className={darkMode ? "bg-[#153451] font-black" : "bg-rose-50 font-black"}>
                   <td colSpan={isPerProductWarranty ? 6 : 5} className="px-3 py-3 text-right uppercase tracking-wide">Total Contract Amount</td>
-                  <td className={`px-3 py-3 text-right text-base ${darkMode ? "text-[#9ed0ff]" : "text-[#9f1722]"}`}>{formatCurrency(totalAmount)}</td>
+                  <td className={`px-3 py-3 text-right text-base ${darkMode ? "text-[#9ed0ff]" : "text-[#9f1722]"}`}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(totalAmount)}</span></td>
                 </tr>
               </tfoot>
             </table>
@@ -264,8 +263,8 @@ function ContractModal({ isOpen, onClose, inspection, contractData, onAccept, on
             <h2 className={sectionLabelClass}>Payment Terms</h2>
             <p className={`mt-3 text-[10px] ${darkMode ? "text-slate-200" : ""}`}>{paymentTerms}</p>
             <div className="mt-2 grid grid-cols-2 gap-4 text-[10px]">
-              <p><span className="font-bold">{paymentReceivedLabel}:</span> {formatCurrency(downPayment)}</p>
-              <p><span className="font-bold">{balanceLabel}:</span> {formatCurrency(Math.max(totalAmount - downPayment, 0))}</p>
+              <p><span className="font-bold">{paymentReceivedLabel}:</span> <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(downPayment)}</span></p>
+              <p><span className="font-bold">{balanceLabel}:</span> <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(Math.max(totalAmount - downPayment, 0))}</span></p>
             </div>
             {agreedPaymentDate && (
               <div className={`mt-3 rounded border px-3 py-2 text-[10px] ${darkMode ? "border-amber-500/40 bg-amber-500/10 text-amber-100" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
@@ -317,7 +316,8 @@ function ContractModal({ isOpen, onClose, inspection, contractData, onAccept, on
           </section>
 
           <footer className={`${footerClass} px-4 pb-4 sm:px-6`}>
-            ACGC GLASS &amp; ALUMINUM SERVICES | This document is based on the customer site inspection details.
+            <span className={`block text-[11px] font-bold tracking-[0.08em] ${darkMode ? "text-slate-200" : "text-slate-700"}`}>ACGC GLASS &amp; ALUMINUM SERVICES</span>
+            <span className="mt-1 block">This document is based on the customer site inspection details.</span>
           </footer>
         </div>
         </div>

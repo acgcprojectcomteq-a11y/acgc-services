@@ -20,3 +20,15 @@ export const hasAcceptedTransactionContract = (order) => {
   return getAcceptanceMethod(order) === "online" && order.acceptedByCustomer === true;
 };
 
+export const isRecordedCancelledTransaction = (order) => {
+  if (String(order?.status || "").trim().toLowerCase() !== "cancelled") return false;
+  if (!hasAcceptedTransactionContract(order)) return false;
+
+  return Boolean(
+    order.cancellation_date
+    && String(order.cancellation_reason || "").trim()
+    && String(order.cancellation_previous_status || "").trim()
+    && (order.cancelled_by || String(order.cancelled_by_name || "").trim())
+  );
+};
+

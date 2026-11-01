@@ -12,6 +12,7 @@ import {
   getAdminOrders,
   getAdminOrderById,
   updateOrderStatus,
+  cancelAdminOrder,
   updateOrderInspection,
   updateOrderProgress,
   updateProjectDelay,
@@ -62,6 +63,7 @@ router.get("/admin/list", authMiddleware, staffModulePermission(orderReadModule,
 router.get("/admin/reports", authMiddleware, roleMiddleware(["admin", "super_admin"]), generateTransactionReport);
 router.get("/admin/:orderId", authMiddleware, staffModulePermission(orderReadModule, (req) => (req.query.module || req.query.view) === "dashboard" ? "view" : "view_details"), getAdminOrderById);
 router.post("/admin/create", authMiddleware, roleMiddleware("admin"), createOrderAsAdmin);
+router.put("/admin/:orderId/cancel", authMiddleware, roleMiddleware(["admin", "super_admin", "skilled_worker"]), staffModulePermission("transactions", "cancel"), cancelAdminOrder);
 router.put("/admin/:orderId/status", authMiddleware, roleMiddleware("admin"), updateOrderStatus);
 router.post(
   "/admin/:orderId/payment-records/:recordId/documents",

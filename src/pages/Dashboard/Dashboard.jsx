@@ -6,6 +6,7 @@ import {
   FolderOpen,
   ShieldCheck,
   Package,
+  Wrench,
   PanelRightClose,
   PanelRightOpen,
 } from "lucide-react";
@@ -68,6 +69,14 @@ const parseWarrantyDurationDays = (value) => {
   if (unit.startsWith("year")) return Math.round(amount * 365);
   if (unit.startsWith("month")) return Math.round(amount * 30);
   return Math.round(amount);
+};
+
+const formatWarrantyDate = (value) => {
+  if (!value) return "";
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime())
+    ? ""
+    : new Intl.DateTimeFormat("en-PH", { month: "short", day: "numeric", year: "numeric" }).format(date);
 };
 
 const getCompletedInstallationDate = (order, item) => {
@@ -461,13 +470,14 @@ function Dashboard() {
     return activeProjectStatuses.has(status) && !isCompleted;
   };
   const dashboardPanelPageSize = 5;
+  const activeProjectsPerPage = 6;
   const allActiveProjects = orders.filter(isActiveProject);
   const activeProjectsCount = allActiveProjects.length;
-  const activeProjectsPageCount = Math.max(1, Math.ceil(activeProjectsCount / dashboardPanelPageSize));
+  const activeProjectsPageCount = Math.max(1, Math.ceil(activeProjectsCount / activeProjectsPerPage));
   const safeActiveProjectsPage = Math.min(activeProjectsPage, activeProjectsPageCount);
   const activeProjects = allActiveProjects.slice(
-    (safeActiveProjectsPage - 1) * dashboardPanelPageSize,
-    safeActiveProjectsPage * dashboardPanelPageSize,
+    (safeActiveProjectsPage - 1) * activeProjectsPerPage,
+    safeActiveProjectsPage * activeProjectsPerPage,
   );
   const isWarrantyCurrentlyActive = ({ status, start, expiry }) => {
     const now = new Date();
@@ -485,7 +495,9 @@ function Dashboard() {
       order: record.order,
       item: record.item,
       period: record.period,
+      records: [],
     };
+    group.records.push(record);
     warrantyGroups.set(orderId, group);
   });
   const allWarrantiesToDisplay = [...warrantyGroups.values()];
@@ -564,7 +576,7 @@ function Dashboard() {
       <div className="flex-1 min-h-0 flex flex-col">
         <Navbar />
 
-        <main className="flex-1 min-h-0 overflow-y-auto p-6 !pb-[calc(10rem+env(safe-area-inset-bottom))] sm:!pb-[calc(10rem+env(safe-area-inset-bottom))] lg:!pb-24">
+        <main className="min-h-0 flex-1 overflow-y-auto p-4 !pb-[calc(8rem+env(safe-area-inset-bottom))] sm:p-6 sm:!pb-[calc(10rem+env(safe-area-inset-bottom))] lg:!pb-24">
           {toast.open && (
             <div className="fixed right-6 top-6 z-50 w-full max-w-sm rounded-2xl border px-4 py-3 shadow-xl transition duration-200 ease-out bg-white"
               role="status"
@@ -579,18 +591,19 @@ function Dashboard() {
             </div>
           )}
 
-          <div className="mt-6 grid grid-cols-1 items-stretch gap-6 xl:grid-cols-2">
+          <div className="mt-4 grid grid-cols-1 items-stretch gap-4 sm:mt-6 sm:gap-6 xl:grid-cols-2">
             <AdminPageHeader
               title="Dashboard"
               description="Manage inspections, projects, warranties and products from one administrative workspace."
+              mobileCompact
               className="h-full"
             />
 
-            <div className={`h-full rounded-3xl p-6 shadow-lg ${darkMode ? "bg-slate-800 text-slate-100" : "bg-white text-gray-900"}`}>
+            <div className={`h-full rounded-3xl p-4 shadow-lg sm:p-6 ${darkMode ? "bg-slate-800 text-slate-100" : "bg-white text-gray-900"}`}>
               <h2 className="text-lg font-bold">Quick Actions</h2>
               <p className={`mb-4 mt-1 text-sm ${darkMode ? "text-slate-300" : "text-gray-500"}`}>Shortcuts</p>
 
-              <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
+              <div className="grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-4">
                 <button
                   type="button"
                   onClick={() => navigate("/site-inspection")}
@@ -635,73 +648,27 @@ function Dashboard() {
           </div>
 
           {/* Statistics */}
-
-          <div className="grid grid-cols-1 gap-5 mt-6 md:grid-cols-2 xl:grid-cols-4">
-
-            <button
-              type="button"
-              onClick={() => navigate("/progress-monitor")}
-              className="group rounded-3xl bg-white p-6 text-left shadow transition duration-200 hover:-translate-y-1 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <p className="text-gray-500">
-                Active Projects
-              </p>
-
-              <h2 className="mt-2 text-4xl font-bold text-gray-900">
-                {activeProjectsCount}
-              </h2>
-
-              <p className="mt-2 text-sm text-blue-500 transition group-hover:text-blue-700">
-                View projects →
-              </p>
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:mt-6 sm:gap-5 xl:grid-cols-4">
+            <button type="button" onClick={() => navigate("/progress-monitor")} className={`group flex min-h-[142px] flex-col rounded-2xl border p-4 text-left shadow-sm transition duration-200 hover:-translate-y-1 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-blue-500 sm:min-h-[170px] sm:rounded-3xl sm:p-6 ${darkMode ? "border-slate-700 bg-slate-800 text-slate-100" : "border-slate-200 bg-white text-slate-900"}`}>
+              <div className="flex w-full items-center justify-between gap-2"><p className={`text-xs font-semibold sm:text-sm ${darkMode ? "text-slate-300" : "text-slate-500"}`}>Active Projects</p><span className={`flex size-8 shrink-0 items-center justify-center rounded-xl ${darkMode ? "bg-blue-400/10 text-blue-300" : "bg-blue-50 text-blue-600"}`}><FolderOpen size={17} aria-hidden="true" /></span></div>
+              <h2 className="mt-2 text-3xl font-extrabold leading-none tabular-nums sm:text-4xl">{activeProjectsCount}</h2>
+              <span className={`mt-auto flex items-center gap-1 pt-3 text-xs font-semibold sm:text-sm ${darkMode ? "text-blue-300 group-hover:text-blue-200" : "text-blue-600 group-hover:text-blue-700"}`}>View projects <ArrowRight size={14} aria-hidden="true" /></span>
             </button>
-
-            <button
-              type="button"
-              onClick={() => navigate("/transactions", { state: { activeTable: "receipts" } })}
-              className="group rounded-3xl bg-white p-6 text-left shadow transition duration-200 hover:-translate-y-1 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-            >
-              <p className="text-gray-500">
-                Active Warranties
-              </p>
-
-              <h2 className="mt-2 text-4xl font-bold text-gray-900">
-                {activeWarrantiesCount}
-              </h2>
-
-              <p className="mt-2 text-sm text-green-500 transition group-hover:text-green-700">
-                View warranties →
-              </p>
+            <button type="button" onClick={() => navigate("/transactions", { state: { activeTable: "receipts" } })} className={`group flex min-h-[142px] flex-col rounded-2xl border p-4 text-left shadow-sm transition duration-200 hover:-translate-y-1 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-green-500 sm:min-h-[170px] sm:rounded-3xl sm:p-6 ${darkMode ? "border-slate-700 bg-slate-800 text-slate-100" : "border-slate-200 bg-white text-slate-900"}`}>
+              <div className="flex w-full items-center justify-between gap-2"><p className={`text-xs font-semibold sm:text-sm ${darkMode ? "text-slate-300" : "text-slate-500"}`}>Active Warranties</p><span className={`flex size-8 shrink-0 items-center justify-center rounded-xl ${darkMode ? "bg-emerald-400/10 text-emerald-300" : "bg-emerald-50 text-emerald-600"}`}><ShieldCheck size={17} aria-hidden="true" /></span></div>
+              <h2 className="mt-2 text-3xl font-extrabold leading-none tabular-nums sm:text-4xl">{activeWarrantiesCount}</h2>
+              <span className={`mt-auto flex items-center gap-1 pt-3 text-xs font-semibold sm:text-sm ${darkMode ? "text-emerald-300 group-hover:text-emerald-200" : "text-emerald-600 group-hover:text-emerald-700"}`}>View warranties <ArrowRight size={14} aria-hidden="true" /></span>
             </button>
-
-            <button
-              type="button"
-              onClick={() => navigate("/site-inspection")}
-              className="group rounded-3xl bg-white p-6 text-left shadow transition duration-200 hover:-translate-y-1 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-red-500"
-            >
-              <p className="text-gray-500">
-                Pending Inspection
-              </p>
-
-              <h2 className="mt-2 text-4xl font-bold text-gray-900">
-                {pendingInspectionCount}
-              </h2>
-
-              <p className="mt-2 text-sm text-red-500 transition group-hover:text-red-700">
-                View inspections →
-              </p>
+            <button type="button" onClick={() => navigate("/site-inspection")} className={`group flex min-h-[142px] flex-col rounded-2xl border p-4 text-left shadow-sm transition duration-200 hover:-translate-y-1 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-red-500 sm:min-h-[170px] sm:rounded-3xl sm:p-6 ${darkMode ? "border-slate-700 bg-slate-800 text-slate-100" : "border-slate-200 bg-white text-slate-900"}`}>
+              <div className="flex w-full items-center justify-between gap-2"><p className={`text-xs font-semibold sm:text-sm ${darkMode ? "text-slate-300" : "text-slate-500"}`}>Pending Inspection</p><span className={`flex size-8 shrink-0 items-center justify-center rounded-xl ${darkMode ? "bg-rose-400/10 text-rose-300" : "bg-rose-50 text-rose-600"}`}><ClipboardCheck size={17} aria-hidden="true" /></span></div>
+              <h2 className="mt-2 text-3xl font-extrabold leading-none tabular-nums sm:text-4xl">{pendingInspectionCount}</h2>
+              <span className={`mt-auto flex items-center gap-1 pt-3 text-xs font-semibold sm:text-sm ${darkMode ? "text-rose-300 group-hover:text-rose-200" : "text-rose-600 group-hover:text-rose-700"}`}>View inspections <ArrowRight size={14} aria-hidden="true" /></span>
             </button>
-
-            {canViewRepairManagement && <button
-              type="button"
-              onClick={() => navigate("/repair-requests")}
-              className="group rounded-3xl bg-white p-6 text-left shadow transition duration-200 hover:-translate-y-1 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
-            >
-              <p className="text-gray-500">Pending Repair</p>
-              <h2 className="mt-2 text-4xl font-bold text-gray-900">{pendingRepairCount}</h2>
-              <p className="mt-2 text-sm text-amber-500 transition group-hover:text-amber-700">View repairs →</p>
+            {canViewRepairManagement && <button type="button" onClick={() => navigate("/repair-requests")} className={`group flex min-h-[142px] flex-col rounded-2xl border p-4 text-left shadow-sm transition duration-200 hover:-translate-y-1 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-amber-500 sm:min-h-[170px] sm:rounded-3xl sm:p-6 ${darkMode ? "border-slate-700 bg-slate-800 text-slate-100" : "border-slate-200 bg-white text-slate-900"}`}>
+              <div className="flex w-full items-center justify-between gap-2"><p className={`text-xs font-semibold sm:text-sm ${darkMode ? "text-slate-300" : "text-slate-500"}`}>Pending Repair</p><span className={`flex size-8 shrink-0 items-center justify-center rounded-xl ${darkMode ? "bg-amber-400/10 text-amber-300" : "bg-amber-50 text-amber-600"}`}><Wrench size={17} aria-hidden="true" /></span></div>
+              <h2 className="mt-2 text-3xl font-extrabold leading-none tabular-nums sm:text-4xl">{pendingRepairCount}</h2>
+              <span className={`mt-auto flex items-center gap-1 pt-3 text-xs font-semibold sm:text-sm ${darkMode ? "text-amber-300 group-hover:text-amber-200" : "text-amber-600 group-hover:text-amber-700"}`}>View repairs <ArrowRight size={14} aria-hidden="true" /></span>
             </button>}
-
           </div>
 
           <section className="mt-6 rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
@@ -782,11 +749,11 @@ function Dashboard() {
                             <td className="px-5 py-4"><ProfileAvatar name={customerName} email={order.customer?.email || order.customer_email || ""} compact /></td>
                             <td className="px-5 py-4 font-bold text-gray-900">{productName}</td>
                             <td className="px-5 py-4 text-gray-700">{formattedDate}</td>
-                            <td className="px-5 py-4 font-semibold text-gray-900">{hidePaymentAmounts ? "••••••" : formatCurrency(getFinalProjectCost(order))}</td>
+                            <td className="px-5 py-4 font-semibold text-emerald-700 dark:text-emerald-400">{hidePaymentAmounts ? "••••••" : formatCurrency(getFinalProjectCost(order))}</td>
                             <td className="px-5 py-4 text-right">
                               <div className="flex flex-wrap items-center justify-end gap-1.5">
                                 {order.is_rush_order && <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-amber-800">Rush Order</span>}
-                                <span className={`inline-flex items-center rounded-lg px-3 py-1.5 text-xs font-semibold ${badgeClasses}`}>
+                                <span className={`inline-flex w-[140px] items-center justify-center whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-semibold ${badgeClasses}`}>
                                   {statusText}
                                 </span>
                               </div>
@@ -856,7 +823,7 @@ function Dashboard() {
                           </div>
                           <div className="flex flex-col items-end gap-1">
                             {order.is_rush_order && <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-1 text-[9px] font-black uppercase tracking-wide text-amber-800">Rush Order</span>}
-                            <span className={`inline-flex items-center rounded-lg px-2.5 py-1 text-[10px] font-semibold ${badgeClasses}`}>
+                            <span className={`inline-flex w-[140px] items-center justify-center whitespace-nowrap rounded-lg px-2.5 py-1 text-[10px] font-semibold ${badgeClasses}`}>
                               {statusText}
                             </span>
                           </div>
@@ -868,7 +835,7 @@ function Dashboard() {
                           </div>
                           <div>
                             <p className="text-[10px] uppercase tracking-wide text-gray-400">Amount</p>
-                            <p className="mt-1 font-semibold text-gray-900">{hidePaymentAmounts ? "••••••" : formatCurrency(getFinalProjectCost(order))}</p>
+                            <p className="mt-1 font-semibold text-emerald-700 dark:text-emerald-400">{hidePaymentAmounts ? "••••••" : formatCurrency(getFinalProjectCost(order))}</p>
                           </div>
                         </div>
                       </div>
@@ -929,7 +896,7 @@ function Dashboard() {
                 </div>
               </div>
 
-              <div className="mt-5 flex-1 space-y-3">
+              <div className="mt-5 grid flex-1 grid-cols-1 content-start gap-3 pb-4 sm:grid-cols-2">
                 {activeProjects.length > 0 ? activeProjects.map((order) => {
                   const customerName = order.customer
                     ? `${order.customer.first_name || ""} ${order.customer.last_name || ""}`.trim() || order.customer.email || "Customer"
@@ -944,13 +911,13 @@ function Dashboard() {
                       type="button"
                       key={order._id || order.id}
                       onClick={() => handleViewProject(order)}
-                      className="flex w-full items-center justify-between gap-4 rounded-2xl border border-gray-100 p-4 text-left transition hover:border-blue-200 hover:bg-blue-50/40"
+                      className={`group flex min-h-[76px] w-full items-center justify-between gap-4 rounded-xl border px-4 py-3 text-left shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${darkMode ? "border-[#3d4862] bg-gradient-to-br from-[#2a3246] to-[#343e55] hover:border-blue-400/70" : "border-slate-200 bg-gradient-to-br from-white to-slate-50 hover:border-blue-200"}`}
                     >
                       <div className="min-w-0">
-                        <p className="truncate font-semibold text-gray-800">{productName}</p>
-                        <p className="mt-1 truncate text-sm text-gray-400">{customerName}</p>
+                        <p className={`truncate text-[15px] font-bold leading-5 ${darkMode ? "text-[#e8ebf2]" : "text-slate-900"}`}>{productName}</p>
+                        <p className={`mt-1 truncate text-[13px] leading-4 ${darkMode ? "text-[#a9b3c7]" : "text-slate-600"}`}>{customerName}</p>
                       </div>
-                      <span className="shrink-0 rounded-lg bg-blue-500 px-3 py-1.5 text-xs font-semibold text-white">
+                      <span className={`w-[138px] shrink-0 text-left text-[13px] font-bold leading-5 transition-colors ${darkMode ? "text-[#a9c2ff] group-hover:text-[#c1d2ff]" : "text-blue-700 group-hover:text-blue-800"}`}>
                         {status}
                       </span>
                     </button>
@@ -1010,29 +977,49 @@ function Dashboard() {
                 </div>
               </div>
 
-              <div className="mt-5 flex-1 space-y-3">
-                {warrantiesToDisplay.length > 0 ? warrantiesToDisplay.map(({ key, order, item, period }) => {
+              <div className="mt-5 grid flex-1 grid-cols-1 content-start gap-3 sm:grid-cols-2">
+                {warrantiesToDisplay.length > 0 ? warrantiesToDisplay.map(({ key, order, item, period, records }) => {
                   const customerName = order.customer
                     ? `${order.customer.first_name || ""} ${order.customer.last_name || ""}`.trim() || order.customer.email || "Customer"
                     : "Customer";
                   const isBatchOrder = Array.isArray(order.items) && order.items.length > 1;
                   const productName = isBatchOrder ? "Batch Order" : item.name || item.product_id?.name || "Warranty";
+                  const warrantyDetails = (records || []).map((record) => ({
+                    product: record.item?.name || record.item?.product_id?.name || productName,
+                    period: record.period
+                      ? /^\d+(?:\.\d+)?$/.test(String(record.period).trim()) ? `${record.period} days` : String(record.period)
+                      : "Not specified",
+                    start: formatWarrantyDate(record.start),
+                    expiry: formatWarrantyDate(record.expiry),
+                  }));
                   return (
                     <button
                       type="button"
                       key={key}
                       onClick={() => handleViewOrder(order._id || order.id, { scrollToWarranty: true })}
-                      className="flex w-full items-center justify-between gap-4 rounded-2xl border border-gray-100 p-4 text-left transition hover:border-green-200 hover:bg-green-50/40"
+                      className={`w-full min-h-[124px] rounded-xl border p-4 text-left shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 ${darkMode ? "border-[#3d4862] bg-[#2a3246] hover:border-emerald-400/60 hover:bg-[#343e55]" : "border-gray-200 bg-white hover:border-green-300 hover:bg-green-50/40"}`}
                     >
-                      <div className="min-w-0">
-                        <p className="truncate font-semibold text-gray-800">{productName}</p>
-                        <p className="mt-1 truncate text-sm text-gray-400">
-                          {customerName} · {isBatchOrder ? `${order.items.length} products` : period || "Warranty"}
-                        </p>
+                      <div className="grid min-h-10 grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
+                        <div className="min-w-0 space-y-0.5">
+                          <p className={`break-words text-[13px] font-bold leading-4 ${darkMode ? "text-[#e8ebf2]" : "text-gray-900"}`}>{productName}</p>
+                          <p className={`break-words text-[13px] font-medium leading-4 ${darkMode ? "text-[#c6cddd]" : "text-gray-700"}`}>{customerName}</p>
+                        </div>
+                        <span className="mt-0.5 shrink-0 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-bold leading-4 text-green-800">Active</span>
                       </div>
-                      <span className="shrink-0 rounded-lg bg-green-500 px-3 py-1.5 text-xs font-semibold text-white">
-                        Active
-                      </span>
+                      <dl className={`mt-1.5 grid grid-cols-[0.85fr_1.15fr] items-start gap-x-2 gap-y-1 border-t pt-1.5 text-left ${darkMode ? "border-[#3d4862]" : "border-gray-100"}`}>
+                        <div className="min-w-0 space-y-0.5">
+                          <dt className={`text-[10px] font-bold uppercase tracking-wide ${darkMode ? "text-[#a9b3c7]" : "text-gray-600"}`}>Warranty period</dt>
+                          <dd className={`mt-0.5 text-[11px] font-semibold leading-4 ${darkMode ? "text-[#e8ebf2]" : "text-gray-900"}`}>{isBatchOrder ? `${order.items.length} products` : warrantyDetails[0]?.period || (period ? `${period} days` : "Not specified")}</dd>
+                        </div>
+                        {warrantyDetails.some((detail) => detail.start || detail.expiry) && <div className="min-w-0">
+                          <dt className={`text-[10px] font-bold uppercase tracking-wide ${darkMode ? "text-[#a9b3c7]" : "text-gray-600"}`}>Coverage dates</dt>
+                          <dd className={`mt-0.5 space-y-0.5 text-[11px] font-semibold leading-4 ${darkMode ? "text-[#e8ebf2]" : "text-gray-900"}`}>
+                            {warrantyDetails.map((detail, index) => <p key={`${key}-coverage-${index}`} className="break-words">
+                              {isBatchOrder ? `${detail.product}: ` : ""}{detail.start || "Start date unavailable"}{detail.expiry ? <> &ndash; {detail.expiry}</> : ""}
+                            </p>)}
+                          </dd>
+                        </div>}
+                      </dl>
                     </button>
                   );
                 }) : (

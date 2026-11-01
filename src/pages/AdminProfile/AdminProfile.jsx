@@ -1,5 +1,7 @@
-﻿import { useEffect, useRef, useState } from "react";
-import toast, { Toaster } from "react-hot-toast";
+import CustomerDropdown from "@/components/CustomerDropdown";
+import { useEffect, useRef, useState } from "react";
+import toast from "react-hot-toast";
+import AppToaster from "@/components/AppToaster";
 import {
   User,
   Mail,
@@ -597,7 +599,7 @@ function AdminProfile() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-gray-100">
-      <Toaster position="bottom-right" />
+      <AppToaster />
       <UsernameChangeFlow
         open={usernameChangeOpen}
         onClose={() => setUsernameChangeOpen(false)}
@@ -826,7 +828,7 @@ function AdminProfile() {
                           >
                             Filter by category
                           </label>
-                          <select
+                          <CustomerDropdown darkMode={darkMode}
                             id="activity-category-filter"
                             value={activityCategoryFilter}
                             onChange={(event) => {
@@ -839,7 +841,7 @@ function AdminProfile() {
                             <option value="system">System</option>
                             <option value="security">Security</option>
                             <option value="project">Project</option>
-                          </select>
+                          </CustomerDropdown>
                         </div>
                         <div>
                           <label

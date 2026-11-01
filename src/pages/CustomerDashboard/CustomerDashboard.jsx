@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { createPortal } from "react-dom";
-import toast, { Toaster } from "react-hot-toast";
+import toast from "react-hot-toast";
+import AppToaster from "@/components/AppToaster";
 import { toPng } from "html-to-image";
 import { Button } from "@/components/ui/button";
 import {
@@ -79,9 +80,10 @@ import UnsavedChangesDialog from "@/components/UnsavedChangesDialog";
 import FullAddressField from "@/components/FullAddressField";
 import PasswordStrengthMeter from "@/components/PasswordStrengthMeter";
 import { createUnsavedSnapshot } from "@/lib/unsavedSnapshot";
-import { getFullAddressError, getStreetAddressError, isValidFullAddress, isValidStreetAddress, normalizeFullAddress } from "@/lib/fullAddressValidation";
+import { getStreetAddressError, isValidStreetAddress, normalizeFullAddress } from "@/lib/fullAddressValidation";
 import AboutBusinessContent from "@/components/AboutBusinessContent";
 import FilterDropdown from "@/components/FilterDropdown";
+import CustomerDropdown from "@/components/CustomerDropdown";
 import OtpCodeInput from "@/components/OtpCodeInput";
 import ProductPriceEstimator, { getProductEstimatorState } from "@/components/ProductPriceEstimator";
 import { getProductEstimatorQuantityError, MAX_PRODUCT_ESTIMATOR_QUANTITY } from "@/lib/productEstimatorQuantity";
@@ -271,13 +273,29 @@ const buildFullAddress = (user) => {
   return normalizeAddress(addressParts.join(", "));
 };
 
+const getStreetAddressOnly = (user = {}) => {
+  const canonical = (value) => String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]+/g, " ")
+    .replace(/\b(city|province|zip|code|street|st|road|rd)\b/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const locationParts = new Set([user.city, user.province, user.zip_code].map(canonical).filter(Boolean));
+
+  return String(user.street_address || "")
+    .split(/[,;]+/)
+    .map((part) => part.trim())
+    .filter((part) => part && !locationParts.has(canonical(part)))
+    .join(", ");
+};
+
 const createCustomerProfileDraft = (user = {}) => ({
   first_name: user.first_name || "",
   last_name: user.last_name || "",
   phone: user.phone || "",
   email: user.email || "",
   username: user.username || "",
-  street_address: user.street_address || "",
+  street_address: getStreetAddressOnly(user),
   city: user.city || "",
   province: user.province || "",
   zip_code: user.zip_code || "",
@@ -1079,7 +1097,7 @@ function CustomerDashboard() {
       payment_proof_rejected: "Payment proof needs correction",
       payment_verified: "Repair payment verified",
       receipt_issued: "Repair receipt issued",
-      cancelled: "Quotation declined",
+      quotation_declined: "Quotation declined",
       scheduled: "Repair visit scheduled",
       in_progress: "Repair in progress",
       completed: "Repair completed",
@@ -1090,6 +1108,7 @@ function CustomerDashboard() {
       rejected: "Repair Rejected",
       quotation_issued: "Quotation Ready",
       customer_accepted: "Quotation Accepted",
+      quotation_declined: "Quotation Declined",
       payment_proof_submitted: "Payment Review",
       payment_proof_approved: "Payment Verified",
       payment_proof_rejected: "Action Needed",
@@ -1113,13 +1132,13 @@ function CustomerDashboard() {
         admin_approved: "Your warranty claim was approved. The repair will be provided at no charge.",
         rejected: `Your warranty repair request for ${productName} was rejected after inspection. ${repair.warranty?.decisionReason || "Please contact ACGC if you have questions."}`,
         quotation_issued: `A quotation of PHP ${Number(repair.quotation?.total || 0).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} for ${productName} is ready for your review.`,
+        quotation_declined: "You declined the repair quotation. Your repair ticket, inspection findings, and quotation have been kept for reference.",
         customer_accepted: `You accepted the repair quotation${repair.payment?.method ? ` and selected ${String(repair.payment.method).replaceAll("_", " ")}` : ""}.`,
         payment_proof_submitted: "Your payment proof was submitted and is waiting for admin review.",
         payment_proof_approved: entry.detail || "Your repair payment proof was verified by the admin.",
         payment_verified: entry.detail || `An administrator verified your repair payment. Remaining balance: PHP ${Math.max(0, Number(repair.quotation?.total || 0) - Number(repair.payment?.verifiedAmount || 0)).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.`,
         receipt_issued: `Receipt ${repair.receipt?.number || repair.invoiceNumber || ""} is available for your repair.`,
         payment_proof_rejected: `Your payment proof needs correction. ${repair.payment?.proofRejectionReason || "Please review the request and submit a corrected proof."}`,
-        cancelled: "You declined the repair quotation. This request is now closed.",
         scheduled: `Your repair visit is scheduled${repair.schedule?.date ? ` for ${new Date(repair.schedule.date).toLocaleString("en-PH")}` : ""}${repair.schedule?.technician ? ` with ${repair.schedule.technician}` : ""}.`,
         in_progress: `Work on your repair for ${productName} is in progress.`,
         completed: `Your repair for ${productName} is complete${repair.receipt?.number ? `. Receipt ${repair.receipt.number} is available` : ""}.`,
@@ -2998,8 +3017,9 @@ function CustomerDashboard() {
     }
 
     const currentShippingAddress = deliveryConfirmForm.shipping_address || buildDeliveryAddress(deliveryConfirmForm) || buildFullAddress(user);
-    if (!isValidFullAddress(currentShippingAddress)) {
-      setCartActionError(getFullAddressError(currentShippingAddress));
+    const shippingAddressError = getStreetAddressError(currentShippingAddress);
+    if (shippingAddressError) {
+      setCartActionError(shippingAddressError);
       return;
     }
 
@@ -5251,14 +5271,7 @@ function CustomerDashboard() {
         <div className="admin-shell-circle admin-shell-circle-bottom" />
         <div className="admin-shell-circle admin-shell-circle-bottom-small" />
       </div>
-      <Toaster
-        position="bottom-right"
-        toastOptions={{
-          style: darkMode
-            ? { background: "rgb(30 41 59)", border: "1px solid rgb(71 85 105)", color: "rgb(241 245 249)" }
-            : { background: "white", border: "1px solid rgb(226 232 240)", color: "rgb(15 23 42)" },
-        }}
-      />
+      <AppToaster darkMode={darkMode} />
       <UsernameChangeFlow
         open={usernameChangeOpen}
         onClose={() => setUsernameChangeOpen(false)}
@@ -5831,7 +5844,7 @@ function CustomerDashboard() {
       {activeTab === "home" && (
         <>
           <section className={`customer-home-hero relative overflow-hidden ${darkMode ? "bg-[#1a273a] text-white" : "bg-[#45151f]/75 text-white"}`}>
-            <div className="customer-home-hero-glow absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.16),transparent_26%),radial-gradient(circle_at_bottom_right,_rgba(239,68,68,0.18),transparent_28%),linear-gradient(135deg,#170d11_0%,#4b1017_38%,#140d13_100%)]" />
+            <div className={`customer-home-hero-glow absolute inset-0 ${darkMode ? "" : "bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.16),transparent_26%),radial-gradient(circle_at_bottom_right,_rgba(239,68,68,0.18),transparent_28%),linear-gradient(135deg,#170d11_0%,#4b1017_38%,#140d13_100%)]"}`} />
             <div className="absolute -left-16 top-10 h-72 w-72 rounded-full border border-white/10" />
             <div className="absolute -right-10 bottom-6 h-80 w-80 rounded-full border border-white/10" />
             <div className="absolute left-1/2 top-1/2 h-[460px] w-[460px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/10" />
@@ -6079,23 +6092,19 @@ function CustomerDashboard() {
               {productError && <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-700">{productError}</div>}
 
               {isLoadingProducts ? (
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-3 md:gap-6 xl:grid-cols-4">{[...Array(6)].map((_, i) => <div key={i} className="h-32 animate-pulse rounded-2xl bg-white md:h-96 md:rounded-3xl md:p-6" />)}</div>
+                <div className="mx-auto grid w-full min-w-0 max-w-[1200px] grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-5">{[...Array(6)].map((_, i) => <div key={i} className={`min-h-[410px] animate-pulse rounded-[18px] border ${darkMode ? "border-[#3d4862] bg-[#2a3246]" : "border-slate-200 bg-white"}`} />)}</div>
               ) : visibleProducts.length === 0 ? (
                 <div className={`rounded-3xl p-10 text-center shadow ${darkMode ? "bg-slate-800 text-slate-200" : "bg-white text-gray-600"}`}><p className={darkMode ? "text-slate-300" : "text-gray-600"}>No products matched your search.</p></div>
               ) : (
                 <>
-                  <div className="grid w-full min-w-0 grid-cols-1 gap-3 sm:gap-5 md:grid-cols-3 xl:grid-cols-4">
+                  <div className="mx-auto grid w-full min-w-0 max-w-[1200px] grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-5">
                     {displayedProducts.map((product, index) => (
                       <div
                         key={product._id || product.name}
-                        className={`customer-product-card group relative flex h-full w-full min-w-0 cursor-pointer flex-col overflow-hidden rounded-[26px] border transition-all duration-300 ease-out hover:-translate-y-1 motion-reduce:transition-none max-md:min-h-[124px] max-md:flex-row max-md:rounded-[18px] ${
-                          darkMode
-                            ? "border-slate-700 bg-[linear-gradient(180deg,#0f172a_0%,#111827_100%)] shadow-[0_20px_45px_rgba(2,6,23,0.45)] hover:border-red-500/60 hover:shadow-[0_26px_60px_rgba(239,68,68,0.16)]"
-                            : "border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#fff7f7_100%)] shadow-[0_16px_40px_rgba(15,23,42,0.08)] hover:border-red-200 hover:shadow-[0_22px_55px_rgba(127,29,29,0.12)]"
-                        }`}
+                        className="customer-product-card group relative flex h-full min-w-0 cursor-pointer flex-col overflow-hidden rounded-[18px] border border-[var(--product-border)] bg-[var(--product-card)] shadow-[0_4px_14px_rgba(30,24,16,0.08)] transition-[transform,box-shadow,border-color] duration-[180ms] ease-out hover:-translate-y-1 hover:border-red-300 hover:shadow-[0_16px_36px_rgba(30,24,16,0.16)] motion-reduce:transition-none"
                         onClick={() => handleViewProduct(product)}
                       >
-                        <div className={`relative aspect-[4/3] overflow-hidden ${darkMode ? "bg-slate-900" : "bg-slate-100"} max-md:aspect-auto max-md:w-[clamp(6.5rem,36vw,8rem)] max-md:shrink-0`}>
+                        <div className="group/image relative aspect-[4/3] overflow-hidden bg-slate-100">
                           <div data-product-image-skeleton className="absolute inset-0 animate-pulse bg-slate-200 motion-reduce:animate-none" />
                           <img
                             src={getProductImage(product, 480) || PRODUCT_IMAGE_PLACEHOLDER}
@@ -6109,75 +6118,39 @@ function CustomerDashboard() {
                             decoding="async"
                             onLoad={handleProductImageLoad}
                             onError={handleProductImageError}
-                            className="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-110 motion-reduce:transition-none"
+                            className="h-full w-full object-cover transition-transform duration-[350ms] ease-out group-hover/image:scale-105 motion-reduce:transition-none"
                           />
-                          <div className="absolute inset-0 bg-gradient-to-t from-slate-950/70 via-slate-900/10 to-transparent" />
+                          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[45%] bg-gradient-to-t from-black/30 to-transparent" />
 
-                          <div className="absolute left-3 top-3 right-3 flex items-start justify-between gap-2 max-md:left-1 max-md:right-1 max-md:top-1 max-md:flex-col max-md:gap-1">
+                          <div className="absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-2 p-3">
                             {product.is_featured ? (
                               <>
-                                <span aria-label="Top Product" title="Top Product" className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-amber-300/80 bg-amber-200/90 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-amber-950 backdrop-blur-sm max-md:gap-px max-md:px-1 max-md:py-0.5 max-md:text-[7px] max-md:tracking-normal">
-                                  <Star className="size-[11px] shrink-0 max-md:size-2" fill="currentColor" aria-hidden="true" />
+                                <span aria-label="Top Product" title="Top Product" className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-[var(--product-gold)] px-[11px] py-[5px] text-[10.5px] font-bold uppercase tracking-[0.07em] text-[var(--product-gold-text)]">
+                                  <Star className="size-[11px] shrink-0" fill="currentColor" aria-hidden="true" />
                                   Top Product
                                 </span>
-                                <span title={product.category || "General"} className="hidden min-w-0 max-w-[55%] truncate whitespace-nowrap rounded-full border border-white/25 bg-slate-950/40 px-2.5 py-1.5 text-[10px] font-medium uppercase tracking-[0.10em] text-slate-100 backdrop-blur-sm md:inline-flex">
-                                  {product.category || "General"}
-                                </span>
-                                <span className="hidden max-md:inline-flex max-md:max-w-full max-md:truncate max-md:whitespace-nowrap max-md:rounded-full max-md:border max-md:border-white/25 max-md:bg-slate-950/40 max-md:px-1 max-md:py-0.5 max-md:text-[7px] max-md:font-medium max-md:uppercase max-md:tracking-normal max-md:text-slate-100">
+                                <span title={product.category || "General"} className="inline-flex min-w-0 max-w-[55%] truncate whitespace-nowrap rounded-full bg-[rgba(30,26,22,0.72)] px-[11px] py-[5px] text-[10.5px] font-bold uppercase tracking-[0.07em] text-white backdrop-blur-sm">
                                   {product.category || "General"}
                                 </span>
                               </>
                             ) : (
-                              <span className="rounded-full border border-white/20 bg-slate-900/30 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-white backdrop-blur-sm">
+                              <span className="inline-flex max-w-[70%] truncate whitespace-nowrap rounded-full bg-[rgba(30,26,22,0.72)] px-[11px] py-[5px] text-[10.5px] font-bold uppercase tracking-[0.07em] text-white backdrop-blur-sm">
                                 {product.category ? product.category.charAt(0).toUpperCase() + product.category.slice(1) : "General"}
                               </span>
                             )}
                           </div>
-
-                          <div className="absolute inset-x-0 bottom-0 flex items-end justify-end gap-3 p-3 max-md:p-1.5">
-                            {canRequestOrders && (
-                              <div className="hidden gap-1.5 md:flex">
-                                <button
-                                  type="button"
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    openOrderNowModal(product);
-                                  }}
-                                  className={`inline-flex size-[32px] items-center justify-center rounded-xl border shadow-lg transition duration-150 hover:-translate-y-0.5 hover:shadow-xl active:translate-y-0 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 motion-reduce:transform-none ${darkMode ? "border-red-400/50 bg-slate-900/90 text-red-200 hover:!border-red-700 hover:!bg-red-700 hover:!text-white active:!bg-red-800" : "border-red-200 bg-white/90 text-red-700 hover:!border-red-700 hover:!bg-red-700 hover:!text-white active:!bg-red-800"}`}
-                                  aria-label="Place order"
-                                  title="Place order"
-                                >
-                                  <Package size={16} aria-hidden="true" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    handleAddToCart(product);
-                                  }}
-                                  className={`inline-flex size-[32px] items-center justify-center rounded-xl border shadow-lg transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand ${darkMode ? "border-slate-600 bg-slate-900/90 text-slate-200 hover:border-slate-400 hover:bg-slate-700 hover:text-white" : "border-slate-200 bg-white/90 text-slate-700 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-900"}`}
-                                  aria-label="Add to cart"
-                                  title="Add to cart"
-                                >
-                                  <ShoppingCart size={16} aria-hidden="true" />
-                                </button>
-                              </div>
-                            )}
-                          </div>
                         </div>
 
-                        <div className="flex min-w-0 flex-1 flex-col gap-3 p-4 max-md:gap-2 max-md:p-3">
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0 flex-1">
-                              <h3 className={`line-clamp-2 text-[17px] font-black leading-tight max-md:text-sm ${darkMode ? "text-white" : "text-slate-900"}`} title={product.name}>{product.name}</h3>
-                              <p className={`mt-1 truncate text-[12px] font-medium max-md:text-[10px] ${darkMode ? "text-slate-400" : "text-slate-600"}`}>{product.product_type || product.category || "General"}</p>
+                        <div className="flex min-w-0 flex-1 flex-col p-4">
+                          <div>
+                            <h3 className="line-clamp-2 text-[16.5px] font-extrabold leading-tight text-[var(--product-text)]" title={product.name}>{product.name}</h3>
+                            <p className="mt-1 truncate text-[12.5px] font-medium text-[var(--product-muted)]">{product.product_type || product.category || "General"}</p>
                             </div>
-                          </div>
 
                           {canAccessCustomerRatings && (
-                            <div className={`flex min-w-0 items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-[11px] max-md:w-fit max-md:gap-1 max-md:border-0 max-md:bg-transparent max-md:p-0 ${darkMode ? "border-slate-700 bg-slate-900/80 text-slate-300" : "border-slate-200 bg-white text-slate-700"}`}>
-                              <span className="flex items-center gap-1 text-amber-400">{renderRatingStars(productReviewStats[product._id || product.id]?.averageRating || 0, 13)}</span>
-                              <span className={`truncate ${darkMode ? "font-medium text-slate-200" : "font-medium text-slate-800"}`}>
+                            <div className="customer-product-rating mt-[10px] flex min-w-0 items-center gap-1.5">
+                              <span className="flex shrink-0 items-center gap-[1px] tracking-[1px]">{renderRatingStars(productReviewStats[product._id || product.id]?.averageRating || 0, 14)}</span>
+                              <span className="truncate text-xs font-semibold text-[var(--product-muted)]">
                                 {productReviewStats[product._id || product.id]?.averageRating > 0
                                   ? `${productReviewStats[product._id || product.id].averageRating.toFixed(1)} / ${productReviewStats[product._id || product.id].ratingsCount} reviews`
                                   : "No ratings yet"}
@@ -6186,61 +6159,61 @@ function CustomerDashboard() {
                           )}
 
                           {String(product.pricing_method || product.unit).toLowerCase() === "blade" && product.sell_with_frame && product.blade_frame_types?.length > 0 && (
-                            <p className={`flex flex-wrap items-baseline gap-x-1 text-sm leading-5 max-md:text-xs ${darkMode ? "text-slate-200" : "text-slate-800"}`} title={`With frame: ${product.blade_frame_types.map((frame) => frame.name).join(" / ")}`}>
-                              <span className={`font-semibold ${darkMode ? "text-slate-300" : "text-slate-600"}`}>With frame:</span>
+                            <p className="mt-2 flex min-h-[62px] flex-wrap content-center items-baseline gap-x-1 text-sm leading-5 text-[var(--product-text)]" title={`With frame: ${product.blade_frame_types.map((frame) => frame.name).join(" / ")}`}>
+                              <span className="font-semibold text-[var(--product-muted)]">With frame:</span>
                               <span className="font-bold">{product.blade_frame_types.map((frame) => frame.name).join(" / ")}</span>
                             </p>
                           )}
 
                           {String(product.pricing_method || product.unit).toLowerCase() !== "blade" && (
-                          <div className={`grid gap-2 rounded-2xl border px-3 py-2.5 max-md:gap-1 max-md:rounded-lg max-md:px-2 max-md:py-1.5 ${darkMode ? "border-slate-700 bg-slate-900/75" : "border-slate-200 bg-slate-50"}`}>
+                          <div className="mt-2 flex min-h-[62px] flex-col justify-center divide-y divide-dashed divide-[var(--product-border)] text-sm">
                             {!isBladePricingProduct(product) && (getProductDefaultDimensions(product).width > 0 || getProductDefaultDimensions(product).height > 0) && <>
-                              <p className="flex items-center justify-between gap-2 text-sm max-md:text-xs">
-                                <span className={darkMode ? "shrink-0 font-medium text-slate-300" : "shrink-0 font-medium text-slate-600"}>Width × Height</span>
-                                <span className={`truncate text-right font-bold ${darkMode ? "text-white" : "text-slate-900"}`}>
+                              <p className="flex items-center justify-between gap-2 py-1.5 first:pt-0 last:pb-0">
+                                <span className="shrink-0 font-medium text-[var(--product-muted)]">Width × Height</span>
+                                <span className="truncate text-right font-bold text-[var(--product-text)]">
                                   {getProductDefaultDimensions(product).width || "N/A"} × {getProductDefaultDimensions(product).height || "N/A"}
                                 </span>
                               </p>
                             </>}
 
-                            <p className="flex items-center justify-between gap-2 text-sm max-md:text-xs">
-                              <span className={darkMode ? "font-medium text-slate-300" : "font-medium text-slate-600"}>Unit rate</span>
-                              <span className={`font-bold ${darkMode ? "text-white" : "text-slate-900"}`}>{getProductUnitRate(product)}</span>
+                            <p className="flex items-center justify-between gap-2 py-1.5 first:pt-0 last:pb-0">
+                              <span className="font-medium text-[var(--product-muted)]">Unit rate</span>
+                              <span className="font-bold text-[var(--product-text)]">{getProductUnitRate(product)}</span>
                             </p>
                           </div>
                           )}
 
-                          <div className={`mt-auto flex items-end justify-between gap-2 border-t pt-3 max-md:flex-col max-md:items-stretch max-md:gap-2 max-md:pt-1.5 ${darkMode ? "border-slate-700" : "border-slate-200"}`}>
+                          <div className="mt-auto flex items-end justify-between gap-3 border-t border-[var(--product-border)] pt-3">
                             <div className="min-w-0">
-                              <p className={`text-[10px] uppercase tracking-[0.14em] max-md:text-[8px] ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Starting from</p>
-                              <p className={`mt-1 truncate text-[22px] font-black max-md:text-base ${darkMode ? "text-red-300" : "text-red-700"}`}>{getProductPrice(product)}</p>
+                              <p className="text-[10px] uppercase tracking-[0.1em] text-[var(--product-muted)]">Starting from</p>
+                              <p className="mt-1 truncate text-[22px] font-extrabold leading-tight text-[var(--product-price)]">{getProductPrice(product)}</p>
                             </div>
                             {canRequestOrders && (
-                              <div className="flex w-full shrink-0 items-center justify-end gap-1 md:hidden">
-                                  <button
-                                    type="button"
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      openOrderNowModal(product);
-                                    }}
-                                    className={`inline-flex size-8 items-center justify-center rounded-lg border shadow-sm transition duration-150 hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 motion-reduce:transform-none ${darkMode ? "border-red-400/50 bg-slate-900 text-red-200 hover:!border-red-700 hover:!bg-red-700 hover:!text-white active:!bg-red-800" : "border-red-200 bg-white text-red-700 hover:!border-red-700 hover:!bg-red-700 hover:!text-white active:!bg-red-800"}`}
-                                    aria-label="Place order"
-                                    title="Place order"
-                                  >
-                                    <Package size={14} aria-hidden="true" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      handleAddToCart(product);
-                                    }}
-                                    className={`inline-flex size-8 items-center justify-center rounded-lg border ${darkMode ? "border-slate-600 bg-slate-900 text-slate-200" : "border-slate-200 bg-white text-slate-700"}`}
-                                    aria-label="Add to cart"
-                                    title="Add to cart"
-                                  >
-                                    <ShoppingCart size={14} aria-hidden="true" />
-                                  </button>
+                              <div className="flex shrink-0 items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    openOrderNowModal(product);
+                                  }}
+                                  className="inline-flex size-[38px] items-center justify-center rounded-full border border-[var(--product-border)] bg-[var(--product-card)] text-[var(--product-text)] transition-colors duration-150 hover:border-red-600 hover:bg-red-600 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+                                  aria-label="Place order"
+                                  title="Place order"
+                                >
+                                  <Package size={17} aria-hidden="true" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    handleAddToCart(product);
+                                  }}
+                                  className="inline-flex size-[38px] items-center justify-center rounded-full border border-red-600 bg-red-600 text-white transition-colors duration-150 hover:border-red-700 hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+                                  aria-label="Add to cart"
+                                  title="Add to cart"
+                                >
+                                  <ShoppingCart size={17} aria-hidden="true" />
+                                </button>
                               </div>
                             )}
                           </div>
@@ -6255,20 +6228,18 @@ function CustomerDashboard() {
                     }`}>
                       <div className={`flex items-center gap-3 text-sm font-medium ${darkMode ? "text-slate-300" : "text-slate-600"}`}>
                         <span>Items per page</span>
-                        <select
+                        <CustomerDropdown
+                          ariaLabel="Items per page"
+                          darkMode={darkMode}
                           value={productsPerPage}
                           onChange={(event) => setProductsPerPage(Number(event.target.value))}
-                          className={`rounded-xl border px-3 py-2 text-sm font-semibold outline-none transition ${
-                            darkMode
-                              ? "border-slate-600 bg-slate-700 text-slate-100 focus:border-red-400 focus:ring-2 focus:ring-red-500/30"
-                              : "border-red-200 bg-red-50 text-slate-800 focus:border-red-300 focus:ring-2 focus:ring-red-100"
-                          }`}
+                          className="w-auto min-w-20"
                         >
                           <option value={4}>4</option>
                           <option value={8}>8</option>
                           <option value={12}>12</option>
                           <option value={16}>16</option>
-                        </select>
+                        </CustomerDropdown>
                       </div>
 
                       {visibleProducts.length > 0 && (
@@ -6545,26 +6516,28 @@ function CustomerDashboard() {
                             </label>
                             <label className="col-span-3 min-w-0 sm:col-span-1">
                               <span className={`mb-1 block text-[9px] font-bold uppercase tracking-wider ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Unit</span>
-                              <select
+                              <CustomerDropdown
+                                ariaLabel="Unit"
+                                darkMode={darkMode}
                                 value={productEstimatorForm.unit}
                                 onChange={(event) => setProductEstimatorForm((current) => ({ ...current, unit: event.target.value }))}
-                                className={`h-9 w-full rounded-lg border px-2 text-sm outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/15 ${darkMode ? "border-slate-600 bg-slate-800 text-white" : "border-slate-200 bg-white text-slate-900"}`}
+                                className="h-9 rounded-lg px-2"
                               >
                                 <option value="in">in</option>
                                 <option value="ft">ft</option>
                                 <option value="cm">cm</option>
                                 <option value="m">m</option>
-                              </select>
+                              </CustomerDropdown>
                             </label>
                           </div>}
                           {isBladeEstimator && (
                             <div className={`mt-4 space-y-3 rounded-lg border p-3 ${darkMode ? "border-slate-700 bg-slate-800" : "border-slate-200 bg-slate-50"}`}>
                               <label className="block">
                                 <span className={`mb-1 block text-[10px] font-bold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Glass type</span>
-                                <select value={productEstimatorForm.blade_glass_type} onChange={(event) => setProductEstimatorForm((current) => ({ ...current, blade_glass_type: event.target.value }))} className={`h-10 w-full rounded-lg border px-3 text-sm ${darkMode ? "border-slate-600 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-900"}`}>
+                                <CustomerDropdown ariaLabel="Glass type" darkMode={darkMode} value={productEstimatorForm.blade_glass_type} onChange={(event) => setProductEstimatorForm((current) => ({ ...current, blade_glass_type: event.target.value }))} className="h-10 rounded-lg px-3">
                                   <option value="">Choose glass type</option>
-                                  {productBladeGlassTypes.map((glass) => <option key={glass.name} value={glass.name}>{glass.name} · {formatCurrency(glass.price_per_blade)} / blade</option>)}
-                                </select>
+                                  {productBladeGlassTypes.map((glass) => <option key={glass.name} value={glass.name}>{glass.name} · <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(glass.price_per_blade)}</span> / blade</option>)}
+                                </CustomerDropdown>
                               </label>
                               <div>
                                 <span className={`mb-1 block text-[10px] font-bold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Purchase option</span>
@@ -6576,12 +6549,12 @@ function CustomerDashboard() {
                               {productEstimatorForm.sale_mode === "frame" && productBladeFrameTypes.length > 0 && (
                                 <label className="block">
                                   <span className={`mb-1 block text-[10px] font-bold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Frame type</span>
-                                  <select value={productEstimatorForm.frame_type} onChange={(event) => {
+                                  <CustomerDropdown ariaLabel="Frame type" darkMode={darkMode} value={productEstimatorForm.frame_type} onChange={(event) => {
                                     const frame = productBladeFrameTypes.find((item) => item.name === event.target.value);
                                     setProductEstimatorForm((current) => ({ ...current, frame_type: event.target.value, blade_count: Number(frame?.blade_count) || current.blade_count }));
-                                  }} className={`h-10 w-full rounded-lg border px-3 text-sm ${darkMode ? "border-slate-600 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-900"}`}>
-                                    {productBladeFrameTypes.map((frame) => <option key={frame.name} value={frame.name}>{frame.name} · {frame.blade_count} blades · {formatCurrency(frame.price)}</option>)}
-                                  </select>
+                                  }} className="h-10 rounded-lg px-3">
+                                    {productBladeFrameTypes.map((frame) => <option key={frame.name} value={frame.name}>{frame.name} · {frame.blade_count} blades · <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(frame.price)}</span></option>)}
+                                  </CustomerDropdown>
                                 </label>
                               )}
                               {productEstimatorForm.sale_mode === "frame" && selectedProduct.allow_custom_frame_size && (
@@ -6597,7 +6570,7 @@ function CustomerDashboard() {
                                   <span className={`mt-1 block text-[10px] ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Minimum {Math.max(1, Number(selectedProduct.minimum_blades) || 1)}{Number(selectedProduct.maximum_blades) > 0 ? ` · Maximum ${selectedProduct.maximum_blades}` : ""}</span>
                                 </label>
                               )}
-                              {selectedProduct.show_price_per_blade !== false && selectedBladeGlass && <p className={`text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Glass rate: {formatCurrency(selectedBladeGlass.price_per_blade)} per blade</p>}
+                              {selectedProduct.show_price_per_blade !== false && selectedBladeGlass && <p className={`text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Glass rate: <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(selectedBladeGlass.price_per_blade)}</span> per blade</p>}
                             </div>
                           )}
                           {(selectedProduct.extra_charges || []).some((charge) => charge.is_optional) && (
@@ -6972,17 +6945,19 @@ function CustomerDashboard() {
                                   <Ruler size={39} className="text-red-600" />
                                   <span className="text-sm font-semibold text-gray-700">Measurement Unit</span>
                                 </div>
-                                <select
+                                <CustomerDropdown
+                                  ariaLabel="Measurement Unit"
+                                  darkMode={darkMode}
                                   name="unit"
                                   value={estimateForm.unit}
                                   onChange={handleEstimateFormChange}
-                                  className="w-full rounded-xl border-2 border-gray-200 bg-white px-4 py-3 focus:outline-none focus:border-red-500 focus:ring-2 focus:ring-red-200 transition text-lg"
+                                  className="h-14 rounded-xl px-4 text-lg"
                                 >
                                   <option value="in">Inches (in)</option>
                                   <option value="ft">Feet (ft)</option>
                                   <option value="cm">Centimeters (cm)</option>
                                   <option value="m">Meters (m)</option>
-                                </select>
+                                </CustomerDropdown>
                               </label>
                             </div>
 
@@ -7360,7 +7335,7 @@ function CustomerDashboard() {
                                   </div>
                                   <div>
                                     <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Unit Price</p>
-                                    <p className={`mt-2 font-semibold ${darkMode ? "text-white" : "text-gray-900"}`}>{formatCurrency(deliveryConfirmMode === "orderNow" ? Number(orderNowProduct?.unit_price || orderNowProduct?.price_per_sqft || 0) : estimateUnitRate)}</p>
+                                    <p className={`mt-2 font-semibold ${darkMode ? "text-white" : "text-gray-900"}`}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(deliveryConfirmMode === "orderNow" ? Number(orderNowProduct?.unit_price || orderNowProduct?.price_per_sqft || 0) : estimateUnitRate)}</span></p>
                                   </div>
                                   <div>
                                     <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Width</p>
@@ -7386,43 +7361,43 @@ function CustomerDashboard() {
                                 <>
                                   <div className="flex items-center justify-between gap-3">
                                     <span>Rate</span>
-                                    <span className={`font-semibold ${darkMode ? "text-white" : "text-gray-900"}`}>{formatCurrency(confirmBladeRate)} / blade</span>
+                                    <span className={`font-semibold ${darkMode ? "text-white" : "text-gray-900"}`}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(confirmBladeRate)}</span> / blade</span>
                                   </div>
                                   {confirmBladeSelections.sale_mode === "frame" && (
                                     <div className="flex items-center justify-between gap-3">
                                       <span>Frame ({confirmBladeSelections.custom_frame_size ? "Custom" : confirmFrameType?.name || "Frame"})</span>
-                                      <span className={`font-semibold ${darkMode ? "text-white" : "text-gray-900"}`}>{formatCurrency(confirmFramePrice * confirmQuantity)}</span>
+                                      <span className={`font-semibold ${darkMode ? "text-white" : "text-gray-900"}`}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(confirmFramePrice * confirmQuantity)}</span></span>
                                     </div>
                                   )}
                                   {confirmExtraChargeRows.map((charge, index) => (
                                     <div key={`${index}-${charge.name}`} className="flex items-center justify-between gap-3">
                                       <span>{charge.name}</span>
-                                      <span className={`font-semibold ${darkMode ? "text-white" : "text-gray-900"}`}>{formatCurrency(charge.amount)}</span>
+                                      <span className={`font-semibold ${darkMode ? "text-white" : "text-gray-900"}`}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(charge.amount)}</span></span>
                                     </div>
                                   ))}
                                   {confirmAdditionalCharges > 0 && (
                                     <div className="flex items-center justify-between gap-3">
                                       <span>Customization</span>
-                                      <span className={`font-semibold ${darkMode ? "text-white" : "text-gray-900"}`}>{formatCurrency(confirmAdditionalCharges)}</span>
+                                      <span className={`font-semibold ${darkMode ? "text-white" : "text-gray-900"}`}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(confirmAdditionalCharges)}</span></span>
                                     </div>
                                   )}
                                   {confirmInstallationFee > 0 && (
                                     <div className="flex items-center justify-between gap-3">
                                       <span>Installation</span>
-                                      <span className={`font-semibold ${darkMode ? "text-white" : "text-gray-900"}`}>{formatCurrency(confirmInstallationFee)}</span>
+                                      <span className={`font-semibold ${darkMode ? "text-white" : "text-gray-900"}`}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(confirmInstallationFee)}</span></span>
                                     </div>
                                   )}
                                 </>
                               ) : (
                                 <div className="flex items-center justify-between">
                                   <span>Subtotal</span>
-                                  <span className={`font-semibold ${darkMode ? "text-white" : "text-gray-900"}`}>{formatCurrency(confirmSubtotal)}</span>
+                                  <span className={`font-semibold ${darkMode ? "text-white" : "text-gray-900"}`}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(confirmSubtotal)}</span></span>
                                 </div>
                               )}
                               
                               <div className={`mt-3 flex items-center justify-between border-t border-dashed pt-3 text-lg font-bold ${darkMode ? "border-slate-700 text-white" : "border-gray-300 text-gray-900"}`}>
                                 <span>Total</span>
-                                <span className="text-red-600">{formatCurrency(confirmGrandTotal)}</span>
+                                <span className="text-red-600"><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(confirmGrandTotal)}</span></span>
                               </div>
                             </div>
                           </div>
@@ -7578,17 +7553,17 @@ function CustomerDashboard() {
                     <div className="space-y-6 rounded-[32px] border border-gray-200 bg-white p-6 shadow-sm">
                       <div className="rounded-3xl bg-gradient-to-r from-red-600 to-red-700 p-5 text-white">
                         <p className="text-sm uppercase tracking-[0.24em] text-red-100">Order snapshot</p>
-                        <p className="mt-3 text-3xl font-bold">{formatCurrency(orderNowSubtotal)}</p>
+                        <p className="mt-3 text-3xl font-bold"><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(orderNowSubtotal)}</span></p>
                       </div>
 
                       <div className="grid gap-3">
                         <div className="rounded-3xl bg-gray-50 p-4 border border-gray-200">
                           <p className="text-xs uppercase tracking-[0.24em] text-gray-500">Estimated total</p>
-                          <p className="mt-2 text-lg font-semibold text-gray-900">{formatCurrency(orderNowSubtotal)}</p>
+                          <p className="mt-2 text-lg font-semibold text-gray-900"><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(orderNowSubtotal)}</span></p>
                         </div>
                         <div className="rounded-3xl bg-gray-50 p-4 border border-gray-200">
                           <p className="text-xs uppercase tracking-[0.24em] text-gray-500">Downpayment</p>
-                          <p className="mt-2 text-lg font-semibold text-gray-900">{formatCurrency(orderNowSubtotal * 0.5)}</p>
+                          <p className="mt-2 text-lg font-semibold text-gray-900"><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(orderNowSubtotal * 0.5)}</span></p>
                         </div>
                       </div>
 
@@ -7764,7 +7739,7 @@ function CustomerDashboard() {
                                     </div>
                                     <div className="flex-shrink-0 text-right">
                                       <span className={`inline-flex items-center rounded-lg border px-2 py-1 text-xs font-bold ${darkMode ? "border-blue-800 bg-blue-950/60 text-blue-200" : "border-blue-200 bg-blue-50 text-blue-800"}`}>Quantity: {item.quantity || 1}x</span>
-                                      <div className="mt-1 text-base font-bold text-red-600">{formatCurrency(getItemPriceValue(item))}</div>
+                                      <div className="mt-1 text-base font-bold text-red-600"><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(getItemPriceValue(item))}</span></div>
                                     </div>
                                   </div>
                                 </div>
@@ -7862,7 +7837,7 @@ function CustomerDashboard() {
                             </div>
                             <div className="shrink-0 text-right">
                               <span className={`inline-flex items-center rounded-lg border px-2 py-1 text-xs font-bold ${darkMode ? "border-blue-800 bg-blue-950/60 text-blue-200" : "border-blue-200 bg-blue-50 text-blue-800"}`}>Quantity: {item.quantity || 1}x</span>
-                              <p className="mt-1 font-bold text-red-600">{formatCurrency(getItemPriceValue(item))}</p>
+                              <p className="mt-1 font-bold text-red-600"><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(getItemPriceValue(item))}</span></p>
                             </div>
                           </div>
                         ))}
@@ -7874,11 +7849,11 @@ function CustomerDashboard() {
                       <div className="mt-3 space-y-2">
                         <div className={`flex items-center justify-between rounded-sm px-3 py-2 font-bold ${darkMode ? "bg-red-950/50" : "bg-red-50"}`}>
                           <span>Est. Grand Total</span>
-                          <span className="text-red-700">{formatCurrency(selectedSubtotal)}</span>
+                          <span className="text-red-700"><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(selectedSubtotal)}</span></span>
                         </div>
                         <div className={`flex items-center justify-between px-3 py-1 font-semibold ${darkMode ? "text-slate-200" : ""}`}>
                           <span>50% Downpayment</span>
-                          <span className="text-red-700">{formatCurrency(selectedSubtotal * 0.5)}</span>
+                          <span className="text-red-700"><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(selectedSubtotal * 0.5)}</span></span>
                         </div>
                       </div>
                     </section>
@@ -8197,19 +8172,20 @@ function CustomerDashboard() {
                 <p className={`mt-1 text-sm ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Track progress, payments, and completed projects.</p>
               </div>
               <div className="w-full sm:w-auto lg:hidden">
-                <select
-                  aria-label="Filter orders"
+                <CustomerDropdown
+                  ariaLabel="Filter orders"
+                  darkMode={darkMode}
                   value={orderFilter}
                   onChange={(event) => {
                     setOrderFilter(event.target.value);
                     setOrderPage(1);
                   }}
-                  className={`w-full rounded-xl border px-3 py-2.5 text-sm font-semibold outline-none focus:ring-2 focus:ring-red-100 ${darkMode ? "border-slate-700 bg-slate-800 text-slate-100 focus:border-red-500" : "border-slate-200 bg-white text-slate-700 focus:border-red-500"}`}
+                  className="w-full"
                 >
                   {orderFilterOptions.map((option) => (
                     <option key={option.value} value={option.value}>{option.label} ({option.count})</option>
                   ))}
-                </select>
+                </CustomerDropdown>
               </div>
               <div className="hidden w-full lg:block">
                 <div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label="Filter orders">
@@ -8382,7 +8358,7 @@ function CustomerDashboard() {
                         <div className="flex min-w-0 flex-wrap items-center justify-end gap-x-4 gap-y-2 sm:gap-5">
                           <div className="text-right sm:min-w-[110px]">
                             <p className={`text-[10px] font-semibold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Total</p>
-                            <p className="mt-0.5 text-base font-bold text-red-600">{formatCurrency(orderTotal)}</p>
+                            <p className="mt-0.5 text-base font-bold text-red-600"><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(orderTotal)}</span></p>
                           </div>
                           <div className="text-right sm:min-w-[90px]">
                             <p className={`text-[10px] font-semibold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Updated</p>
@@ -8507,10 +8483,10 @@ function CustomerDashboard() {
                                         const priceBreakdown = getProductLineBreakdown(item, item);
                                         return (priceBreakdown.baseTotal > 0 || priceBreakdown.extraCharges.length > 0) ? (
                                           <div className={`mt-1 space-y-0.5 text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>
-                                            <p>Base price: {formatCurrency(priceBreakdown.baseTotal)}</p>
+                                            <p>Base price: <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(priceBreakdown.baseTotal)}</span></p>
                                             {priceBreakdown.extraCharges.map((charge, chargeIndex) => (
                                               <p key={`${orderId}-item-${itemIndex}-charge-${chargeIndex}`}>
-                                                + {charge.name}: {formatCurrency(charge.total)}
+                                                + {charge.name}: <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(charge.total)}</span>
                                               </p>
                                             ))}
                                           </div>
@@ -8520,7 +8496,7 @@ function CustomerDashboard() {
                                   </div>
                                   <div className="shrink-0 text-right">
                                     <p className={`text-sm font-bold ${darkMode ? "text-slate-100" : "text-slate-900"}`}>
-                                      {formatCurrency(getItemPriceValue(item))}
+                                      <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(getItemPriceValue(item))}</span>
                                     </p>
                                     {canAccessCustomerRatings && isProjectFinished && isOrderCompletedAndReviewable(order) && (
                                       ["reviewed", "completed"].includes(orderFilter)
@@ -8582,26 +8558,26 @@ function CustomerDashboard() {
                           <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
                             <div className={panelMetricCardClassName}>
                               <span className={panelMetricLabelClassName}>Total project cost</span>
-                              <span className="mt-1 block text-xl font-bold text-red-600">{formatCurrency(orderTotal)}</span>
+                              <span className="mt-1 block text-xl font-bold text-red-600"><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(orderTotal)}</span></span>
                               <span className={`${panelMetricNoteClassName} mt-1 block`}>Confirmed order total</span>
                             </div>
                             <div className={`${panelMetricCardClassName} border-l-4 ${darkMode ? "border-l-amber-400" : "border-l-amber-500"}`}>
                               <span className={panelMetricLabelClassName}>{order.payment_terms === "full_payment" ? "Required full payment" : "Required downpayment"}</span>
-                              <span className={`mt-1 block text-xl font-bold ${darkMode ? "text-amber-300" : "text-amber-700"}`}>{formatCurrency(requiredPaymentAmount)}</span>
+                              <span className={`mt-1 block text-xl font-bold ${darkMode ? "text-amber-300" : "text-amber-700"}`}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(requiredPaymentAmount)}</span></span>
                               <span className={`${panelMetricNoteClassName} mt-1 block`}>Site Inspection terms: {getSavedPaymentTermsLabel(order.payment_terms)}</span>
                             </div>
                             <div className={panelMetricCardClassName}>
                               <span className={panelMetricLabelClassName}>Amount already paid</span>
-                              <span className="mt-1 block text-xl font-bold text-emerald-600">{formatCurrency(downpaymentAmount)}</span>
+                              <span className="mt-1 block text-xl font-bold text-emerald-600"><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(downpaymentAmount)}</span></span>
                               <span className={`${panelMetricNoteClassName} mt-1 block`}>Verified payments only</span>
                             </div>
                             <div className={panelMetricCardClassName}>
                               <span className={panelMetricLabelClassName}>Downpayment remaining</span>
-                              <span className={`mt-1 block text-xl font-bold ${darkMode ? "text-amber-300" : "text-amber-700"}`}>{formatCurrency(downpaymentBalance)}</span>
+                              <span className={`mt-1 block text-xl font-bold ${darkMode ? "text-amber-300" : "text-amber-700"}`}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(downpaymentBalance)}</span></span>
                             </div>
                             <div className={panelMetricCardClassName}>
                               <span className={panelMetricLabelClassName}>Remaining project balance</span>
-                              <span className="mt-1 block text-xl font-bold text-red-600">{formatCurrency(balanceAmount)}</span>
+                              <span className="mt-1 block text-xl font-bold text-red-600"><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(balanceAmount)}</span></span>
                             </div>
                             <div className={panelMetricCardClassName}>
                               <span className={`${panelMetricLabelClassName} block`}>Payment status</span>
@@ -8638,11 +8614,11 @@ function CustomerDashboard() {
                                   <div className="min-w-0 flex-1">
                                     <p className={`font-bold ${darkMode ? "text-slate-100" : "text-slate-900"}`}>Payment Amount Discrepancy <span className={`font-medium ${darkMode ? "text-amber-300" : "text-amber-700"}`}>· {String(discrepancy.status || "pending_review").replaceAll("_", " ")}</span></p>
                                     <p className={`mt-1.5 flex flex-col gap-1 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-2 ${darkMode ? "text-slate-300" : "text-slate-500"}`}>
-                                      <span>Customer-reported: <strong className={`font-extrabold ${darkMode ? "text-slate-100" : "text-slate-950"}`}>{formatCurrency(Number(discrepancy.customer_reported_amount))}</strong></span>
+                                      <span>Customer-reported: <strong className={`font-extrabold ${darkMode ? "text-slate-100" : "text-slate-950"}`}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(Number(discrepancy.customer_reported_amount))}</span></strong></span>
                                       <span aria-hidden="true" className="hidden text-slate-400 sm:inline">·</span>
-                                      <span>Admin-recorded: <strong className={`font-extrabold ${darkMode ? "text-slate-100" : "text-slate-950"}`}>{formatCurrency(Number(discrepancy.admin_recorded_amount))}</strong></span>
+                                      <span>Admin-recorded: <strong className={`font-extrabold ${darkMode ? "text-slate-100" : "text-slate-950"}`}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(Number(discrepancy.admin_recorded_amount))}</span></strong></span>
                                       <span aria-hidden="true" className="hidden text-slate-400 sm:inline">·</span>
-                                      <span>Difference: <strong className={`font-extrabold ${darkMode ? "text-slate-100" : "text-slate-950"}`}>{formatCurrency(Number(discrepancy.difference))}</strong></span>
+                                      <span>Difference: <strong className={`font-extrabold ${darkMode ? "text-slate-100" : "text-slate-950"}`}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(Number(discrepancy.difference))}</span></strong></span>
                                     </p>
                                     <p className={`mt-2 ${darkMode ? "text-slate-300" : "text-slate-600"}`}>The recorded amount differs from the amount you submitted. If you believe it is incorrect, contact us for clarification{discrepancyContact ? <> at <a className={`ml-1 inline-flex items-center whitespace-nowrap rounded-md border px-2 py-1 font-bold no-underline align-middle transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${darkMode ? "border-amber-600/70 bg-amber-900/50 text-amber-200 hover:bg-amber-900" : "border-amber-300 bg-white/70 text-amber-800 hover:bg-white"}`} href={discrepancyContact.href}><Phone size={14} className="mr-1.5 shrink-0" aria-hidden="true" />{discrepancyContact.display}</a>.</> : ". Please contact the system administrator for assistance."}</p>
                                   </div>
@@ -8689,29 +8665,29 @@ function CustomerDashboard() {
                                         <span className={darkMode ? "text-slate-400" : "text-slate-500"}>{formatDateTimeToMMMDDYYYY(record.payment_date || record.recorded_at || record.verified_at || record.rejected_at || record.submitted_at)}</span>
                                       </div>
                                         <p className={`mt-2 flex flex-wrap gap-x-3 gap-y-1 ${darkMode ? "text-slate-300" : "text-slate-600"}`}>
-                                          {record.submitted_amount != null && <>Submitted: <strong className={changed ? "line-through decoration-2 decoration-slate-600" : ""}>{formatCurrency(record.submitted_amount)}</strong></>}
-                                        {record.verified_amount != null && <> · Verified: <strong>{formatCurrency(record.verified_amount)}</strong></>}
+                                          {record.submitted_amount != null && <>Submitted: <strong className={changed ? "line-through decoration-2 decoration-slate-600" : ""}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(record.submitted_amount)}</span></strong></>}
+                                        {record.verified_amount != null && <> · Verified: <strong><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(record.verified_amount)}</span></strong></>}
                                       </p>
                                       {changed && record.status === "verified" && !(record.discrepancies || []).some((discrepancy) => discrepancy.status !== "resolved") && <p className={`mt-2 rounded-lg border px-3 py-2.5 leading-5 ${darkMode ? "border-amber-700/60 bg-amber-950/40 text-amber-200" : "border-amber-300 bg-amber-50 text-amber-800"}`}>
-                                        <span className="font-bold">Payment discrepancy · </span>Amount changed by {formatCurrency(Math.abs(Number(record.verified_amount) - Number(record.submitted_amount)))} {Number(record.verified_amount) < Number(record.submitted_amount) ? "lower" : "higher"}.
-                                        <span className="mt-1 block text-[11px]">Customer-reported {formatCurrency(Number(record.submitted_amount))} · Admin-recorded {formatCurrency(Number(record.verified_amount))} · Difference {formatCurrency(Math.abs(Number(record.verified_amount) - Number(record.submitted_amount)))}</span>
+                                        <span className="font-bold">Payment discrepancy · </span>Amount changed by <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(Math.abs(Number(record.verified_amount) - Number(record.submitted_amount)))}</span> {Number(record.verified_amount) < Number(record.submitted_amount) ? "lower" : "higher"}.
+                                        <span className="mt-1 block text-[11px]">Customer-reported <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(Number(record.submitted_amount))}</span> · Admin-recorded <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(Number(record.verified_amount))}</span> · Difference <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(Math.abs(Number(record.verified_amount) - Number(record.submitted_amount)))}</span></span>
                                       </p>}
                                       {(record.discrepancies || []).map((discrepancy) => (
                                         <div key={discrepancy._id || discrepancy.detected_at} className={`mt-2 rounded-lg border px-3 py-2.5 leading-5 ${discrepancy.status === "resolved" ? darkMode ? "border-emerald-700/50 bg-emerald-950/30 text-emerald-200" : "border-emerald-200 bg-emerald-50 text-emerald-800" : darkMode ? "border-amber-700/60 bg-amber-950/40 text-amber-200" : "border-amber-300 bg-amber-50 text-amber-900"}`}>
                                           <strong>Payment discrepancy · {String(discrepancy.status || "pending_review").replaceAll("_", " ")}</strong>
-                                          <p className="mt-1">Customer-reported {formatCurrency(discrepancy.customer_reported_amount)} · Admin-recorded {formatCurrency(discrepancy.admin_recorded_amount)} · Difference {formatCurrency(discrepancy.difference)}</p>
+                                          <p className="mt-1">Customer-reported <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(discrepancy.customer_reported_amount)}</span> · Admin-recorded <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(discrepancy.admin_recorded_amount)}</span> · Difference <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(discrepancy.difference)}</span></p>
                                           {discrepancy.resolution_note && <p className="mt-1">Resolution note: {discrepancy.resolution_note}</p>}
                                         </div>
                                       ))}
                                       {record.downpayment_exception?.status === "approved" && (
                                         <div className={`mt-2 rounded-md border px-2 py-1.5 ${darkMode ? "border-amber-500/30 bg-amber-500/10 text-amber-200" : "border-amber-200 bg-amber-50 text-amber-900"}`}>
-                                          <strong>Downpayment Exception Approved</strong>: {formatCurrency(record.downpayment_exception.accepted_amount)} accepted; original requirement {formatCurrency(record.downpayment_exception.required_amount)}; shortfall at approval {formatCurrency(record.downpayment_exception.shortfall)}.
+                                          <strong>Downpayment Exception Approved</strong>: <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(record.downpayment_exception.accepted_amount)}</span> accepted; original requirement <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(record.downpayment_exception.required_amount)}</span>; shortfall at approval <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(record.downpayment_exception.shortfall)}</span>.
                                           {record.downpayment_exception.reason && <span className="block mt-1">Reason: {record.downpayment_exception.reason}</span>}
                                         </div>
                                       )}
                                       {record.downpayment_exception?.status === "pending" && (
                                         <p className="mt-1 font-bold text-sky-600">
-                                          Awaiting Admin Approval. Proposed amount: {formatCurrency(record.downpayment_exception.accepted_amount)}; original requirement: {formatCurrency(record.downpayment_exception.required_amount)}; shortfall if accepted: {formatCurrency(record.downpayment_exception.shortfall)}. Payment remains unverified.
+                                          Awaiting Admin Approval. Proposed amount: <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(record.downpayment_exception.accepted_amount)}</span>; original requirement: <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(record.downpayment_exception.required_amount)}</span>; shortfall if accepted: <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(record.downpayment_exception.shortfall)}</span>. Payment remains unverified.
                                         </p>
                                       )}
                                       {record.proof_file_url && (
@@ -8784,10 +8760,10 @@ function CustomerDashboard() {
                             ) : latestPaymentProof.status === "pending" ? (
                               <div className={`rounded-xl border px-4 py-3 text-sm font-medium sm:col-span-2 ${darkMode ? "border-sky-800 bg-sky-950/50 text-sky-200" : "border-sky-200 bg-sky-50 text-sky-800"}`}>
                                 <p>
-                                  We've notified admin that you paid {formatCurrency(paymentProofSubmission?.amount ?? latestPaymentProof.submittedAmount ?? order.payment_proof_amount ?? 0)}. This is pending confirmation — we'll notify you here once it's verified.
+                                  We've notified admin that you paid <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(paymentProofSubmission?.amount ?? latestPaymentProof.submittedAmount ?? order.payment_proof_amount ?? 0)}</span>. This is pending confirmation — we'll notify you here once it's verified.
                                 </p>
                                 <p className="mt-2 text-xs">
-                                  Current remaining balance: {formatCurrency(balanceAmount)}. You can submit another payment after this proof is confirmed.
+                                  Current remaining balance: <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(balanceAmount)}</span>. You can submit another payment after this proof is confirmed.
                                 </p>
                                 {lastPaymentProofUrl && (
                                   <button
@@ -8838,7 +8814,7 @@ function CustomerDashboard() {
                                       <div role="alert" className={`mt-2 flex items-start gap-2 rounded-lg border px-3 py-2.5 text-xs leading-5 ${darkMode ? "border-red-700/70 bg-red-950/35 text-red-200" : "border-red-200 bg-red-50 text-red-900"}`}>
                                         <AlertTriangle size={15} className={`mt-0.5 shrink-0 ${darkMode ? "text-red-400" : "text-red-600"}`} aria-hidden="true" />
                                         <p className="min-w-0 flex-1">
-                                          This amount is below the required payment of <strong className={`font-extrabold ${darkMode ? "text-red-300" : "text-red-800"}`}>{formatCurrency(downpaymentBalance)}</strong> and cannot be submitted. Please contact us{paymentSupportContact ? <span className="mt-1 block sm:ml-1 sm:mt-0 sm:inline"> at <a href={paymentSupportContact.href} className={`inline-flex items-center whitespace-nowrap rounded-md border px-2 py-0.5 font-bold no-underline align-middle transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 ${darkMode ? "border-red-700 bg-red-900/50 text-red-200 hover:bg-red-900" : "border-red-200 bg-white/80 text-red-700 hover:bg-white"}`}><Phone size={14} className="mr-1.5 shrink-0" aria-hidden="true" />{paymentSupportContact.display}</a></span> : " to discuss payment options"}.
+                                          This amount is below the required payment of <strong className={`font-extrabold ${darkMode ? "text-red-300" : "text-red-800"}`}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(downpaymentBalance)}</span></strong> and cannot be submitted. Please contact us{paymentSupportContact ? <span className="mt-1 block sm:ml-1 sm:mt-0 sm:inline"> at <a href={paymentSupportContact.href} className={`inline-flex items-center whitespace-nowrap rounded-md border px-2 py-0.5 font-bold no-underline align-middle transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 ${darkMode ? "border-red-700 bg-red-900/50 text-red-200 hover:bg-red-900" : "border-red-200 bg-white/80 text-red-700 hover:bg-white"}`}><Phone size={14} className="mr-1.5 shrink-0" aria-hidden="true" />{paymentSupportContact.display}</a></span> : " to discuss payment options"}.
                                         </p>
                                       </div>
                                     )}
@@ -9255,7 +9231,7 @@ function CustomerDashboard() {
                       className={`mt-1.5 min-h-[160px] w-full resize-y rounded-xl border px-3 py-2.5 text-sm outline-none focus:border-red-500 ${darkMode ? "border-slate-700 bg-slate-800 text-white placeholder:text-slate-500" : "border-slate-200 bg-white text-slate-900 placeholder:text-slate-400"}`}
                     />
                     <p className={`mt-1 flex justify-between text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>
-                      <span>Required. 10–500 characters.</span>
+                      <span>Required. 10“500 characters.</span>
                       <span>{orderReviewForm.comment.length}/500</span>
                     </p>
                   </div>
@@ -9430,7 +9406,7 @@ function CustomerDashboard() {
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
                             <p className={`min-w-0 truncate font-semibold ${darkMode ? "text-white" : "text-slate-900"}`}>{item.name}</p>
-                            <p className="text-sm font-bold text-red-600">{formatCurrency(getItemPriceValue(item))}</p>
+                            <p className="text-sm font-bold text-red-600"><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(getItemPriceValue(item))}</span></p>
                           </div>
                           {(() => {
                             const measurementDetails = getCartItemMeasurementDetails(item);
@@ -9505,16 +9481,16 @@ function CustomerDashboard() {
 
                   <div className={`mt-4 flex items-center justify-between gap-4 text-sm ${darkMode ? "text-slate-300" : "text-slate-600"}`}>
                     <span>{selectedItemCount} selected · {selectedQuantityTotal} total</span>
-                    <span>{formatCurrency(selectedSubtotal)}</span>
+                    <span><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(selectedSubtotal)}</span></span>
                   </div>
                   <div className={`mt-3 border-t pt-4 ${darkMode ? "border-slate-700" : "border-slate-200"}`}>
                     <div className={`flex items-center justify-between gap-4 font-semibold ${darkMode ? "text-white" : "text-slate-900"}`}>
                       <span>Estimated total</span>
-                      <span className="text-lg font-bold text-red-600">{formatCurrency(selectedSubtotal)}</span>
+                      <span className="text-lg font-bold text-red-600"><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(selectedSubtotal)}</span></span>
                     </div>
                     <div className={`mt-2 flex items-center justify-between gap-4 text-sm ${darkMode ? "text-slate-400" : "text-slate-500"}`}>
                       <span>50% downpayment</span>
-                      <span>{formatCurrency(selectedSubtotal * 0.5)}</span>
+                      <span><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(selectedSubtotal * 0.5)}</span></span>
                     </div>
                   </div>
 
@@ -9761,7 +9737,7 @@ function CustomerDashboard() {
                     );
                   })}
                 {notificationTotalPages > 1 && <div className={`flex flex-col items-center justify-between gap-3 border-t pt-4 sm:flex-row ${darkMode ? "border-slate-700" : "border-slate-200"}`}>
-                  <span className={`text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Showing {(currentNotificationPage - 1) * notificationPageSize + 1}–{Math.min(currentNotificationPage * notificationPageSize, sortedFilteredNotifications.length)} of {sortedFilteredNotifications.length}</span>
+                  <span className={`text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Showing {(currentNotificationPage - 1) * notificationPageSize + 1}“{Math.min(currentNotificationPage * notificationPageSize, sortedFilteredNotifications.length)} of {sortedFilteredNotifications.length}</span>
                   <nav className="flex flex-wrap items-center justify-center gap-1.5" aria-label="Notification pages">
                     <button type="button" onClick={() => setNotificationPage((page) => Math.max(1, page - 1))} disabled={currentNotificationPage === 1} aria-label="Previous notifications page" className={`inline-flex h-9 items-center gap-1 rounded-lg border px-3 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${darkMode ? "border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}><ChevronLeft size={14} />Previous</button>
                     {Array.from({ length: notificationTotalPages }, (_, index) => index + 1).map((page) => <button key={page} type="button" onClick={() => setNotificationPage(page)} aria-current={currentNotificationPage === page ? "page" : undefined} aria-label={`Notification page ${page}`} className={`h-9 min-w-9 rounded-lg border px-2.5 text-xs font-semibold ${currentNotificationPage === page ? "border-red-600 bg-red-600 text-white" : darkMode ? "border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}>{page}</button>)}
@@ -9949,7 +9925,7 @@ function CustomerDashboard() {
                           <div className="grid grid-cols-[1fr_auto] items-center gap-x-4 gap-y-1 sm:flex sm:justify-end sm:gap-5">
                             <div className="text-right sm:min-w-[100px]">
                               <p className={`text-[10px] font-semibold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Total</p>
-                              <p className="mt-0.5 text-sm font-bold text-red-600">{formatCurrency(getOrderTotalValue(order))}</p>
+                              <p className="mt-0.5 text-sm font-bold text-red-600"><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(getOrderTotalValue(order))}</span></p>
                             </div>
                             <div className="text-right sm:min-w-[90px]">
                               <p className={`text-[10px] font-semibold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Updated</p>
@@ -10685,7 +10661,7 @@ function CustomerDashboard() {
 
                         <div className="min-w-0 text-center xl:text-left">
                           <p className={`text-[9px] font-black uppercase tracking-[0.18em] ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Amount</p>
-                          <p className="mt-1 text-base font-black text-red-600 sm:text-lg">{formatCurrency(getFinalProjectCost(order))}</p>
+                          <p className="mt-1 text-base font-black text-red-600 sm:text-lg"><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(getFinalProjectCost(order))}</span></p>
                         </div>
 
                         <div className="min-w-0 text-center xl:text-left">

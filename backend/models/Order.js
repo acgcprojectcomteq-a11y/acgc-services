@@ -494,6 +494,25 @@ const OrderSchema = new mongoose.Schema(
       trim: true,
       default: "",
     },
+    cancellation_date: {
+      type: Date,
+      default: null,
+    },
+    cancellation_previous_status: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    cancelled_by: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    cancelled_by_name: {
+      type: String,
+      trim: true,
+      default: "",
+    },
     customer_cancellation_count_at_cancel: {
       type: Number,
       min: 0,

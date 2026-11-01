@@ -27,11 +27,13 @@ import {
   Phone,
   MapPin,
 } from "lucide-react";
-import toast, { Toaster } from "react-hot-toast";
+import toast from "react-hot-toast";
+import AppToaster from "@/components/AppToaster";
 import OrderProgressTimeline from "@/components/OrderProgressTimeline";
 import FilterDropdown from "@/components/FilterDropdown";
 import AboutBusinessContent from "@/components/AboutBusinessContent";
 import ProductPriceEstimator from "@/components/ProductPriceEstimator";
+import CustomerDropdown from "@/components/CustomerDropdown";
 import { getProductEstimatorState } from "@/components/ProductPriceEstimator";
 import { getProductEstimatorQuantityError } from "@/lib/productEstimatorQuantity";
 import { useAuth } from "@/contexts/AuthContext";
@@ -372,7 +374,7 @@ function LandingPage() {
       return { width: 0, height: 0, unit: product?.measurement_unit || "in", quantity: 1, customized: false };
     }
     const dimensionText = String(product?.dimensions || product?.standard_size || product?.size || "");
-    const dimensionMatch = dimensionText.match(/(\d+(?:\.\d+)?)\s*(?:x|×|Ã—|by)\s*(\d+(?:\.\d+)?)/i);
+    const dimensionMatch = dimensionText.match(/(\d+(?:\.\d+)?)\s*(?:x|×|×|by)\s*(\d+(?:\.\d+)?)/i);
     const unitMatch = dimensionText.match(/\b(cm|mm|m|ft|in|inch|inches|feet|meter|meters)\b|"/i);
     const unitMap = { inch: "in", inches: "in", feet: "ft", meter: "m", meters: "m" };
 
@@ -1027,7 +1029,7 @@ function LandingPage() {
 
   return (
   <div className="landing-page-shell flex min-h-screen flex-col overflow-x-hidden bg-white text-gray-900">
-      <Toaster position="bottom-right" />
+      <AppToaster />
 
       {/* NAVBAR */}
 
@@ -1383,9 +1385,9 @@ function LandingPage() {
     </div>
 
     {isLoadingFeatured ? (
-      <div className="grid grid-cols-1 gap-3 sm:gap-5 md:grid-cols-3 xl:grid-cols-4">
+      <div className="mx-auto grid w-full min-w-0 max-w-[1200px] grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-5">
         {[...Array(8)].map((_, index) => (
-          <div key={index} className="h-80 animate-pulse rounded-[26px] border border-slate-200 bg-white" />
+          <div key={index} className="min-h-[410px] animate-pulse rounded-[18px] border border-slate-200 bg-white" />
         ))}
       </div>
     ) : featuredError ? (
@@ -1396,7 +1398,7 @@ function LandingPage() {
       </div>
     ) : (
       <>
-        <div className="grid w-full min-w-0 grid-cols-1 gap-3 sm:gap-5 md:grid-cols-3 xl:grid-cols-4">
+        <div className="mx-auto grid w-full min-w-0 max-w-[1200px] grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-5">
           {displayedProducts.map((product, index) => {
             const productId = product._id || product.id || `${product.name}-${index}`;
             const rating = featuredProductStats[product._id || product.id] || { averageRating: 0, ratingsCount: 0 };
@@ -1419,9 +1421,9 @@ function LandingPage() {
                     openProductDetails(product);
                   }
                 }}
-                className="group flex h-full w-full min-w-0 cursor-pointer flex-col overflow-hidden rounded-[20px] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#fff7f7_100%)] shadow-[0_12px_30px_rgba(15,23,42,0.07)] transition-all duration-300 ease-out hover:-translate-y-1 hover:border-red-200 hover:shadow-[0_22px_55px_rgba(127,29,29,0.12)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 motion-reduce:transition-none max-md:min-h-[124px] max-md:flex-row"
+                className="landing-product-card group relative flex h-full min-w-0 cursor-pointer flex-col overflow-hidden rounded-[18px] border border-[var(--product-border)] bg-[var(--product-card)] shadow-[0_4px_14px_rgba(30,24,16,0.08)] transition-[transform,box-shadow,border-color] duration-[180ms] ease-out hover:-translate-y-1 hover:border-red-300 hover:shadow-[0_16px_36px_rgba(30,24,16,0.16)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 motion-reduce:transition-none"
               >
-                <div className="relative aspect-[4/3] overflow-hidden bg-slate-100 max-md:aspect-auto max-md:w-[clamp(6.5rem,36vw,8rem)] max-md:shrink-0">
+                <div className="group/image relative aspect-[4/3] overflow-hidden bg-slate-100">
                   <div data-product-image-skeleton className="absolute inset-0 animate-pulse bg-slate-200 motion-reduce:animate-none" />
                   <img
                     src={image || PRODUCT_IMAGE_PLACEHOLDER}
@@ -1435,108 +1437,83 @@ function LandingPage() {
                     decoding="async"
                     onLoad={handleProductImageLoad}
                     onError={handleProductImageError}
-                    className="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-110 motion-reduce:transition-none"
+                    className="h-full w-full object-cover transition-transform duration-[350ms] ease-out group-hover/image:scale-105 motion-reduce:transition-none"
                   />
-                  <div className="absolute inset-0 bg-gradient-to-t from-slate-950/70 via-slate-900/10 to-transparent" />
-                  <div className="absolute left-3 right-3 top-3 flex items-start justify-between gap-2 max-md:left-1 max-md:right-1 max-md:top-1 max-md:flex-col max-md:gap-1">
+                  <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[45%] bg-gradient-to-t from-black/30 to-transparent" />
+                  <div className="absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-2 p-3">
                     {product.is_featured ? (
                       <>
-                        <span aria-label="Top Product" title="Top Product" className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-amber-300/80 bg-amber-200/90 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-amber-950 backdrop-blur-sm max-md:gap-px max-md:px-1 max-md:py-0.5 max-md:text-[7px] max-md:tracking-normal">
-                          <Star className="size-[11px] shrink-0 max-md:size-2" fill="currentColor" aria-hidden="true" /> Top Product
+                        <span aria-label="Top Product" title="Top Product" className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-[var(--product-gold)] px-[11px] py-[5px] text-[10.5px] font-bold uppercase tracking-[0.07em] text-[var(--product-gold-text)]">
+                          <Star className="size-[11px] shrink-0" fill="currentColor" aria-hidden="true" /> Top Product
                         </span>
-                        <span title={product.category || "General"} className="hidden min-w-0 max-w-[55%] truncate whitespace-nowrap rounded-full border border-white/25 bg-slate-950/40 px-2.5 py-1.5 text-[10px] font-medium uppercase tracking-[0.1em] text-slate-100 backdrop-blur-sm md:inline-flex">
-                          {product.category || "General"}
-                        </span>
-                        <span className="hidden max-md:inline-flex max-md:max-w-full max-md:truncate max-md:whitespace-nowrap max-md:rounded-full max-md:border max-md:border-white/25 max-md:bg-slate-950/40 max-md:px-1 max-md:py-0.5 max-md:text-[7px] max-md:font-medium max-md:uppercase max-md:tracking-normal max-md:text-slate-100">
+                        <span title={product.category || "General"} className="inline-flex min-w-0 max-w-[55%] truncate whitespace-nowrap rounded-full bg-[rgba(30,26,22,0.72)] px-[11px] py-[5px] text-[10.5px] font-bold uppercase tracking-[0.07em] text-white backdrop-blur-sm">
                           {product.category || "General"}
                         </span>
                       </>
                     ) : (
-                      <span className="rounded-full border border-white/20 bg-slate-900/30 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-white backdrop-blur-sm">
+                      <span className="inline-flex max-w-[70%] truncate whitespace-nowrap rounded-full bg-[rgba(30,26,22,0.72)] px-[11px] py-[5px] text-[10.5px] font-bold uppercase tracking-[0.07em] text-white backdrop-blur-sm">
                         {product.category || "General"}
                       </span>
                     )}
                   </div>
-                  <div className="absolute inset-x-0 bottom-0 flex items-end justify-end gap-3 p-3 max-md:p-1.5">
-                    {customerPermissions.can_request_orders && <div className="hidden gap-1.5 md:flex">
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          continueProductActionAfterLogin("direct", product, getDefaultCartOptions(product));
-                        }}
-                        className="inline-flex size-8 items-center justify-center rounded-xl border border-red-200 bg-white/90 text-red-700 shadow-lg transition hover:border-red-300 hover:bg-red-600 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
-                        aria-label={`Place order for ${productName}`}
-                        title="Place order"
-                      >
-                        <Package size={16} aria-hidden="true" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          handleAddToCart(product);
-                        }}
-                        disabled={addingCartProductId === String(productId)}
-                        className="inline-flex size-8 items-center justify-center rounded-xl border border-slate-200 bg-white/90 text-slate-700 shadow-lg transition hover:border-slate-300 hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 disabled:cursor-not-allowed disabled:opacity-50"
-                        aria-label="Add to cart"
-                        title="Add to cart"
-                      >
-                        {addingCartProductId === String(productId)
-                          ? <LoaderCircle size={14} className="animate-spin" aria-hidden="true" />
-                          : <ShoppingCart size={16} aria-hidden="true" />}
-                      </button>
-                    </div>}
-                  </div>
                 </div>
 
-                <div className="flex min-w-0 flex-1 flex-col gap-3 p-4 max-md:gap-2 max-md:p-3">
+                <div className="flex min-w-0 flex-1 flex-col p-4">
                   <div className="min-w-0">
-                    <h3 className="line-clamp-2 text-[17px] font-black leading-tight text-slate-900 max-md:text-sm" title={productName}>{productName}</h3>
-                    <p className="mt-1 truncate text-[12px] font-medium text-slate-600 max-md:text-[10px]">{category}</p>
+                    <h3 className="line-clamp-2 text-[16.5px] font-extrabold leading-tight text-[var(--product-text)]" title={productName}>{productName}</h3>
+                    <p className="mt-1 truncate text-[12.5px] font-medium text-[var(--product-muted)]">{category}</p>
                   </div>
 
                   {canSeeCustomerRatings && (
-                    <div className="flex min-w-0 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] max-md:w-fit max-md:gap-1 max-md:border-0 max-md:bg-transparent max-md:p-0">
-                      <span className="flex shrink-0 items-center gap-0.5 text-amber-400">{renderRatingStars(rating.averageRating || 0, 13)}</span>
-                      <span className="truncate font-medium text-slate-700">
+                    <div className="customer-product-rating mt-[10px] flex min-w-0 items-center gap-1.5">
+                      <span className="flex shrink-0 items-center gap-[1px] tracking-[1px]">{renderRatingStars(rating.averageRating || 0, 14)}</span>
+                      <span className="truncate text-xs font-semibold text-[var(--product-muted)]">
                         {rating.ratingsCount ? `${rating.averageRating.toFixed(1)} · ${rating.ratingsCount} reviews` : "No ratings yet"}
                       </span>
                     </div>
                   )}
 
-                  <div className="grid gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 max-md:gap-1 max-md:rounded-lg max-md:px-2 max-md:py-1.5">
-                    {!isBladeProduct(product) && (productDimensions.width > 0 || productDimensions.height > 0) && (
-                      <p className="flex items-center justify-between gap-2 text-sm max-md:text-xs">
-                        <span className="shrink-0 font-medium text-slate-600">Width × Height</span>
-                        <span className="truncate text-right font-bold text-slate-900">
-                          {productDimensions.width || "N/A"} × {productDimensions.height || "N/A"}
-                        </span>
-                      </p>
-                    )}
-                    <p className="flex items-center justify-between gap-2 text-sm max-md:text-xs">
-                      <span className="font-medium text-slate-600">Unit rate</span>
-                      <span className="font-bold text-slate-900">{getProductUnitRate(product)}</span>
+                  {String(product.pricing_method || product.unit).toLowerCase() === "blade" && product.sell_with_frame && product.blade_frame_types?.length > 0 && (
+                    <p className="mt-2 flex min-h-[62px] flex-wrap content-center items-baseline gap-x-1 text-sm leading-5 text-[var(--product-text)]" title={`With frame: ${product.blade_frame_types.map((frame) => frame.name).join(" / ")}`}>
+                      <span className="font-semibold text-[var(--product-muted)]">With frame:</span>
+                      <span className="font-bold">{product.blade_frame_types.map((frame) => frame.name).join(" / ")}</span>
                     </p>
-                  </div>
+                  )}
 
-                  <div className="mt-auto flex items-end justify-between gap-2 border-t border-slate-200 pt-3 max-md:flex-col max-md:items-stretch max-md:gap-2 max-md:pt-1.5">
-                    <div className="min-w-0">
-                      <p className="text-[10px] uppercase tracking-[0.14em] text-slate-500 max-md:text-[8px]">Starting from</p>
-                      <p className="mt-1 truncate text-[22px] font-black text-red-700 max-md:text-base">{getProductPrice(product)}</p>
+                  {String(product.pricing_method || product.unit).toLowerCase() !== "blade" && (
+                    <div className="mt-2 flex min-h-[62px] flex-col justify-center divide-y divide-dashed divide-[var(--product-border)] text-sm">
+                      {!isBladeProduct(product) && (productDimensions.width > 0 || productDimensions.height > 0) && (
+                        <p className="flex items-center justify-between gap-2 py-1.5 first:pt-0 last:pb-0">
+                          <span className="shrink-0 font-medium text-[var(--product-muted)]">Width × Height</span>
+                          <span className="truncate text-right font-bold text-[var(--product-text)]">
+                            {productDimensions.width || "N/A"} × {productDimensions.height || "N/A"}
+                          </span>
+                        </p>
+                      )}
+                      <p className="flex items-center justify-between gap-2 py-1.5 first:pt-0 last:pb-0">
+                        <span className="font-medium text-[var(--product-muted)]">Unit rate</span>
+                        <span className="font-bold text-[var(--product-text)]">{getProductUnitRate(product)}</span>
+                      </p>
                     </div>
-                    {customerPermissions.can_request_orders && <div className="flex w-full shrink-0 items-center justify-end gap-1 md:hidden">
+                  )}
+
+                  <div className="mt-auto flex items-end justify-between gap-3 border-t border-[var(--product-border)] pt-3">
+                    <div className="min-w-0">
+                      <p className="text-[10px] uppercase tracking-[0.1em] text-[var(--product-muted)]">Starting from</p>
+                      <p className="mt-1 truncate text-[22px] font-extrabold leading-tight text-[var(--product-price)]">{getProductPrice(product)}</p>
+                    </div>
+                    {customerPermissions.can_request_orders && <div className="flex shrink-0 items-center gap-2">
                       <button
                         type="button"
                         onClick={(event) => {
                           event.stopPropagation();
                           continueProductActionAfterLogin("direct", product, getDefaultCartOptions(product));
                         }}
-                        className="inline-flex size-8 items-center justify-center rounded-lg border border-red-200 bg-white text-red-700"
+                        className="inline-flex size-[38px] items-center justify-center rounded-full border border-[var(--product-border)] bg-[var(--product-card)] text-[var(--product-text)] transition-colors duration-150 hover:border-red-600 hover:bg-red-600 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
                         aria-label={`Place order for ${productName}`}
                         title="Place order"
                       >
-                        <Package size={14} aria-hidden="true" />
+                        <Package size={17} aria-hidden="true" />
                       </button>
                       <button
                         type="button"
@@ -1545,13 +1522,13 @@ function LandingPage() {
                           handleAddToCart(product);
                         }}
                         disabled={addingCartProductId === String(productId)}
-                        className="inline-flex size-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="inline-flex size-[38px] items-center justify-center rounded-full border border-red-600 bg-red-600 text-white transition-colors duration-150 hover:border-red-700 hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 disabled:cursor-not-allowed disabled:opacity-50"
                         aria-label="Add to cart"
                         title="Add to cart"
                       >
                         {addingCartProductId === String(productId)
-                          ? <LoaderCircle size={14} className="animate-spin" aria-hidden="true" />
-                          : <ShoppingCart size={14} aria-hidden="true" />}
+                          ? <LoaderCircle size={17} className="animate-spin" aria-hidden="true" />
+                          : <ShoppingCart size={17} aria-hidden="true" />}
                       </button>
                     </div>}
                   </div>
@@ -1565,7 +1542,8 @@ function LandingPage() {
           <div className="mt-6 flex flex-col gap-4 rounded-[20px] border border-red-100 bg-white/80 p-4 shadow-[0_12px_30px_rgba(15,23,42,0.06)] backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between">
             <label className="flex items-center gap-3 text-sm font-medium text-slate-600">
               <span>Items per page</span>
-              <select
+              <CustomerDropdown
+                ariaLabel="Items per page"
                 value={productsPerPage}
                 onChange={(event) => {
                   setProductsPerPage(Number(event.target.value));
@@ -1577,7 +1555,7 @@ function LandingPage() {
                 <option value={8}>8</option>
                 <option value={12}>12</option>
                 <option value={16}>16</option>
-              </select>
+              </CustomerDropdown>
             </label>
             <p className="text-center text-sm font-medium text-slate-600">
               Showing {productPageStart + 1}-{Math.min(productPageStart + productsPerPage, visibleProducts.length)} of {visibleProducts.length}
@@ -1751,21 +1729,21 @@ function LandingPage() {
                 {Array.isArray(selectedProduct.blade_glass_types) && selectedProduct.blade_glass_types.length > 0 && (
                   <label className="min-w-0">
                     <span className="mb-1 block text-[9px] font-bold uppercase tracking-wider text-slate-500">Glass type</span>
-                    <select
+                    <CustomerDropdown
                       value={productEstimatorForm.blade_glass_type}
                       onChange={(event) => setProductEstimatorForm((current) => ({ ...current, blade_glass_type: event.target.value }))}
                       className="h-10 w-full rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-900 outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/15"
                     >
                       {selectedProduct.blade_glass_types.map((glass) => (
-                        <option key={glass.name} value={glass.name}>{glass.name} — {formatCurrency(glass.price_per_blade)} / blade</option>
+                        <option key={glass.name} value={glass.name}>{glass.name} — <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(glass.price_per_blade)}</span> / blade</option>
                       ))}
-                    </select>
+                    </CustomerDropdown>
                   </label>
                 )}
                 {selectedProduct.sell_with_frame && selectedProduct.sell_blades_only !== false && (
                   <label className="min-w-0">
                     <span className="mb-1 block text-[9px] font-bold uppercase tracking-wider text-slate-500">Sold as</span>
-                    <select
+                    <CustomerDropdown
                       value={productEstimatorForm.custom_frame_size ? "custom_frame" : productEstimatorForm.sale_mode === "frame" ? `frame:${productEstimatorForm.frame_type}` : "blades_only"}
                       onChange={(event) => {
                         const value = event.target.value;
@@ -1785,16 +1763,16 @@ function LandingPage() {
                     >
                       <option value="blades_only">Blades only</option>
                       {(selectedProduct.blade_frame_types || []).map((frame) => (
-                        <option key={frame.name} value={`frame:${frame.name}`}>{frame.name} — {Number(frame.blade_count) || 0} blades + {formatCurrency(frame.price)}</option>
+                        <option key={frame.name} value={`frame:${frame.name}`}>{frame.name} — {Number(frame.blade_count) || 0} blades + <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(frame.price)}</span></option>
                       ))}
-                      {selectedProduct.allow_custom_frame_size && <option value="custom_frame">Custom frame — {formatCurrency(selectedProduct.custom_frame_price)}</option>}
-                    </select>
+                      {selectedProduct.allow_custom_frame_size && <option value="custom_frame">Custom frame — <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(selectedProduct.custom_frame_price)}</span></option>}
+                    </CustomerDropdown>
                   </label>
                 )}
                 {productEstimatorForm.sale_mode === "frame" && !productEstimatorForm.custom_frame_size && (selectedProduct.blade_frame_types || []).length > 0 && (
                   <label className="min-w-0">
                     <span className="mb-1 block text-[9px] font-bold uppercase tracking-wider text-slate-500">Frame type</span>
-                    <select
+                    <CustomerDropdown
                       value={productEstimatorForm.frame_type}
                       onChange={(event) => {
                         const frame = selectedProduct.blade_frame_types.find((item) => item.name === event.target.value);
@@ -1804,7 +1782,7 @@ function LandingPage() {
                       className="h-10 w-full rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-900 outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/15"
                     >
                       {selectedProduct.blade_frame_types.map((frame) => <option key={frame.name} value={frame.name}>{frame.name} — {Number(frame.blade_count) || 0} blades</option>)}
-                    </select>
+                    </CustomerDropdown>
                   </label>
                 )}
                 <label className="min-w-0">
@@ -1862,7 +1840,7 @@ function LandingPage() {
               </label>
               <label className="col-span-3 min-w-0 sm:col-span-1">
                 <span className="mb-1 block text-[9px] font-bold uppercase tracking-wider text-slate-500">Unit</span>
-                <select
+                <CustomerDropdown
                   value={productEstimatorForm.unit}
                   onChange={(event) => setProductEstimatorForm((current) => ({ ...current, unit: event.target.value }))}
                   className="h-10 w-full rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-900 outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/15"
@@ -1870,7 +1848,7 @@ function LandingPage() {
                   <option value="in">in</option>
                   <option value="cm">cm</option>
                   <option value="m">m</option>
-                </select>
+                </CustomerDropdown>
               </label>
             </div>
             )}
@@ -2132,16 +2110,16 @@ function LandingPage() {
             <div className="mt-5 grid grid-cols-2 gap-2.5 rounded-2xl border border-slate-200 bg-slate-50/80 p-3 sm:grid-cols-4 sm:gap-3 sm:p-4">
               <div className="min-w-0 rounded-xl border border-slate-200/80 bg-white p-3">
                 <p className="text-[9px] font-extrabold uppercase tracking-[0.12em] text-slate-500">Grand Total</p>
-                <p className="mt-1.5 text-base font-black text-red-700 sm:text-lg">{formatCurrency(trackingPaymentSummary.totalAmount)}</p>
+                <p className="mt-1.5 text-base font-black text-red-700 sm:text-lg"><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(trackingPaymentSummary.totalAmount)}</span></p>
               </div>
               <div className="min-w-0 rounded-xl border border-emerald-100 bg-white p-3">
                 <p className="text-[9px] font-extrabold uppercase tracking-[0.12em] text-slate-500">Amount Paid</p>
-                <p className="mt-1.5 text-base font-black text-emerald-600 sm:text-lg">{formatCurrency(trackingPaymentSummary.paidAmount)}</p>
-                <p className="mt-1 text-[9px] leading-4 text-slate-500">Required downpayment: {formatCurrency(trackingPaymentSummary.requiredAmount)}</p>
+                <p className="mt-1.5 text-base font-black text-emerald-600 sm:text-lg"><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(trackingPaymentSummary.paidAmount)}</span></p>
+                <p className="mt-1 text-[9px] leading-4 text-slate-500">Required downpayment: <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(trackingPaymentSummary.requiredAmount)}</span></p>
               </div>
               <div className="min-w-0 rounded-xl border border-slate-200/80 bg-white p-3">
                 <p className="text-[9px] font-extrabold uppercase tracking-[0.12em] text-slate-500">Balance</p>
-                <p className="mt-1.5 text-base font-black text-slate-900 sm:text-lg">{formatCurrency(trackingPaymentSummary.remainingAmount)}</p>
+                <p className="mt-1.5 text-base font-black text-slate-900 sm:text-lg"><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(trackingPaymentSummary.remainingAmount)}</span></p>
               </div>
               <div className="min-w-0 rounded-xl border border-slate-200/80 bg-white p-3">
                 <p className="text-[9px] font-extrabold uppercase tracking-[0.12em] text-slate-500">Payment Status</p>
@@ -2207,7 +2185,7 @@ function LandingPage() {
                       <p className="break-words text-sm font-bold text-slate-900">{itemName}</p>
                       <p className="mt-0.5 text-xs text-slate-500">Qty: {itemQty}</p>
                     </div>
-                    <span className="shrink-0 text-sm font-bold text-slate-900">{formatCurrency(itemTotal)}</span>
+                    <span className="shrink-0 text-sm font-bold text-slate-900"><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(itemTotal)}</span></span>
                   </div>
                 );
               })}
@@ -2220,7 +2198,7 @@ function LandingPage() {
               </div>
               <div className="text-right">
                 <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Total</p>
-                <p className="mt-1 text-2xl font-black leading-tight text-red-700">{formatCurrency(getFinalProjectCost(trackingResult))}</p>
+                <p className="mt-1 text-2xl font-black leading-tight text-red-700"><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(getFinalProjectCost(trackingResult))}</span></p>
               </div>
             </div>
           </aside>

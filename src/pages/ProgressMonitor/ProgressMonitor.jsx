@@ -1,3 +1,4 @@
+import CustomerDropdown from "@/components/CustomerDropdown";
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import {
@@ -6,17 +7,17 @@ import {
   Play,
 } from "lucide-react";
 
-import { getAdminOrders, updateOrderProgress, updateOrderStatus, updateProjectDelay, updateProtectedProjectNotes, addProgressActivityNote } from "@/api/orders";
+import { getAdminOrders, updateOrderProgress, updateProjectDelay, updateProtectedProjectNotes, addProgressActivityNote } from "@/api/orders";
 import { subscribeToRealtime } from "@/lib/realtimeEvents";
 import { formatDateToMMMDDYYYY } from "@/lib/dateUtils";
 import { getProgressColor } from "@/lib/utils";
 import { isProgressMonitorEligibleOrder } from "@/lib/orderWorkflow";
-import toast, { Toaster } from "react-hot-toast";
+import { isRecordedCancelledTransaction } from "@/lib/transactionAcceptance";
+import toast from "react-hot-toast";
+import AppToaster from "@/components/AppToaster";
 import { uploadFiles } from "@/api/uploads";
 import ProgressViewModal from "../../components/ProgressViewModal";
 import ProgressEditModal from "../../components/ProgressEditModal";
-import ProfileAvatar from "../../components/ui/ProfileAvatar";
-import { useIsMobile } from "@/hooks/useIsMobile";
 
 import Sidebar from "../../components/layout/Sidebar";
 import Navbar from "../../components/layout/Navbar";
@@ -25,6 +26,13 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useAdminTheme } from "@/contexts/AdminThemeContext";
 import { recordActivity } from "@/lib/activityLog";
 import { calculateProjectProgressFromStages, isInstallationDeadlineOverdue } from "@/lib/orderTimeline";
+
+const formatProgressScheduleTime = (value) => {
+  const match = String(value || "").match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return "";
+  const hour = Number(match[1]);
+  return `${hour % 12 || 12}:${match[2]} ${hour >= 12 ? "PM" : "AM"}`;
+};
 
 const normalizeStageStatus = (value) =>
   String(value ?? "")
@@ -112,6 +120,7 @@ export const formatOrderStatus = (status, contractStatus) => {
 };
 
 export const getProjectStatus = (order, stages = order?.progress_stages ?? []) => {
+  if (String(order?.status || "").toLowerCase() === "cancelled") return "Cancelled";
   if (Array.isArray(stages) && stages.length > 0) {
     const allCompleted = stages.every((stage) => {
       const stageCompleted = stage.completed === true || ["done", "completed"].includes(normalizeStageStatus(stage.status));
@@ -180,18 +189,19 @@ const getStageProgressColor = (project) => {
 
 const getProjectStatusBadgeClasses = (status, darkMode = false) => {
   const statusClasses = {
-    pending: darkMode ? "border-slate-600 bg-slate-800 text-slate-200" : "border-slate-300 bg-slate-100 text-slate-700",
+    pending: darkMode ? "border-amber-700 bg-amber-950/50 text-amber-200" : "border-amber-200 bg-amber-100 text-amber-800",
     cutting: darkMode ? "border-orange-800 bg-orange-950/50 text-orange-200" : "border-orange-200 bg-orange-100 text-orange-800",
     assembly: darkMode ? "border-blue-800 bg-blue-950/50 text-blue-200" : "border-blue-200 bg-blue-100 text-blue-800",
     fabrication: darkMode ? "border-amber-800 bg-amber-950/50 text-amber-200" : "border-amber-200 bg-amber-100 text-amber-800",
     installation: darkMode ? "border-sky-800 bg-sky-950/50 text-sky-200" : "border-sky-200 bg-sky-100 text-sky-800",
     completed: darkMode ? "border-emerald-800 bg-emerald-950/50 text-emerald-200" : "border-emerald-200 bg-emerald-100 text-emerald-800",
     delayed: darkMode ? "border-rose-800 bg-rose-950/50 text-rose-200" : "border-rose-200 bg-rose-100 text-rose-800",
+    "in-progress": darkMode ? "border-blue-800 bg-blue-950/50 text-blue-200" : "border-blue-200 bg-blue-100 text-blue-800",
     accepted: darkMode ? "border-violet-800 bg-violet-950/50 text-violet-200" : "border-violet-200 bg-violet-100 text-violet-800",
     cancelled: darkMode ? "border-rose-800 bg-rose-950/50 text-rose-200" : "border-rose-200 bg-rose-100 text-rose-800",
   };
 
-  return statusClasses[normalizeStageStatus(status)] || "border-slate-300 bg-slate-100 text-slate-700";
+  return statusClasses[normalizeStageStatus(status)] || (darkMode ? "border-slate-600 bg-slate-800 text-slate-200" : "border-slate-300 bg-slate-100 text-slate-700");
 };
 
 const mapProgressFromStatus = (status, progress) => {
@@ -212,6 +222,7 @@ const mapProgressFromStatus = (status, progress) => {
 
 const formatClientType = (order) => {
   const rawType = (order.acceptance_method || order.order_type || "online_order").toString();
+  if (["online", "online_order", "website", "website_order"].includes(rawType.trim().toLowerCase())) return "Website";
   return rawType
     .replace(/_/g, " ")
     .replace(/\b\w/g, (c) => c.toUpperCase());
@@ -245,6 +256,7 @@ const buildProjectRows = (order) => {
     return {
       id: item?._id || item?.id || `${orderId}-item-${index}`,
       orderId,
+      reference: order.tracking || String(orderId),
       client: customerName,
       clientEmail: order.customer?.email || order.customer_email || "",
       product: itemName,
@@ -253,6 +265,7 @@ const buildProjectRows = (order) => {
         (order.inspection_status && order.inspection_status !== "pending"
           ? order.inspection_status.charAt(0).toUpperCase() + order.inspection_status.slice(1)
           : "TBD"),
+      inspection_time: order.inspection_time || "",
       installation: formatDateToMMMDDYYYY(order.estimated_installation_date) || "TBD",
       estimated_installation_date: order.estimated_installation_date,
       estimated_installation_time: order.estimated_installation_time || "",
@@ -266,6 +279,11 @@ const buildProjectRows = (order) => {
       stages,
       status: getProjectStatus(order, stages),
       statusKey: order.status,
+      previousProjectStatus: order.cancellation_previous_status || "",
+      cancellationDate: order.cancellation_date || null,
+      cancellationReason: order.cancellation_reason || "",
+      cancelledBy: order.cancelled_by_name || "",
+      previousProgressStage: getPreviousProgressStageName(stages),
       contract_status: order.contract_status,
       payment_status: order.payment_status,
       inspection_status: order.inspection_status,
@@ -288,6 +306,12 @@ const getCurrentStageName = (stages = []) => {
   return next?.name || (list.length && list.every((stage) => stage.completed) ? "All stages complete" : "Not started");
 };
 
+const getPreviousProgressStageName = (stages = []) => {
+  const list = Array.isArray(stages) ? stages : [];
+  const reachedStages = list.filter((stage) => stage.completed === true || !["", "pending", "not_started"].includes(String(stage.status || "").trim().toLowerCase().replace(/[\s-]+/g, "_")));
+  return reachedStages.at(-1)?.name || getCurrentStageName(list);
+};
+
 const isSameProjectRow = (currentProject, targetProject) => {
   if (!currentProject || !targetProject) return false;
 
@@ -302,7 +326,6 @@ const isSameProjectRow = (currentProject, targetProject) => {
 };
 
 function ProgressMonitor() {
-  const isMobile = useIsMobile();
   const { user } = useAuth();
   const { darkMode } = useAdminTheme();
   const canUploadProgressPhoto = user?.role !== "skilled_worker" || (
@@ -347,8 +370,6 @@ function ProgressMonitor() {
     showEditModalRef.current = showEditModal;
   }, [showEditModal]);
 
-  const [cancelConfirm, setCancelConfirm] = useState({ open: false, id: null });
-  const [cancellingId, setCancellingId] = useState(null);
   const [startingProjectId, setStartingProjectId] = useState(null);
   const [startConfirm, setStartConfirm] = useState(null);
 
@@ -379,24 +400,34 @@ function ProgressMonitor() {
     "Completed",
     "Delayed",
     "Added stages",
+    "Cancelled Projects",
   ];
+  const activeProjectList = projectList.filter((project) => String(project.statusKey || "").toLowerCase() !== "cancelled");
+  const cancelledProjectList = projectList.filter((project) => String(project.statusKey || "").toLowerCase() === "cancelled");
   const getProjectStatusCount = (status) => status === "Added stages"
-    ? projectList.filter((project) => hasAddedStages(project.stages)).length
+    ? activeProjectList.filter((project) => hasAddedStages(project.stages)).length
+    : status === "Cancelled Projects"
+      ? cancelledProjectList.length
     : status === "All"
-      ? projectList.length
-      : projectList.filter((project) => project.status === status).length;
+      ? activeProjectList.length
+      : activeProjectList.filter((project) => project.status === status).length;
+
+  const showCancelledProjects = statusFilter === "Cancelled Projects";
 
   const filteredProjects =
-    projectList.filter((project) => {
+    (showCancelledProjects ? cancelledProjectList : activeProjectList).filter((project) => {
       const matchSearch =
         project.client
           .toLowerCase()
           .includes(search.toLowerCase()) ||
         project.product
           .toLowerCase()
-          .includes(search.toLowerCase());
+          .includes(search.toLowerCase()) ||
+        (project.reference || "").toLowerCase().includes(search.toLowerCase()) ||
+        (project.cancellationReason || "").toLowerCase().includes(search.toLowerCase()) ||
+        (project.cancelledBy || "").toLowerCase().includes(search.toLowerCase());
 
-      const matchStatus =
+      const matchStatus = showCancelledProjects ? true :
         statusFilter === "Added stages"
           ? hasAddedStages(project.stages)
           : statusFilter === "All"
@@ -414,16 +445,13 @@ function ProgressMonitor() {
   const firstIndex =
     lastIndex - rowsPerPage;
 
-  const currentProjects = isMobile
-    ? filteredProjects
-    : filteredProjects.slice(
-      firstIndex,
-      lastIndex
-    );
+  const currentProjects = filteredProjects.slice(firstIndex, lastIndex);
 
   const totalPages = Math.max(1, Math.ceil(
     filteredProjects.length / rowsPerPage
   ));
+
+  const activeProjectCount = activeProjectList.length;
 
   useEffect(() => {
     let active = true;
@@ -441,7 +469,8 @@ function ProgressMonitor() {
         if (!active) return;
         const orders = response.orders || [];
         const projects = orders
-          .filter(isProgressMonitorEligibleOrder)
+          .filter((order) => isProgressMonitorEligibleOrder(order)
+            && (String(order.status || "").toLowerCase() !== "cancelled" || isRecordedCancelledTransaction(order)))
           .flatMap((order) => buildProjectRows(order));
         setProjectList(projects);
         if (!showEditModalRef.current && selectedProjectRef.current) {
@@ -529,6 +558,7 @@ function ProgressMonitor() {
             payment_status: savedOrder.payment_status,
             inspection_status: savedOrder.inspection_status,
             inspection_date: savedOrder.inspection_date,
+            inspection_time: savedOrder.inspection_time || "",
             installation: formatDateToMMMDDYYYY(savedOrder.estimated_installation_date) || "TBD",
             estimated_installation_date: savedOrder.estimated_installation_date,
             estimated_installation_time: savedOrder.estimated_installation_time || "",
@@ -672,6 +702,7 @@ function ProgressMonitor() {
         (savedOrder.inspection_status && savedOrder.inspection_status !== "pending"
           ? savedOrder.inspection_status.charAt(0).toUpperCase() + savedOrder.inspection_status.slice(1)
           : "TBD"),
+      inspection_time: savedOrder.inspection_time || "",
       installation: formatDateToMMMDDYYYY(savedOrder.estimated_installation_date) || "TBD",
       estimated_installation_date: savedOrder.estimated_installation_date,
       estimated_installation_time: savedOrder.estimated_installation_time || "",
@@ -700,156 +731,9 @@ function ProgressMonitor() {
     setSelectedProject(updatedProject);
   };
 
-  const closeCancelModal = () => setCancelConfirm({ open: false, id: null });
-
-  const handleConfirmCancel = async () => {
-    const orderId = cancelConfirm.id;
-    setCancelConfirm({ open: false, id: null });
-    if (!orderId) return;
-    const prev = projectList.find((p) => (p.orderId || p.id) === orderId && p.itemIndex === selectedProject?.itemIndex);
-    const prevStatus = prev?.statusKey || prev?.status || null;
-    try {
-      setCancellingId(orderId);
-      const res = await updateOrderStatus(orderId, { status: "cancelled" });
-      recordActivity(user, `Cancelled project ${orderId}.`, "Progress Monitor");
-      if (res && res.order) {
-        const saved = res.order;
-        setProjectList((prevList) =>
-          prevList.map((p) =>
-            isSameProjectRow(p, prev)
-              ? {
-                  ...p,
-                  rawOrder: saved,
-                  statusKey: saved.status,
-                  contract_status: saved.contract_status,
-                  payment_status: saved.payment_status,
-                  inspection_status: saved.inspection_status,
-                  inspection_date: saved.inspection_date,
-                  createdAt: saved.createdAt,
-                  updatedAt: saved.updatedAt,
-                  contract_terms: saved.contract_terms,
-                  progress: mapProgressFromStatus(saved.status, saved.progress),
-                  stages: saved.progress_stages || [],
-                  progress_stages: saved.progress_stages || [],
-                  status: getProjectStatus(saved),
-                }
-              : p
-          )
-        );
-
-        toast((t) => (
-          <div className="flex items-center justify-between gap-4">
-            <div>Order cancelled</div>
-            <div className="flex items-center gap-2">
-              {prevStatus && (
-                <button
-                  onClick={async () => {
-                    toast.dismiss(t.id);
-                    try {
-                      const undoRes = await updateOrderStatus(orderId, { status: prevStatus });
-                      if (undoRes && undoRes.order) {
-                        const restored = undoRes.order;
-                        setProjectList((prevList) =>
-                          prevList.map((p) =>
-                            p.id === orderId
-                              ? {
-                                  ...p,
-                                  rawOrder: restored,
-                                  statusKey: restored.status,
-                                  contract_status: restored.contract_status,
-                                  payment_status: restored.payment_status,
-                                  inspection_status: restored.inspection_status,
-                                  inspection_date: restored.inspection_date,
-                                  createdAt: restored.createdAt,
-                                  updatedAt: restored.updatedAt,
-                                  contract_terms: restored.contract_terms,
-                                  progress: mapProgressFromStatus(restored.status, restored.progress),
-                                  stages: restored.progress_stages || [],
-                                  progress_stages: restored.progress_stages || [],
-                                  status: getProjectStatus(restored),
-                                }
-                              : p
-                          )
-                        );
-                        toast.success("Order restored");
-                      }
-                    } catch (e) {
-                      console.error("Failed to restore order", e);
-                      toast.error("Failed to restore order");
-                    }
-                  }}
-                  className="text-sm text-blue-600"
-                >
-                  Undo
-                </button>
-              )}
-            </div>
-          </div>
-        ), { duration: 6000 });
-      } else {
-        // fallback: mark locally
-        setProjectList((prevList) => prevList.map((p) => (isSameProjectRow(p, prev) ? { ...p, status: "Cancelled", statusKey: "cancelled" } : p)));
-        toast((t) => (
-          <div className="flex items-center justify-between gap-4">
-            <div>Order cancelled</div>
-            <div className="flex items-center gap-2">
-              {prevStatus && (
-                <button
-                  onClick={async () => {
-                    toast.dismiss(t.id);
-                    try {
-                      const undoRes = await updateOrderStatus(orderId, { status: prevStatus });
-                      if (undoRes && undoRes.order) {
-                        const restored = undoRes.order;
-                        setProjectList((prevList) =>
-                          prevList.map((p) =>
-                            (p.orderId || p.id) === orderId
-                              ? {
-                                  ...p,
-                                  rawOrder: restored,
-                                  statusKey: restored.status,
-                                  contract_status: restored.contract_status,
-                                  payment_status: restored.payment_status,
-                                  inspection_status: restored.inspection_status,
-                                  inspection_date: restored.inspection_date,
-                                  createdAt: restored.createdAt,
-                                  updatedAt: restored.updatedAt,
-                                  contract_terms: restored.contract_terms,
-                                  progress: mapProgressFromStatus(restored.status, restored.progress),
-                                  stages: restored.progress_stages || [],
-                                  progress_stages: restored.progress_stages || [],
-                                  status: getProjectStatus(restored),
-                                }
-                              : p
-                          )
-                        );
-                        toast.success("Order restored");
-                      }
-                    } catch (e) {
-                      console.error("Failed to restore order", e);
-                      toast.error("Failed to restore order");
-                    }
-                  }}
-                  className="text-sm text-blue-600"
-                >
-                  Undo
-                </button>
-              )}
-            </div>
-          </div>
-        ), { duration: 6000 });
-      }
-    } catch (err) {
-      console.error("Failed to cancel order", err);
-      toast.error(err?.data?.message || err?.message || "Failed to cancel order.");
-    } finally {
-      setCancellingId(null);
-    }
-  };
-
   return (
     <div className={`flex h-screen overflow-hidden ${darkMode ? "bg-[#07111f] text-slate-100" : "bg-gray-100 text-slate-900"}`}>
-      <Toaster position="bottom-right" />
+      <AppToaster />
       <Sidebar isOpen={isSidebarOpen} onToggle={() => setIsSidebarOpen((open) => !open)} />
 
       <div className="flex-1 min-h-0 flex flex-col">
@@ -862,9 +746,9 @@ function ProgressMonitor() {
             description="Monitor fabrication and installation progress."
             statsClassName="grid-cols-1 lg:grid-cols-3 gap-2 sm:gap-3"
             stats={[
-              { label: "Total Projects", value: projectList.length, color: "text-blue-200" },
-              { label: "In Progress", value: projectList.filter((project) => project.progress < 100 && project.status !== "Cancelled").length, color: "text-amber-200" },
-              { label: "Completed", value: projectList.filter((project) => project.status === "Completed" || project.progress >= 100).length, color: "text-emerald-300" },
+              { label: "Total Projects", value: activeProjectCount, color: "text-blue-200" },
+              { label: "In Progress", value: activeProjectList.filter((project) => project.progress < 100).length, color: "text-amber-200" },
+              { label: "Completed", value: activeProjectList.filter((project) => project.status === "Completed").length, color: "text-emerald-300" },
             ]}
           />
 
@@ -891,7 +775,7 @@ function ProgressMonitor() {
             </div>
 
             <div className="mt-4 md:hidden">
-              <select
+              <CustomerDropdown darkMode={darkMode}
                 aria-label="Project status category"
                 value={statusFilter}
                 onChange={(event) => {
@@ -903,7 +787,7 @@ function ProgressMonitor() {
                 {projectStatusOptions.map((status) => (
                 <option key={status} value={status}>{status} ({getProjectStatusCount(status)})</option>
                 ))}
-              </select>
+              </CustomerDropdown>
             </div>
 
             <div className="mt-4 hidden max-w-full flex-wrap gap-1.5 md:flex" role="tablist" aria-label="Filter projects by status">
@@ -935,33 +819,66 @@ function ProgressMonitor() {
             <div className="hidden md:block">
               <div className="overflow-x-auto">
                 <table className="w-full">
-                  <thead className={darkMode ? "bg-[#10243a] text-slate-300" : "bg-gray-50 text-slate-600"}>
-                    <tr>
-                      <th className="p-4 text-left">Client</th>
-                      <th className="p-4 text-left">Client Type</th>
-                      <th className="p-4 text-left">Product</th>
-                      <th className="p-4 text-left">Site Inspection</th>
-                      <th className="p-4 text-left">Est. Installation</th>
-                      <th className="p-4 text-left">Progress</th>
-                      {statusFilter === "All" && <th className="p-4 text-left">Status</th>}
-                      <th className="p-4 pr-6 text-right">Actions</th>
-                    </tr>
+                  <thead className={`text-sm font-bold ${darkMode ? "bg-[#10243a] text-slate-200" : "bg-gray-50 text-slate-700"}`}>
+                    {showCancelledProjects ? (
+                      <tr>
+                        <th className="p-4 text-left">#</th>
+                        <th className="p-4 text-left">Customer Name</th>
+                        <th className="p-4 text-left">Project Description</th>
+                        <th className="p-4 text-left">Previous Progress Stage</th>
+                        <th className="p-4 text-left">Cancellation Date</th>
+                        <th className="p-4 text-left">Cancelled By</th>
+                        <th className="p-4 text-left">Status</th>
+                        <th className="p-4 pr-6 text-right">Actions</th>
+                      </tr>
+                    ) : (
+                      <tr>
+                        <th className="p-4 text-left">Client</th>
+                        <th className="p-4 text-left">Client Type</th>
+                        <th className="p-4 text-left">Product</th>
+                        <th className="p-4 text-left">Site Inspection</th>
+                        <th className="p-4 text-left">Est. Installation</th>
+                        <th className="p-4 text-left">Progress</th>
+                        {statusFilter === "All" && <th className="p-4 text-left">Status</th>}
+                        <th className="p-4 pr-6 text-right">Actions</th>
+                      </tr>
+                    )}
                   </thead>
                   <tbody>
                     {projectLoading && (
                       <tr>
-                        <td className={`p-6 text-center ${darkMode ? "text-slate-400" : "text-gray-500"}`} colSpan={statusFilter === "All" ? 8 : 7}>
+                        <td className={`p-6 text-center ${darkMode ? "text-slate-400" : "text-gray-500"}`} colSpan={showCancelledProjects ? 8 : statusFilter === "All" ? 8 : 7}>
                           Loading projects...
                         </td>
                       </tr>
                     )}
-                    {!projectLoading && currentProjects.map((project, index) => (
-                      <tr key={index} className={`border-t ${darkMode ? "border-slate-700 text-slate-200 hover:bg-slate-800/70" : "border-slate-200 text-slate-700 hover:bg-gray-50"}`}>
-                        <td className="p-4"><ProfileAvatar name={project.client} email={project.clientEmail} /></td>
-                        <td className="p-4">{project.clientType}</td>
+                    {!projectLoading && currentProjects.map((project, index) => showCancelledProjects ? (
+                      <tr key={project.id} className={`border-t ${darkMode ? "border-slate-700 text-slate-200 hover:bg-slate-800/70" : "border-slate-200 text-slate-700 hover:bg-gray-50"}`}>
+                        <td className="p-4 text-sm tabular-nums">{(currentPage - 1) * rowsPerPage + index + 1}</td>
+                        <td className="p-4 font-semibold">{project.client}</td>
                         <td className="p-4">{project.product}</td>
-                        <td className="p-4">{project.inspection}</td>
-                        <td className="p-4"><span>{project.installation}</span>{project.project_delay?.is_delayed && <div className="mt-1"><span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-900" title={project.project_delay.reason}>Delayed</span><p className="mt-1 max-w-48 text-xs text-amber-800">{project.project_delay.reason}</p></div>}</td>
+                        <td className="p-4">{project.previousProgressStage}</td>
+                        <td className="p-4">{project.cancellationDate ? formatDateToMMMDDYYYY(project.cancellationDate) : "—"}</td>
+                        <td className="p-4">{project.cancelledBy || "—"}</td>
+                        <td className="p-4"><span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${getProjectStatusBadgeClasses("Cancelled", darkMode)}`}>Cancelled</span></td>
+                        <td className="py-3 pl-4 pr-6">
+                          <div className="flex justify-end">
+                            <button onClick={() => { setSelectedProject(project); setShowViewModal(true); }} className={`rounded-lg p-2 ${darkMode ? "bg-blue-950/60 text-blue-300 hover:bg-blue-900/70" : "bg-blue-100 text-blue-600"}`} aria-label={`View ${project.product} progress history`} title="View project history">
+                              <Search size={20} strokeWidth={2.6} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : (
+                      <tr key={index} className={`border-t ${darkMode ? "border-slate-700 text-slate-200 hover:bg-slate-800/70" : "border-slate-200 text-slate-700 hover:bg-gray-50"}`}>
+                        <td className="p-4 text-[15px]">
+                          <div className={`font-semibold ${darkMode ? "text-slate-100" : "text-slate-900"}`}>{project.client}</div>
+                          {project.clientEmail && <div className={`mt-0.5 truncate text-[13px] font-medium ${darkMode ? "text-slate-300" : "text-slate-600"}`}>{project.clientEmail}</div>}
+                        </td>
+                        <td className="p-4 text-[15px] font-medium">{project.clientType}</td>
+                        <td className="p-4 text-[15px] font-medium">{project.product}</td>
+                        <td className="p-4 text-[15px] font-medium"><span>{project.inspection}</span>{formatProgressScheduleTime(project.inspection_time) && <span className={`mt-1 block text-[13px] font-medium ${darkMode ? "text-slate-300" : "text-slate-600"}`}>{formatProgressScheduleTime(project.inspection_time)}</span>}</td>
+                        <td className="p-4 text-[15px] font-medium"><span>{project.installation}</span>{formatProgressScheduleTime(project.estimated_installation_time) && <span className={`mt-1 block text-[13px] font-medium ${darkMode ? "text-slate-300" : "text-slate-600"}`}>{formatProgressScheduleTime(project.estimated_installation_time)}</span>}{project.project_delay?.is_delayed && <div className="mt-1"><span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-900" title={project.project_delay.reason}>Delayed</span><p className="mt-1 max-w-48 text-xs text-amber-800">{project.project_delay.reason}</p></div>}</td>
                         <td className="p-4">
                           <div className={`h-3 w-full rounded-full ${darkMode ? "bg-slate-700" : "bg-gray-200"}`}>
                             {(() => {
@@ -972,10 +889,10 @@ function ProgressMonitor() {
                             })()}
                           </div>
                           <span className="font-semibold text-sm">{project.progress}%</span>
-                          <p className={`mt-1 text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Current: {getCurrentStageName(project.stages)}</p>
+                          <p className={`mt-1 text-[13px] font-medium ${darkMode ? "text-slate-300" : "text-slate-600"}`}>Current: {getCurrentStageName(project.stages)}</p>
                           {project.isOverdue && <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold ${darkMode ? "bg-rose-950/60 text-rose-200" : "bg-rose-100 text-rose-800"}`}>Project Overdue</span>}
                         </td>
-                        {statusFilter === "All" && <td className="p-4"><span className={`rounded-full px-3 py-1 ${darkMode ? "bg-slate-800 text-slate-200" : "bg-gray-100 text-slate-700"}`}>{project.status}</span></td>}
+                        {statusFilter === "All" && <td className="p-4"><span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${getProjectStatusBadgeClasses(project.status, darkMode)}`}>{project.status}</span></td>}
                         <td className="py-3 pl-4 pr-6">
                           <div className="flex justify-end gap-2.5">
                             <button onClick={() => { setSelectedProject(project); setShowViewModal(true); }} className={`rounded-lg p-2 ${darkMode ? "bg-blue-950/60 text-blue-300 hover:bg-blue-900/70" : "bg-blue-100 text-blue-600"}`} aria-label={`View ${project.product} progress`}>
@@ -985,18 +902,18 @@ function ProgressMonitor() {
                               <button onClick={() => setStartConfirm(project)} disabled={startingProjectId === project.id} className={`rounded-lg p-2 disabled:cursor-wait disabled:opacity-50 ${darkMode ? "bg-emerald-950/60 text-emerald-300 hover:bg-emerald-900/70" : "bg-emerald-100 text-emerald-700"}`} title="Start project at Cutting" aria-label={`Start ${project.product} at Cutting`}>
                                 <Play size={18} />
                               </button>
-                            ) : (
+                            ) : String(project.status).toLowerCase() !== "completed" ? (
                               <button onClick={() => { setSelectedProject(project); setShowEditModal(true); }} className={`rounded-lg p-2 ${darkMode ? "bg-amber-950/60 text-amber-300 hover:bg-amber-900/70" : "bg-yellow-100 text-yellow-600"}`}>
                                 <Pencil size={18} />
                               </button>
-                            )}
+                            ) : null}
                           </div>
                         </td>
                       </tr>
                     ))}
                     {!projectLoading && currentProjects.length === 0 && (
                       <tr>
-                        <td className={`p-6 text-center ${darkMode ? "text-slate-400" : "text-gray-500"}`} colSpan={8}>No projects found.</td>
+                        <td className={`p-6 text-center ${darkMode ? "text-slate-400" : "text-gray-500"}`} colSpan={showCancelledProjects ? 10 : 8}>No projects found.</td>
                       </tr>
                     )}
                   </tbody>
@@ -1009,7 +926,28 @@ function ProgressMonitor() {
                 <div className={`rounded-2xl border border-dashed p-6 text-center text-sm ${darkMode ? "border-slate-700 text-slate-400" : "border-gray-200 text-gray-500"}`}>Loading projects...</div>
               ) : currentProjects.length === 0 ? (
                 <div className={`rounded-2xl border border-dashed p-6 text-center text-sm ${darkMode ? "border-slate-700 text-slate-400" : "border-gray-200 text-gray-500"}`}>No projects found.</div>
-              ) : currentProjects.map((project) => (
+              ) : currentProjects.map((project, index) => showCancelledProjects ? (
+                <article key={project.id || `${project.orderId}-${project.itemIndex}`} className={`rounded-2xl border p-4 ${darkMode ? "border-slate-700 bg-[#10243a]" : "border-gray-200 bg-gray-50"}`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className={`text-sm font-bold ${darkMode ? "text-slate-100" : "text-gray-900"}`}>{project.client}</p>
+                    </div>
+                    <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-semibold ${getProjectStatusBadgeClasses("Cancelled", darkMode)}`}>Cancelled</span>
+                  </div>
+                  <p className={`mt-3 text-sm font-semibold ${darkMode ? "text-slate-200" : "text-slate-800"}`}>{project.product}</p>
+                  <dl className={`mt-3 grid grid-cols-2 gap-3 text-xs ${darkMode ? "text-slate-300" : "text-gray-600"}`}>
+                    <div><dt className="text-[10px] uppercase tracking-wide opacity-70">Previous Progress Stage</dt><dd className="mt-1 font-medium">{project.previousProgressStage}</dd></div>
+                    <div><dt className="text-[10px] uppercase tracking-wide opacity-70">Cancellation Date</dt><dd className="mt-1 font-medium">{project.cancellationDate ? formatDateToMMMDDYYYY(project.cancellationDate) : "—"}</dd></div>
+                    <div><dt className="text-[10px] uppercase tracking-wide opacity-70">Cancelled By</dt><dd className="mt-1 font-medium">{project.cancelledBy || "—"}</dd></div>
+                    <div><dt className="text-[10px] uppercase tracking-wide opacity-70">#</dt><dd className="mt-1 font-medium">{(currentPage - 1) * rowsPerPage + index + 1}</dd></div>
+                  </dl>
+                  <div className="mt-3 flex justify-end">
+                    <button onClick={() => { setSelectedProject(project); setShowViewModal(true); }} className={`rounded-lg p-2 ${darkMode ? "bg-blue-950/60 text-blue-300 hover:bg-blue-900/70" : "bg-blue-100 text-blue-600"}`} aria-label={`View ${project.product} progress history`} title="View project history">
+                      <Search size={20} strokeWidth={2.6} />
+                    </button>
+                  </div>
+                </article>
+              ) : (
                 <div key={project.id || project.client + project.product} className={`rounded-2xl border p-3 ${darkMode ? "border-slate-700 bg-[#10243a]" : "border-gray-200 bg-gray-50"}`}>
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
@@ -1041,10 +979,12 @@ function ProgressMonitor() {
                     <div>
                       <p className={`text-[10px] uppercase tracking-wide ${darkMode ? "text-slate-500" : "text-gray-400"}`}>Inspection</p>
                       <p className={`mt-1 font-medium ${darkMode ? "text-slate-200" : "text-gray-700"}`}>{project.inspection}</p>
+                      {formatProgressScheduleTime(project.inspection_time) && <p className={`mt-1 text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>{formatProgressScheduleTime(project.inspection_time)}</p>}
                     </div>
                     <div>
                       <p className={`text-[10px] uppercase tracking-wide ${darkMode ? "text-slate-500" : "text-gray-400"}`}>Install</p>
                       <p className={`mt-1 font-medium ${darkMode ? "text-slate-200" : "text-gray-700"}`}>{project.installation}</p>
+                      {formatProgressScheduleTime(project.estimated_installation_time) && <p className={`mt-1 text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>{formatProgressScheduleTime(project.estimated_installation_time)}</p>}
                       {project.project_delay?.is_delayed && <><span className="mt-1 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-900">Delayed</span><p className="mt-1 text-[11px] text-amber-800 dark:text-amber-300">{project.project_delay.reason}</p></>}
                     </div>
                   </div>
@@ -1056,14 +996,22 @@ function ProgressMonitor() {
                       <button onClick={() => setStartConfirm(project)} disabled={startingProjectId === project.id} className={`rounded-lg p-2 disabled:cursor-wait disabled:opacity-50 ${darkMode ? "bg-emerald-950/60 text-emerald-300 hover:bg-emerald-900/70" : "bg-emerald-100 text-emerald-700"}`} title="Start project at Cutting" aria-label={`Start ${project.product} at Cutting`}>
                         <Play size={18} />
                       </button>
-                    ) : (
+                    ) : String(project.status).toLowerCase() !== "completed" ? (
                       <button onClick={() => { setSelectedProject(project); setShowEditModal(true); }} className={`rounded-lg p-2 ${darkMode ? "bg-amber-950/60 text-amber-300 hover:bg-amber-900/70" : "bg-yellow-100 text-yellow-600"}`}>
                         <Pencil size={18} />
                       </button>
-                    )}
+                    ) : null}
                   </div>
                 </div>
               ))}
+            </div>
+
+            <div className={`flex items-center justify-between gap-3 border-t p-3 text-xs md:hidden ${darkMode ? "border-slate-700 bg-[#10243a] text-slate-300" : "border-gray-200 bg-gray-50 text-slate-700"}`}>
+              <span>Page {currentPage} of {totalPages}</span>
+              <div className="flex gap-2">
+                <button type="button" disabled={currentPage === 1} onClick={() => setCurrentPage((page) => Math.max(1, page - 1))} className={`rounded-lg border px-3 py-2 font-semibold disabled:opacity-50 ${darkMode ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>Previous</button>
+                <button type="button" disabled={currentPage === totalPages} onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))} className={`rounded-lg border px-3 py-2 font-semibold disabled:opacity-50 ${darkMode ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>Next</button>
+              </div>
             </div>
 
             {/* PAGINATION */}
@@ -1131,23 +1079,7 @@ function ProgressMonitor() {
           )}
 
           {showEditModal && selectedProject && (
-            <ProgressEditModal project={selectedProject} onClose={() => setShowEditModal(false)} onSave={handleSave} canUploadProgressPhoto={canUploadProgressPhoto} canEditProtectedNotes={["admin", "super_admin"].includes(user?.role)} onProjectDelay={handleProjectDelay} onSaveProtectedNotes={handleProtectedNotes} onAddActivityNote={handleAddActivityNote} />
-          )}
-
-          {cancelConfirm.open && (
-            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-              <div className="absolute inset-0" />
-              <div className={`relative w-full max-w-md rounded-3xl p-6 shadow-lg ${darkMode ? "bg-[#132238] text-slate-100" : "bg-white text-slate-900"}`}>
-                <h2 className="text-2xl font-bold mb-2">Confirm Cancel</h2>
-                <p className={`mb-6 text-sm ${darkMode ? "text-slate-300" : "text-slate-600"}`}>Are you sure you want to cancel this project/order? This action will mark the order as cancelled.</p>
-                <div className="flex justify-end gap-3">
-                  <button onClick={closeCancelModal} className={`rounded-lg px-4 py-2 transition ${darkMode ? "bg-slate-800 text-slate-200 hover:bg-slate-700" : "bg-gray-100 text-slate-700 hover:bg-gray-200"}`}>Close</button>
-                  <button onClick={handleConfirmCancel} disabled={cancellingId === cancelConfirm.id} className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50">
-                    {cancellingId === cancelConfirm.id ? "Cancelling..." : "Confirm Cancel"}
-                  </button>
-                </div>
-              </div>
-            </div>
+            <ProgressEditModal darkMode={darkMode} project={selectedProject} onClose={() => setShowEditModal(false)} onSave={handleSave} canUploadProgressPhoto={canUploadProgressPhoto} canEditProtectedNotes={["admin", "super_admin"].includes(user?.role)} onProjectDelay={handleProjectDelay} onSaveProtectedNotes={handleProtectedNotes} onAddActivityNote={handleAddActivityNote} />
           )}
 
           {startConfirm && (

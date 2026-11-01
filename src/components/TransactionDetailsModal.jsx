@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+﻿import { useEffect, useRef, useState } from "react";
 import { XCircle } from "lucide-react";
 import { formatDateToMMMDDYYYY } from "@/lib/dateUtils";
 import { getPaymentSummary } from "@/pages/Transactions/paymentProofUtils";
 import { getAdminPaymentStatusLabel, getContractSignoffBadgeClassName, getPaymentStatusBadgeClassName, isAwaitingContractSignoff, statusBadgeBaseClassName } from "@/lib/statusBadgeStyles";
 import { getOrderRepairHistory } from "@/api/repairs";
 import { subscribeToRealtime } from "@/lib/realtimeEvents";
+import MediaPreviewModal from "@/components/MediaPreviewModal";
 
 const formatScheduleTime = (value) => {
   const match = String(value || "").match(/^(\d{2}):(\d{2})$/);
@@ -62,6 +63,7 @@ function TransactionDetailsModal({ order, onClose, onViewContract, scrollToWarra
   const [repairHistoryLoading, setRepairHistoryLoading] = useState(false);
   const [repairHistoryError, setRepairHistoryError] = useState("");
   const [expandedRepairId, setExpandedRepairId] = useState("");
+  const [previewMedia, setPreviewMedia] = useState("");
 
   useEffect(() => {
     if (!order?._id || !includeRepairHistory) return undefined;
@@ -280,9 +282,9 @@ function TransactionDetailsModal({ order, onClose, onViewContract, scrollToWarra
           <section className="mt-3 rounded-md border border-slate-200 bg-white p-3">
             <h3 className="mb-3 border-b border-slate-200 pb-2 text-[10px] font-extrabold uppercase tracking-[0.18em] text-slate-500">PAYMENT BREAKDOWN</h3>
             <div className="space-y-2 text-[13px]">
-              <div className="flex items-center justify-between gap-4 border-b border-slate-200 pb-2"><span className="text-slate-600">Total Project Amount</span><span className="font-semibold text-slate-800">{hidePaymentAmounts ? "••••••" : `₱${paymentSummary.totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</span></div>
-              <div className="flex items-center justify-between gap-4 border-b border-slate-200 pb-2"><span className="text-slate-600">Amount Paid</span><span className="font-semibold text-slate-800">{hidePaymentAmounts ? "••••••" : `₱${paymentSummary.paidAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</span></div>
-              <div className="flex items-center justify-between gap-4"><span className="text-slate-600">Remaining Balance</span><span className="font-bold text-red-600">{hidePaymentAmounts ? "••••••" : `₱${paymentSummary.remainingAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</span></div>
+              <div className="flex items-center justify-between gap-4 border-b border-slate-200 pb-2"><span className="text-slate-600">Total Project Amount</span><span className="font-semibold text-emerald-700 dark:text-emerald-400">{hidePaymentAmounts ? "••••••" : `₱${paymentSummary.totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</span></div>
+              <div className="flex items-center justify-between gap-4 border-b border-slate-200 pb-2"><span className="text-slate-600">Amount Paid</span><span className="font-semibold text-emerald-700 dark:text-emerald-400">{hidePaymentAmounts ? "••••••" : `₱${paymentSummary.paidAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</span></div>
+              <div className="flex items-center justify-between gap-4"><span className="text-slate-600">Remaining Balance</span><span className="font-bold text-emerald-700 dark:text-emerald-400">{hidePaymentAmounts ? "••••••" : `₱${paymentSummary.remainingAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</span></div>
               <div className="mt-2 h-2 overflow-hidden rounded-full bg-emerald-100"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${paymentSummary.totalAmount > 0 ? Math.min((paymentSummary.paidAmount / paymentSummary.totalAmount) * 100, 100) : 0}%` }} /></div>
             </div>
           </section>
@@ -342,10 +344,10 @@ function TransactionDetailsModal({ order, onClose, onViewContract, scrollToWarra
                   {!hasRecordedProjectCost && <span className="rounded-full bg-amber-50 px-2 py-1 text-[10px] font-semibold text-amber-800">Cost data unavailable</span>}
                 </div>
                 <div className="grid gap-2 sm:grid-cols-2">
-                  <div className="rounded-md bg-slate-50 p-3"><p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Project Revenue</p><p className="mt-1 text-sm font-bold text-slate-900">{hidePaymentAmounts ? "••••••" : `₱${projectRevenue.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</p></div>
-                  <div className="rounded-md bg-slate-50 p-3"><p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{hasRecordedProjectCost ? "Total Project Costs" : "Target Project Costs at 66.67%"}</p><p className="mt-1 text-sm font-bold text-slate-900">{hidePaymentAmounts ? "••••••" : `₱${(hasRecordedProjectCost ? recordedProjectCost : targetProjectCosts).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</p></div>
-                  <div className="rounded-md bg-slate-50 p-3"><p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{hasRecordedProjectCost ? "Estimated Net Profit" : "Target Net Profit at 33.33%"}</p><p className="mt-1 text-sm font-bold text-slate-900">{hidePaymentAmounts ? "••••••" : estimatedProfit === null ? "Unavailable" : `₱${estimatedProfit.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</p></div>
-                  <div className="rounded-md bg-slate-50 p-3"><p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{hasRecordedProjectCost ? "Net Profit Margin" : "Target Profit Margin"}</p><p className="mt-1 text-sm font-bold text-slate-900">{hidePaymentAmounts ? "••••••" : estimatedMargin === null ? "Unavailable" : `${estimatedMargin.toFixed(2)}%${hasRecordedProjectCost ? "" : " target"}`}</p></div>
+                  <div className="rounded-md bg-slate-50 p-3"><p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Project Revenue</p><p className="mt-1 text-sm font-bold text-emerald-700 dark:text-emerald-400">{hidePaymentAmounts ? "••••••" : `₱${projectRevenue.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</p></div>
+                  <div className="rounded-md bg-slate-50 p-3"><p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{hasRecordedProjectCost ? "Total Project Costs" : "Target Project Costs at 66.67%"}</p><p className="mt-1 text-sm font-bold text-emerald-700 dark:text-emerald-400">{hidePaymentAmounts ? "••••••" : `₱${(hasRecordedProjectCost ? recordedProjectCost : targetProjectCosts).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</p></div>
+                  <div className="rounded-md bg-slate-50 p-3"><p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{hasRecordedProjectCost ? "Estimated Net Profit" : "Target Net Profit at 33.33%"}</p><p className="mt-1 text-sm font-bold text-emerald-700 dark:text-emerald-400">{hidePaymentAmounts ? "••••••" : estimatedProfit === null ? "Unavailable" : `₱${estimatedProfit.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</p></div>
+                  <div className="rounded-md bg-slate-50 p-3"><p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{hasRecordedProjectCost ? "Net Profit Margin" : "Target Profit Margin"}</p><p className="mt-1 text-sm font-bold text-emerald-700 dark:text-emerald-400">{hidePaymentAmounts ? "••••••" : estimatedMargin === null ? "Unavailable" : `${estimatedMargin.toFixed(2)}%${hasRecordedProjectCost ? "" : " target"}`}</p></div>
                 </div>
                 {!hasRecordedProjectCost && <p className="mt-2 text-[11px] leading-5 text-slate-500">Target cost and profit estimates use a 66.67% cost / 33.33% profit split of project revenue. Actual project costs are not recorded; estimates do not represent recorded expenses or actual profit.</p>}
               </section>
@@ -380,7 +382,7 @@ function TransactionDetailsModal({ order, onClose, onViewContract, scrollToWarra
                           </div>
                           <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
                             {(repair.createdAt || repair.requestedAt) && <p><span className="text-slate-500">Requested: </span><span className="font-medium text-slate-800">{formatDateToMMMDDYYYY(repair.createdAt || repair.requestedAt)}</span></p>}
-                            <p><span className="text-slate-500">Repair cost: </span><span className="font-medium text-slate-800">{isWarrantyRepair ? "No charge (warranty)" : repairCost == null ? "Not quoted" : `₱${Number(repairCost).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</span></p>
+                            <p><span className="text-slate-500">Repair cost: </span><span className="font-medium text-emerald-700 dark:text-emerald-400">{isWarrantyRepair ? "No charge (warranty)" : repairCost == null ? "Not quoted" : `₱${Number(repairCost).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</span></p>
                             {paymentStatus && <p><span className="text-slate-500">Payment: </span><span className="font-medium text-slate-800">{paymentStatus}</span></p>}
                             {repair.completion?.completedAt && <p><span className="text-slate-500">Completed: </span><span className="font-medium text-slate-800">{formatDateToMMMDDYYYY(repair.completion.completedAt)}</span></p>}
                           </div>
@@ -401,7 +403,7 @@ function TransactionDetailsModal({ order, onClose, onViewContract, scrollToWarra
                               {repair.inspection?.notes && <div><p className="font-semibold text-slate-500">Inspection notes</p><p className="mt-1 whitespace-pre-wrap break-words">{repair.inspection.notes}</p></div>}
                               {hasIssuedQuotation && <div><p className="font-semibold text-slate-500">Quotation</p>{repair.quotation.laborCost != null && <p className="mt-1">Service fee: ₱{Number(repair.quotation.laborCost).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>}{paidAmount != null && <p className="mt-1">Payment received: ₱{Number(paidAmount).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>}{repair.quotation.notes && <p className="mt-1 whitespace-pre-wrap">{repair.quotation.notes}</p>}{repair.quotation.parts?.length > 0 && <ul className="mt-1 list-inside list-disc">{repair.quotation.parts.map((part, index) => <li key={`${repairId}-part-${index}`}>{part.description}: ₱{Number(part.cost || 0).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</li>)}</ul>}</div>}
                               {repair.completion?.notes && <div><p className="font-semibold text-slate-500">Completion notes</p><p className="mt-1 whitespace-pre-wrap break-words">{repair.completion.notes}</p></div>}
-                              {repair.mediaUrls?.length > 0 && <div><p className="font-semibold text-slate-500">Request photos</p><div className="mt-1 flex flex-wrap gap-2">{repair.mediaUrls.map((url, index) => <a key={`${repairId}-media-${index}`} href={url} target="_blank" rel="noreferrer" className="text-blue-700 underline">Photo {index + 1}</a>)}</div></div>}
+                              {repair.mediaUrls?.length > 0 && <div><p className="font-semibold text-slate-500">Request photos</p><div className="mt-1 flex flex-wrap gap-2">{repair.mediaUrls.map((url, index) => <button key={`${repairId}-media-${index}`} type="button" onClick={() => setPreviewMedia(url)} className="text-blue-700 underline">Photo {index + 1}</button>)}</div></div>}
                               {repair.history?.length > 0 && <div><p className="font-semibold text-slate-500">Ticket history</p><ul className="mt-1 space-y-1">{[...repair.history].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)).map((entry, index) => <li key={`${repairId}-event-${index}`}>{formatDateToMMMDDYYYY(entry.createdAt) || "—"} · {String(entry.event || "Update").replaceAll("_", " ")}{entry.detail ? ` — ${entry.detail}` : ""}</li>)}</ul></div>}
                             </div>
                           )}
@@ -420,6 +422,7 @@ function TransactionDetailsModal({ order, onClose, onViewContract, scrollToWarra
           {onViewContract && <button type="button" onClick={onViewContract} className="w-full rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm font-semibold text-red-700 hover:bg-red-100 sm:w-auto sm:py-1.5">View Contract</button>}
         </div>
       </div>
+      <MediaPreviewModal src={previewMedia} darkMode={darkMode} onClose={() => setPreviewMedia("")} />
     </div>
   );
 }

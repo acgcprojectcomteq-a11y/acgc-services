@@ -1,3 +1,4 @@
+import CustomerDropdown from "@/components/CustomerDropdown";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Calendar,
@@ -28,7 +29,8 @@ import {
 } from "lucide-react";
 import { RadioGroup } from "radix-ui";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import toast, { Toaster } from "react-hot-toast";
+import toast from "react-hot-toast";
+import AppToaster from "@/components/AppToaster";
 
 import Sidebar from "../../components/layout/Sidebar";
 import Navbar from "../../components/layout/Navbar";
@@ -1618,7 +1620,7 @@ function Settings() {
 
   return (
     <div className={`admin-settings settings-premium flex h-dvh min-h-dvh overflow-hidden ${darkMode ? "dark bg-slate-950 text-slate-100" : "bg-[#eef1f3] text-slate-900"}`}>
-      <Toaster position="bottom-right" />
+      <AppToaster />
       <Sidebar isOpen={isSidebarOpen} onToggle={() => setIsSidebarOpen((open) => !open)} />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <Navbar />
@@ -1676,7 +1678,7 @@ function Settings() {
 
           <section className={`mt-4 rounded-2xl border p-2 shadow-sm ${darkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-white"}`}>
             <div className="lg:hidden">
-              <select
+              <CustomerDropdown darkMode={darkMode}
                 aria-label="User category"
                 value={activeTab}
                 onChange={(event) => setActiveTab(event.target.value)}
@@ -1685,7 +1687,7 @@ function Settings() {
                 {userCategoryTabs.map((tab) => (
                   <option key={tab.key} value={tab.key}>{tab.label} ({tab.count})</option>
                 ))}
-              </select>
+              </CustomerDropdown>
             </div>
             <div role="tablist" aria-label="Filter users by category" className="hidden min-w-0 flex-wrap gap-1.5 lg:flex">
               {userCategoryTabs.map((tab) => (

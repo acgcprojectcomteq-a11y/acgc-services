@@ -15,12 +15,27 @@ test("every active repair status receives a project item uniqueness key", async 
   }
 });
 
-test("terminal statuses release the active project item key", async () => {
-  for (const status of ["completed", "cancelled", "rejected"]) {
+test("declined quotations are terminal and release the active project item key", async () => {
+  for (const status of ["completed", "cancelled", "rejected", "quotation_declined"]) {
     const repair = new RepairRequest({ customer, order, productIndex: 0, customerName: "Customer", productName: "Window", issueDescription: "Repair", workflowType: "paid", status });
     await repair.validate();
     assert.equal(repair.activeRepairKey, undefined, status);
   }
+});
+
+test("repair issue warranty exclusion and quotation history are stored separately from product warranty status", async () => {
+  const repair = new RepairRequest({
+    customer, order, productIndex: 0, customerName: "Customer", productName: "Window", issueDescription: "Damage",
+    workflowType: "paid", status: "quotation_pending_approval",
+    warranty: { status: "active", startsAt: new Date("2025-01-01"), expiresAt: new Date("2027-01-01"), issueExcluded: true, decisionReason: "Customer misuse" },
+    quotationHistory: [{ total: 100, customerDecisionAt: new Date() }],
+  });
+  await repair.validate();
+  assert.equal(repair.warranty.status, "active");
+  assert.equal(repair.warranty.issueExcluded, true);
+  assert.equal(repair.warranty.decisionReason, "Customer misuse");
+  assert.equal(repair.quotationHistory[0].total, 100);
+  assert.equal(repair.status, "quotation_pending_approval");
 });
 
 test("different projects, customers, and product rows have different keys", () => {

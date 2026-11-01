@@ -42,6 +42,7 @@ test("missing, malformed, and legacy settings permissions fail closed", () => {
   assert.equal(defaults.modules.settings.actions.view, true);
   assert.equal(defaults.modules.settings.actions.manage_access, false);
   assert.equal(defaults.modules.settings.actions.back_up, false);
+  assert.equal(defaults.modules.transactions.actions.cancel, false);
 });
 
 test("admins bypass staff module permissions while customers do not", () => {

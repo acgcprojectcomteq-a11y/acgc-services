@@ -1,3 +1,4 @@
+import CustomerDropdown from "@/components/CustomerDropdown";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -11,7 +12,8 @@ import {
   Star,
   Check,
 } from "lucide-react";
-import toast, { Toaster } from "react-hot-toast";
+import toast from "react-hot-toast";
+import AppToaster from "@/components/AppToaster";
 import * as catalogApi from '@/api/catalog';
 import { API_BASE } from "@/api/client";
 import { uploadFiles } from "@/api/uploads";
@@ -49,9 +51,15 @@ const MEASUREMENT_UNITS = [
   ["m", "Meters (m)"],
 ];
 
+const capitalizeFirstLetter = (value) => {
+  const text = String(value ?? "");
+  return text ? `${text.charAt(0).toLocaleUpperCase()}${text.slice(1)}` : text;
+};
+
 function CatalogPicker({ label, value, options, catalogItems = [], onChange, onAdd, onEdit, onDelete, placeholder, addLabel, disabled = false }) {
   const { darkMode } = useAdminTheme();
   const actionLabel = label.replace(/\s*\*+\s*$/, "");
+  const formatOptionLabel = actionLabel.toLowerCase() === "category" ? capitalizeFirstLetter : (option) => option;
   const [isOpen, setIsOpen] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
   const [newOption, setNewOption] = useState("");
@@ -182,7 +190,7 @@ function CatalogPicker({ label, value, options, catalogItems = [], onChange, onA
         }}
         className={`flex min-h-12 w-full items-center justify-between gap-3 rounded-xl border px-4 py-3 text-left text-sm outline-none transition focus:ring-2 disabled:cursor-not-allowed disabled:opacity-50 ${darkMode ? "border-slate-700 bg-slate-800 text-slate-100 hover:border-slate-500 focus:border-red-400 focus:ring-red-400/20" : "border-rose-200 bg-[#fffafa] text-slate-900 hover:border-rose-300 focus:border-red-700 focus:ring-red-100"}`}
       >
-        <span className={value ? "truncate" : "truncate text-slate-400"}>{value || placeholder}</span>
+        <span className={value ? "truncate" : "truncate text-slate-400"}>{value ? formatOptionLabel(value) : placeholder}</span>
         <ChevronDown size={16} className={`shrink-0 text-slate-400 transition ${isOpen ? "rotate-180" : ""}`} />
       </button>
 
@@ -224,7 +232,7 @@ function CatalogPicker({ label, value, options, catalogItems = [], onChange, onA
                         className={`min-w-0 flex-1 px-4 py-3 text-left text-sm transition ${darkMode ? "hover:bg-slate-800" : "hover:bg-rose-50"} ${value === option ? darkMode ? "bg-red-950/50 font-semibold text-red-200" : "bg-rose-100 font-semibold text-red-900" : darkMode ? "text-slate-200" : "text-slate-800"}`}
                       >
                         {value === option && <span className={`mr-2 ${darkMode ? "text-red-300" : "text-red-800"}`} aria-hidden="true">✓</span>}
-                        <span className="truncate">{option}</span>
+                        <span className="truncate">{formatOptionLabel(option)}</span>
                       </button>
                       {entry && onEdit && <button type="button" onClick={() => { setEditingOption(entry.id); setEditingValue(option); setError(""); }} aria-label={`Edit ${actionLabel}: ${option}`} title={`Edit ${option}`} className={`inline-flex size-9 shrink-0 items-center justify-center rounded-lg ${darkMode ? "text-slate-400 hover:bg-slate-800 hover:text-red-300" : "text-slate-500 hover:bg-rose-50 hover:text-red-800"}`}><Pencil size={15} /></button>}
                       {entry && onDelete && <button type="button" onClick={() => { setConfirmingDelete(entry.id); setError(""); }} aria-label={`Delete ${actionLabel}: ${option}`} title={`Delete ${option}`} className={`inline-flex size-9 shrink-0 items-center justify-center rounded-lg ${darkMode ? "text-slate-400 hover:bg-slate-800 hover:text-red-300" : "text-slate-500 hover:bg-rose-50 hover:text-red-800"}`}><Trash2 size={15} /></button>}
@@ -825,9 +833,9 @@ function ProductFormModal({
                     </div>
                     <div>
                       <label htmlFor="product-measurement-unit" className={labelClass}>Size unit</label>
-                      <select id="product-measurement-unit" value={newProduct.unit || "in"} onChange={(event) => updateField("unit", event.target.value)} className={fieldClass}>
+                      <CustomerDropdown darkMode={darkMode} id="product-measurement-unit" value={newProduct.unit || "in"} onChange={(event) => updateField("unit", event.target.value)} className={fieldClass}>
                         {MEASUREMENT_UNITS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                      </select>
+                      </CustomerDropdown>
                     </div>
                     <div>
                       <label className={labelClass}>Width ({newProduct.unit || "in"}) *</label>
@@ -900,9 +908,9 @@ function ProductFormModal({
                           <div className="grid gap-3 sm:grid-cols-2">
                             <div>
                               <label htmlFor="custom-frame-unit" className={labelClass}>Frame size unit</label>
-                              <select id="custom-frame-unit" value={newProduct.custom_frame_size_unit || "in"} onChange={(event) => updateField("custom_frame_size_unit", event.target.value)} className={fieldClass}>
+                              <CustomerDropdown darkMode={darkMode} id="custom-frame-unit" value={newProduct.custom_frame_size_unit || "in"} onChange={(event) => updateField("custom_frame_size_unit", event.target.value)} className={fieldClass}>
                                 {MEASUREMENT_UNITS.map(([unit, label]) => <option key={unit} value={unit}>{label}</option>)}
-                              </select>
+                              </CustomerDropdown>
                             </div>
                             <div>
                               <label className={labelClass}>Custom frame price (PHP) *</label>
@@ -949,14 +957,14 @@ function ProductFormModal({
                     <div className="grid gap-3 sm:grid-cols-2">
                       <div>
                         <label className={labelClass}>Glass type</label>
-                        <select value={defaultGlassType} onChange={(event) => updateField("default_blade_glass_type", event.target.value)} className={fieldClass}>
+                        <CustomerDropdown darkMode={darkMode} value={defaultGlassType} onChange={(event) => updateField("default_blade_glass_type", event.target.value)} className={fieldClass}>
                           <option value="">Select glass type</option>
                           {defaultGlassTypes.map((glass) => <option key={glass.name} value={glass.name}>{glass.name} — {currency(glass.price_per_blade)}/blade</option>)}
-                        </select>
+                        </CustomerDropdown>
                       </div>
                       <div>
                         <label className={labelClass}>Sold as</label>
-                        <select
+                        <CustomerDropdown darkMode={darkMode}
                           value={defaultSoldAs}
                           onChange={(event) => {
                             const selectedValue = event.target.value;
@@ -979,7 +987,7 @@ function ProductFormModal({
                           {newProduct.sell_with_frame && newProduct.allow_custom_frame_size && defaultFrameTypes.length === 0 && (
                             <option value="custom_frame">Custom frame size — +{currency(newProduct.custom_frame_price)}</option>
                           )}
-                        </select>
+                        </CustomerDropdown>
                       </div>
                     </div>
                     <div className={`mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border px-3 py-3 ${darkMode ? "border-slate-700 bg-slate-800" : "border-slate-200 bg-slate-50"}`}>
@@ -1024,17 +1032,17 @@ function ProductFormModal({
                   {extraCharges.map((charge, index) => (
                     <div key={`extra-charge-${index}`} className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(110px,0.8fr)_minmax(90px,0.6fr)_minmax(135px,0.8fr)_auto]">
                       <input aria-label={`Extra charge ${index + 1} name`} value={charge.name || ""} onChange={(event) => setNewProduct((product) => ({ ...product, extra_charges: product.extra_charges.map((item, itemIndex) => itemIndex === index ? { ...item, name: event.target.value } : item) }))} placeholder="Charge name" className={fieldClass} />
-                      <select aria-label={`Extra charge ${index + 1} calculation`} value={charge.type || "fixed"} onChange={(event) => setNewProduct((product) => ({ ...product, extra_charges: product.extra_charges.map((item, itemIndex) => itemIndex === index ? { ...item, type: event.target.value } : item) }))} className={fieldClass}>
+                      <CustomerDropdown darkMode={darkMode} aria-label={`Extra charge ${index + 1} calculation`} value={charge.type || "fixed"} onChange={(event) => setNewProduct((product) => ({ ...product, extra_charges: product.extra_charges.map((item, itemIndex) => itemIndex === index ? { ...item, type: event.target.value } : item) }))} className={fieldClass}>
                         <option value="fixed">Fixed / item</option>
                         <option value="per_sqft">Per sq ft</option>
                         <option value="per_blade">Per blade</option>
                         <option value="percentage">Percent of base</option>
-                      </select>
+                      </CustomerDropdown>
                       <input aria-label={`Extra charge ${index + 1} amount`} type="number" min="0" step="0.01" value={charge.amount ?? ""} onChange={(event) => setNewProduct((product) => ({ ...product, extra_charges: product.extra_charges.map((item, itemIndex) => itemIndex === index ? { ...item, amount: event.target.value } : item) }))} placeholder={charge.type === "percentage" ? "10" : "0.00"} className={fieldClass} />
-                      <select aria-label={`Extra charge ${index + 1} customer selection`} value={charge.is_optional ? "optional" : "required"} onChange={(event) => setNewProduct((product) => ({ ...product, extra_charges: product.extra_charges.map((item, itemIndex) => itemIndex === index ? { ...item, is_optional: event.target.value === "optional", is_default_selected: false } : item) }))} className={fieldClass}>
+                      <CustomerDropdown darkMode={darkMode} aria-label={`Extra charge ${index + 1} customer selection`} value={charge.is_optional ? "optional" : "required"} onChange={(event) => setNewProduct((product) => ({ ...product, extra_charges: product.extra_charges.map((item, itemIndex) => itemIndex === index ? { ...item, is_optional: event.target.value === "optional", is_default_selected: false } : item) }))} className={fieldClass}>
                         <option value="required">Required</option>
                         <option value="optional">Optional (customer choice)</option>
-                      </select>
+                      </CustomerDropdown>
                       <button type="button" aria-label={`Remove extra charge ${index + 1}`} onClick={() => updateField("extra_charges", extraCharges.filter((_, itemIndex) => itemIndex !== index))} className={`inline-flex h-12 w-12 items-center justify-center rounded-xl border ${darkMode ? "border-slate-700 text-red-300 hover:bg-slate-800" : "border-slate-200 text-red-700 hover:bg-rose-50"}`}><Trash2 size={16} /></button>
                     </div>
                   ))}
@@ -1058,9 +1066,9 @@ function ProductFormModal({
                   ))}
                   <div>
                     <label htmlFor="product-size-limit-unit" className={labelClass}>Unit</label>
-                    <select id="product-size-limit-unit" value={sizeLimits.unit || newProduct.unit || "in"} onChange={(event) => updateField("size_limits", { ...sizeLimits, unit: event.target.value })} className={fieldClass}>
+                    <CustomerDropdown darkMode={darkMode} id="product-size-limit-unit" value={sizeLimits.unit || newProduct.unit || "in"} onChange={(event) => updateField("size_limits", { ...sizeLimits, unit: event.target.value })} className={fieldClass}>
                       {MEASUREMENT_UNITS.map(([value]) => <option key={value} value={value}>{value}</option>)}
-                    </select>
+                    </CustomerDropdown>
                   </div>
                 </div>
               )}
@@ -2472,24 +2480,24 @@ function Products() {
                   Add Product
                 </button>
                 <FilterDropdown
-                  label="All types"
+                  label="All Types"
                   value={typeFilter}
                   onChange={setTypeFilter}
                   darkMode={darkMode}
                   options={[
-                    ["All", "All types"],
+                    ["All", "All Types"],
                     ...productTypeFilterOptions.map((option) => [option, option]),
                   ]}
                 />
 
                 <FilterDropdown
-                  label="All categories"
+                  label="All Categories"
                   value={categoryFilter}
                   onChange={setCategoryFilter}
                   darkMode={darkMode}
                   options={[
-                    ["All", "All categories"],
-                    ...productCategoryFilterOptions.map((option) => [option, option]),
+                    ["All", "All Categories"],
+                    ...productCategoryFilterOptions.map((option) => [option, capitalizeFirstLetter(option)]),
                   ]}
                 />
 
@@ -2672,7 +2680,7 @@ function Products() {
         </main>
       </div>
 
-      <Toaster position="bottom-right" />
+      <AppToaster />
 
       {showModal && (
         <ProductFormModal

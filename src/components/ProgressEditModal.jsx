@@ -1,3 +1,4 @@
+import CustomerDropdown from "@/components/CustomerDropdown";
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { X, UploadCloud, Plus, CheckCircle2, Lock, Trash2, AlertTriangle, ChevronDown, Scissors, Wrench, Package, Truck, Check, Pencil } from "lucide-react";
 import { formatDateToMMDDYYYY, formatDateTimeToMMDDYYYY, getTodayIso } from "@/lib/dateUtils";
@@ -152,7 +153,7 @@ const getProtectedNotesContent = (project) => project.protected_project_notes
   ? String(project.protected_project_notes.content || "")
   : String(project.progress_notes || project.rawOrder?.progress_notes || "");
 
-export default function ProgressEditModal({ project, onClose, onSave, canUploadProgressPhoto = true, canEditProtectedNotes = false, onProjectDelay, onSaveProtectedNotes, onAddActivityNote }) {
+export default function ProgressEditModal({ project, onClose, onSave, canUploadProgressPhoto = true, canEditProtectedNotes = false, onProjectDelay, onSaveProtectedNotes, onAddActivityNote, darkMode = false }) {
   const [progress, setProgress] = useState(project.progress || 0);
   const [countdownNow, setCountdownNow] = useState(Date.now());
   const [status, setStatus] = useState(project.status || "Pending");
@@ -1407,7 +1408,7 @@ export default function ProgressEditModal({ project, onClose, onSave, canUploadP
           <div className="rounded-xl border border-slate-200 bg-white p-3">
             <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Add New Stage</h3>
             <label className="sr-only" htmlFor="new-main-stage-preset">Select a preset stage</label>
-            <select
+            <CustomerDropdown darkMode={darkMode}
               id="new-main-stage-preset"
               value={newMainStagePresetKey}
               onChange={(event) => setNewMainStagePresetKey(event.target.value)}
@@ -1419,7 +1420,7 @@ export default function ProgressEditModal({ project, onClose, onSave, canUploadP
                   {preset.name}
                 </option>
               ))}
-            </select>
+            </CustomerDropdown>
             {getMainStagePresets().find(({ key }) => key === newMainStagePresetKey)?.isCustom && (
               <label className="mt-2 block">
                 <span className="sr-only">Custom stage name</span>
@@ -1434,7 +1435,7 @@ export default function ProgressEditModal({ project, onClose, onSave, canUploadP
             )}
             <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
               <label className="shrink-0 text-sm font-medium text-slate-600" htmlFor="new-main-stage-after">Insert after:</label>
-              <select
+              <CustomerDropdown darkMode={darkMode}
                 id="new-main-stage-after"
                 value={newMainStageAfterKey}
                 onChange={(event) => setNewMainStageAfterKey(event.target.value)}
@@ -1443,7 +1444,7 @@ export default function ProgressEditModal({ project, onClose, onSave, canUploadP
                 {stages.map((stage, index) => (
                   <option key={stage.key} value={stage.key}>{index + 1}. {stage.name}</option>
                 ))}
-              </select>
+              </CustomerDropdown>
               <button
                 type="button"
                 onClick={addMainStage}
@@ -1575,7 +1576,7 @@ export default function ProgressEditModal({ project, onClose, onSave, canUploadP
                     {stage.completed ? (
                       <div className="mt-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800">Completed</div>
                     ) : (
-                      <select
+                      <CustomerDropdown darkMode={darkMode}
                         aria-label="Stage State"
                         className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus-visible:ring-2 focus-visible:ring-blue-500"
                         value={stage.status}
@@ -1585,12 +1586,12 @@ export default function ProgressEditModal({ project, onClose, onSave, canUploadP
                         <option value="pending">Pending</option>
                         <option value="in_progress" disabled={progressCooldownRemainingMs > 0 && stage.status !== "in_progress"}>In Progress</option>
                         <option value="delayed">Delayed</option>
-                      </select>
+                      </CustomerDropdown>
                     )}
                     {!stage.completed && (
                       <label className="mt-3 block text-sm text-gray-600">
                         Progress Photo Requirement
-                        <select
+                        <CustomerDropdown darkMode={darkMode}
                           aria-label={`Progress Photo Requirement for ${stage.name}`}
                           value={stage.photoRequirement || "optional"}
                           disabled={!stageEditable}
@@ -1599,7 +1600,7 @@ export default function ProgressEditModal({ project, onClose, onSave, canUploadP
                         >
                           <option value="optional">Optional</option>
                           <option value="required">Required</option>
-                        </select>
+                        </CustomerDropdown>
                       </label>
                     )}
                     {stage.completed && (
@@ -1841,7 +1842,7 @@ export default function ProgressEditModal({ project, onClose, onSave, canUploadP
 
                                           <label className="text-sm text-gray-600 block">
                                             Sub-Stage State
-                                            <select
+                                            <CustomerDropdown darkMode={darkMode}
                                               value={sub.status}
                                               disabled={!subEditable}
                                               onChange={(e) => updateSubStage(stageIndex, subIndex, { status: e.target.value })}
@@ -1851,7 +1852,7 @@ export default function ProgressEditModal({ project, onClose, onSave, canUploadP
                                               <option value="in_progress" disabled={progressCooldownRemainingMs > 0 && sub.status !== "in_progress"}>In Progress</option>
                                               <option value="done" disabled={progressCooldownRemainingMs > 0}>Done</option>
                                               <option value="delayed">Delayed</option>
-                                            </select>
+                                            </CustomerDropdown>
                                           </label>
                                         </div>
 
@@ -2079,7 +2080,7 @@ export default function ProgressEditModal({ project, onClose, onSave, canUploadP
 
                 <label className="text-sm text-gray-600 block">
                   Sub-Stage State
-                  <select
+                  <CustomerDropdown darkMode={darkMode}
                     className="mt-2 w-full border p-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     value={newSubStageStatus}
                     onChange={(e) => setNewSubStageStatus(e.target.value)}
@@ -2087,7 +2088,7 @@ export default function ProgressEditModal({ project, onClose, onSave, canUploadP
                     <option value="pending">Pending</option>
                     <option value="in_progress" disabled={progressCooldownRemainingMs > 0}>In Progress</option>
                     <option value="done" disabled={progressCooldownRemainingMs > 0}>Done</option>
-                  </select>
+                  </CustomerDropdown>
                 </label>
 
                 {canUploadProgressPhoto ? (

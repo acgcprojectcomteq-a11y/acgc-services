@@ -319,6 +319,7 @@ function NotificationMenu() {
               rejected: "Warranty claim rejected",
               quotation_issued: "Repair quotation issued",
               customer_accepted: "Customer accepted quotation",
+              quotation_declined: "Customer declined quotation",
               payment_proof_submitted: "Repair payment proof submitted",
               payment_proof_approved: "Repair payment verified",
               payment_proof_rejected: "Repair payment proof rejected",
@@ -465,7 +466,7 @@ function NotificationMenu() {
       </button>
 
       {open && (
-        <div className={`fixed inset-x-0 bottom-0 top-[calc(3.5rem+env(safe-area-inset-top))] z-[70] m-0 flex h-auto max-h-none w-screen max-w-none flex-col overflow-hidden border-0 pb-[env(safe-area-inset-bottom)] shadow-none lg:inset-auto lg:right-4 lg:top-[calc(5.25rem+env(safe-area-inset-top))] lg:z-20 lg:mt-0 lg:h-auto lg:max-h-[min(36rem,calc(100vh-6rem))] lg:w-96 lg:max-w-md lg:rounded-2xl lg:border lg:p-0 lg:shadow-2xl ${darkMode ? "bg-slate-800 border-slate-700" : "bg-white border-slate-200"}`}>
+        <div className={`fixed inset-x-0 bottom-0 top-[calc(3.5rem+env(safe-area-inset-top))] z-[70] m-0 flex h-auto max-h-none w-screen max-w-none flex-col overflow-hidden border-0 pb-[env(safe-area-inset-bottom)] shadow-none lg:inset-auto lg:right-1 lg:top-[4.25rem] lg:z-20 lg:mt-0 lg:h-auto lg:max-h-[min(36rem,calc(100vh-6rem))] lg:w-96 lg:max-w-md lg:rounded-2xl lg:border lg:p-0 lg:shadow-2xl ${darkMode ? "bg-slate-800 border-slate-700" : "bg-white border-slate-200"}`}>
           <div className={`flex shrink-0 items-center justify-between border-b px-3 py-2.5 sm:px-4 sm:py-3 ${darkMode ? "border-slate-700" : "border-slate-100"}`}>
             <div>
               <p className={`text-sm font-bold ${darkMode ? "text-white" : "text-slate-950"}`}>Admin activity</p>

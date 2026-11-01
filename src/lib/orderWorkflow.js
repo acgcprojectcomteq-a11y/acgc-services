@@ -2,7 +2,7 @@ const progressEligibleStatuses = new Set(["approved", "admin_review", "contract_
 
 export const isProgressMonitorEligibleOrder = (order = {}) => {
   const status = String(order.status || "").toLowerCase();
-  if (status === "cancelled") return false;
+  if (status === "cancelled") return true;
 
   const savedStageGroups = [
     ...(Array.isArray(order.progress_stages) && order.progress_stages.length > 0 ? [order.progress_stages] : []),

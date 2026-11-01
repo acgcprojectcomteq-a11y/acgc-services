@@ -1,3 +1,4 @@
+import CustomerDropdown from "@/components/CustomerDropdown";
 import { useEffect, useMemo, useState } from 'react';
 import { X, Plus, Search, Pencil, Trash2 } from 'lucide-react';
 import * as catalogApi from '@/api/catalog';
@@ -86,7 +87,7 @@ const normalizeVariantItems = (value) => {
   return [];
 };
 
-export default function ProductManagementModal({ open, show, onClose, onChange }) {
+export default function ProductManagementModal({ open, show, onClose, onChange, darkMode = false }) {
   const visible = open ?? show;
   const [tab, setTab] = useState('types');
   const [query, setQuery] = useState('');
@@ -406,7 +407,7 @@ function EditorForm({tab, item={}, types=[], names={}, onCancel, onSave}){
       {tab === 'names' && (
         <div>
           <label className="text-xs font-semibold uppercase tracking-wide text-gray-600">Product Type</label>
-          <select
+          <CustomerDropdown darkMode={darkMode}
             className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm shadow-sm outline-none focus:border-red-400"
             value={productType}
             onChange={(e) => setProductType(e.target.value)}
@@ -420,7 +421,7 @@ function EditorForm({tab, item={}, types=[], names={}, onCancel, onSave}){
                 </option>
               );
             })}
-          </select>
+          </CustomerDropdown>
           <p className="mt-1 text-xs text-gray-500">Product names are grouped under a product type to keep the catalog consistent.</p>
         </div>
       )}
@@ -428,7 +429,7 @@ function EditorForm({tab, item={}, types=[], names={}, onCancel, onSave}){
       {tab === 'variants' && (
         <div>
           <label className="text-xs font-semibold uppercase tracking-wide text-gray-600">Product Name</label>
-          <select
+          <CustomerDropdown darkMode={darkMode}
             className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm shadow-sm outline-none focus:border-red-400"
             value={productName}
             onChange={(e) => setProductName(e.target.value)}
@@ -442,7 +443,7 @@ function EditorForm({tab, item={}, types=[], names={}, onCancel, onSave}){
                 </option>
               );
             })}
-          </select>
+          </CustomerDropdown>
           <p className="mt-1 text-xs text-gray-500">Variants are attached to a product name to keep pricing and customization correct.</p>
         </div>
       )}

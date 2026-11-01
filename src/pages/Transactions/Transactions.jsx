@@ -1,3 +1,4 @@
+import CustomerDropdown from "@/components/CustomerDropdown";
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
@@ -20,18 +21,20 @@ import {
   Paperclip,
   LoaderCircle,
   MessageSquare,
+  Ban,
 } from "lucide-react";
 import { toPng } from "html-to-image";
 import jsPDF from "jspdf";
-import toast, { Toaster } from "react-hot-toast";
+import toast from "react-hot-toast";
+import AppToaster from "@/components/AppToaster";
 
 import Sidebar from "../../components/layout/Sidebar";
 import Navbar from "../../components/layout/Navbar";
 import AdminPageHeader from "../../components/layout/AdminPageHeader";
 import ContractModal from "../../components/ContractModal";
 import TransactionDetailsModal from "../../components/TransactionDetailsModal";
-import { getAdminOrders, acceptContract, declineContract, updateOrderStatus, deleteOrderReview, setOrderReviewVisibility, respondToCustomerReview, downloadTransactionReport } from "@/api/orders";
-import { hasAcceptedTransactionContract } from "@/lib/transactionAcceptance";
+import { getAdminOrders, acceptContract, declineContract, updateOrderStatus, cancelAdminOrder, deleteOrderReview, setOrderReviewVisibility, respondToCustomerReview, downloadTransactionReport } from "@/api/orders";
+import { hasAcceptedTransactionContract, isRecordedCancelledTransaction } from "@/lib/transactionAcceptance";
 import { formatDateToMMDDYYYY, formatDateTimeToMMDDYYYY, formatDateToMMMDDYYYY } from "@/lib/dateUtils";
 import { useAuth } from "@/contexts/AuthContext";
 import { recordActivity } from "@/lib/activityLog";
@@ -44,6 +47,7 @@ import { API_BASE } from "@/api/client";
 import { subscribeToRealtime } from "@/lib/realtimeEvents";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import useNotificationHighlight from "@/hooks/useNotificationHighlight";
+import { hasStaffModulePermission } from "../../../shared/staffPermissions.js";
 
 const TRANSACTION_REPORT_OPTIONS = [
   { value: "all_reports", label: "All Reports" },
@@ -81,6 +85,7 @@ function Transactions() {
   const { darkMode } = useAdminTheme();
   const canGenerateTransactionReport = ["admin", "super_admin"].includes(user?.role);
   const canManageFeedbackVisibility = ["admin", "super_admin"].includes(user?.role);
+  const canCancelTransactions = hasStaffModulePermission(user, "transactions", "cancel");
   const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] =
     useState(() => {
@@ -92,6 +97,9 @@ function Transactions() {
   const [activeTable, setActiveTable] =
     useState("all");
   const [showTransactionActions, setShowTransactionActions] = useState(true);
+  const [cancelTransactionOrder, setCancelTransactionOrder] = useState(null);
+  const [cancellationReason, setCancellationReason] = useState("");
+  const [cancellationLoading, setCancellationLoading] = useState(false);
 
   const location = useLocation();
   const highlightedNotificationRecordId = useNotificationHighlight(location);
@@ -115,6 +123,7 @@ function Transactions() {
   const [receiptPage, setReceiptPage] =
     useState(1);
   const [allPage, setAllPage] = useState(1);
+  const [inProgressPage, setInProgressPage] = useState(1);
   const [feedbackPage, setFeedbackPage] = useState(1);
 
   const [projectPage, setProjectPage] =
@@ -136,6 +145,7 @@ function Transactions() {
   useEffect(() => {
     setReceiptPage(1);
     setAllPage(1);
+    setInProgressPage(1);
     setFeedbackPage(1);
     setProjectPage(1);
     setCancelledPage(1);
@@ -179,11 +189,16 @@ function Transactions() {
   const [paymentActionLoading, setPaymentActionLoading] = useState(false);
   const [paymentDocumentPreview, setPaymentDocumentPreview] = useState(null);
   const [paymentDocumentLoading, setPaymentDocumentLoading] = useState(false);
+  const openPaymentDocumentPreview = (url, name = "Payment proof") => {
+    if (!url) return;
+    const isPdf = /\.pdf(?:$|[?#])/i.test(`${name} ${url}`);
+    setPaymentDocumentPreview({ url, name, type: isPdf ? "application/pdf" : "image/preview", loading: false });
+  };
   const [discrepancyResolutionNotes, setDiscrepancyResolutionNotes] = useState({});
   const paymentActionSubmittingRef = useRef(false);
 
   useEffect(() => () => {
-    if (paymentDocumentPreview?.url) URL.revokeObjectURL(paymentDocumentPreview.url);
+    if (paymentDocumentPreview?.url?.startsWith("blob:")) URL.revokeObjectURL(paymentDocumentPreview.url);
   }, [paymentDocumentPreview?.url]);
 
   useEffect(() => {
@@ -238,6 +253,27 @@ function Transactions() {
     return status === "completed" || progress >= 100 || allBatchItemsCompleted;
   };
 
+  const formatCancelledStatus = (value) => String(value || "—")
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+  const formatCancelledDate = (value) => {
+    if (!value) return "—";
+    const date = new Date(value);
+    return Number.isNaN(date.getTime())
+      ? "—"
+      : new Intl.DateTimeFormat("en-PH", { month: "short", day: "numeric", year: "numeric" }).format(date);
+  };
+
+  const isEligibleForAdminCancellation = (order) => {
+    const status = String(order?.status || "").toLowerCase();
+    const contractStatus = String(order?.contract_status || "").toLowerCase();
+    return canCancelTransactions
+      && status !== "cancelled"
+      && !["declined", "rejected", "contract_declined"].includes(status)
+      && !["declined", "rejected", "contract_declined"].includes(contractStatus)
+      && !isCompletedProject(order);
+  };
+
   const getFeedbackEntries = (order) => {
     const entries = [];
     const hasOrderReview = order.review?.submittedAt || order.review?.rating;
@@ -276,26 +312,41 @@ function Transactions() {
   const getConfirmedPayment = (order) => getPaymentSummary(order).paidAmount;
 
   // Warranty helpers
-  const getInstallationCompletionDate = (order, item = null) => {
+  const getInstallationStage = (order, item = null) => {
     const stages = item?.progress_stages?.length
       ? item.progress_stages
       : order?.progress_stages || order?.stages || [];
-    const installationStage = stages.find((stage) => {
+    return stages.find((stage) => {
       const stageKey = String(stage.key || "").toLowerCase();
       const stageName = String(stage.name || "").toLowerCase();
       const isInstallation = (stageKey.includes("installation") || stageName.includes("installation"))
         && !stageKey.includes("schedul")
         && !stageName.includes("schedul");
-      const isComplete = stage.completed === true || ["done", "completed"].includes(String(stage.status || "").toLowerCase());
-      return isInstallation && isComplete;
-    });
-    const stageDate = installationStage?.date || installationStage?.completedAt;
+      return isInstallation;
+    }) || null;
+  };
+
+  const getInstallationCompletionDate = (order, item = null) => {
+    const installationStage = getInstallationStage(order, item);
+    const isComplete = installationStage?.completed === true
+      || ["done", "completed"].includes(String(installationStage?.status || "").toLowerCase());
+    if (!isComplete) return null;
+    const stageDate = installationStage?.installationCompletedAt
+      || installationStage?.completedAt
+      || installationStage?.date;
     if (stageDate) {
       const parsedStageDate = new Date(stageDate);
       if (!Number.isNaN(parsedStageDate.getTime()) && parsedStageDate <= new Date()) return parsedStageDate;
     }
 
     return null;
+  };
+
+  const getInstallationScheduleDate = (order, item = null) => {
+    const installationStage = getInstallationStage(order, item);
+    return installationStage?.proposedInstallationDate
+      || installationStage?.date
+      || null;
   };
 
   const parseWarrantyPeriod = (value) => {
@@ -480,6 +531,33 @@ function Transactions() {
           : order
       )
     );
+  };
+
+  const handleConfirmProjectCancellation = async () => {
+    if (!cancelTransactionOrder || cancellationLoading) return;
+    const reason = cancellationReason.trim();
+    if (!reason) {
+      toast.error("Enter a cancellation reason.");
+      return;
+    }
+    const orderId = String(cancelTransactionOrder._id || cancelTransactionOrder.id || "");
+    if (!orderId) return;
+    setCancellationLoading(true);
+    try {
+      const response = await cancelAdminOrder(orderId, { reason });
+      if (!response?.order) throw new Error("The server did not confirm project cancellation.");
+      setOrders((current) => current.map((order) => String(order._id || order.id || "") === orderId ? response.order : order));
+      recordActivity(user, `Cancelled project ${response.order.tracking || orderId}.`, "Transactions");
+      setCancelTransactionOrder(null);
+      setCancellationReason("");
+      setActiveTable("cancelled");
+      setCancelledPage(1);
+      toast.success("Project cancelled successfully.");
+    } catch (error) {
+      toast.error(error?.data?.message || error?.message || "Unable to cancel this project.");
+    } finally {
+      setCancellationLoading(false);
+    }
   };
 
   const handleGenerateTransactionReport = async (event) => {
@@ -1286,11 +1364,9 @@ function Transactions() {
     return tracking.includes(q) || customer.includes(q) || project.includes(q);
   });
 
-  const cancelledTransactions = transactionOrders.filter((o) => {
-    const contractStatus = (o.contract_status || "").toString().toLowerCase();
-    const status = (o.status || "").toString().toLowerCase();
-    return ["declined", "rejected", "cancelled", "contract_declined"].includes(contractStatus) || status === "cancelled";
-  });
+  const activeTransactionOrders = transactionOrders.filter((order) => String(order.status || "").toLowerCase() !== "cancelled");
+  const cancelledTransactions = transactionOrders.filter(isRecordedCancelledTransaction);
+  const inProgressProjects = activeTransactionOrders.filter((order) => !isCompletedProject(order));
 
   // Completed projects: orders that are completed by status or progress
   const completedProjects = transactionOrders.filter((o) => isCompletedProject(o));
@@ -1311,7 +1387,7 @@ function Transactions() {
     : 0;
   const formatCurrency = (amount) => hidePaymentAmounts ? "••••••" : `₱${amount.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const summaryMetrics = [
-    { label: "Total Revenue", value: formatCurrency(financialTotals.revenue), detail: "33.33% target profit margin", color: "text-rose-300" },
+    { label: "Total Revenue", value: formatCurrency(financialTotals.revenue), detail: "Target profit margin: 33.33%", detailClassName: `text-xs font-bold ${darkMode ? "text-amber-200" : "text-amber-900"}`, color: "text-rose-300" },
     { label: "Total Collected", value: formatCurrency(financialTotals.collected), color: "text-emerald-300" },
     { label: "Pending Balance", value: formatCurrency(financialTotals.pending), color: "text-amber-200" },
     { label: "Completed Projects", value: completedProjects.length.toLocaleString(), color: "text-emerald-300" },
@@ -1376,7 +1452,15 @@ function Transactions() {
     if (failures) toast.error(`${failures} selected review${failures === 1 ? "" : "s"} could not be hidden.`);
     setFeedbackVisibilityUpdating(false);
   };
-  const filteredAllOrders = transactionOrders.filter((o) => {
+  const filteredAllOrders = activeTransactionOrders.filter((o) => {
+    if (!tableSearch) return true;
+    const q = tableSearch.toLowerCase();
+    const customer = (o.customer_name || o.customer?.first_name || "").toString().toLowerCase();
+    const project = (o.items?.[0]?.name || "").toString().toLowerCase();
+    const tracking = (o.tracking || "").toString().toLowerCase();
+    return tracking.includes(q) || customer.includes(q) || project.includes(q);
+  });
+  const filteredInProgressProjects = inProgressProjects.filter((o) => {
     if (!tableSearch) return true;
     const q = tableSearch.toLowerCase();
     const customer = (o.customer_name || o.customer?.first_name || "").toString().toLowerCase();
@@ -1385,10 +1469,12 @@ function Transactions() {
     return tracking.includes(q) || customer.includes(q) || project.includes(q);
   });
   const transactionTabs = [
-    { key: "all", label: "All", count: transactionOrders.length },
+    { key: "all", label: "All", count: activeTransactionOrders.length },
+    { key: "in_progress", label: "Ongoing Project", count: inProgressProjects.length },
     { key: "projects", label: "Completed Projects", count: completedProjects.length },
     { key: "receipts", label: "Contract & Warranties", count: receipts.length },
     { key: "feedback", label: "Customer Feedbacks", count: feedbackOrders.length },
+    { key: "cancelled", label: "Cancelled", count: cancelledTransactions.length },
   ];
   const reportCustomerOptions = (() => {
     const customers = new Map();
@@ -1423,6 +1509,8 @@ function Transactions() {
   );
   const allTotalPages = Math.max(1, Math.ceil(filteredAllOrders.length / rowsPerPage));
   const currentAll = filteredAllOrders.slice((allPage - 1) * rowsPerPage, allPage * rowsPerPage);
+  const inProgressTotalPages = Math.max(1, Math.ceil(filteredInProgressProjects.length / rowsPerPage));
+  const currentInProgress = filteredInProgressProjects.slice((inProgressPage - 1) * rowsPerPage, inProgressPage * rowsPerPage);
   const feedbackTotalPages = Math.max(1, Math.ceil(filteredFeedbackOrders.length / rowsPerPage));
   const currentFeedback = filteredFeedbackOrders.slice((feedbackPage - 1) * rowsPerPage, feedbackPage * rowsPerPage);
 
@@ -1481,25 +1569,29 @@ function Transactions() {
     const customer = (o.customer_name || o.customer?.first_name || "").toString().toLowerCase();
     const project = (o.items?.[0]?.name || "").toString().toLowerCase();
     const tracking = (o.tracking || "").toString().toLowerCase();
-    return tracking.includes(q) || customer.includes(q) || project.includes(q);
+    const reason = String(o.cancellation_reason || "").toLowerCase();
+    const cancellationActor = String(o.cancelled_by_name || "").toLowerCase();
+    return [tracking, customer, project, reason, cancellationActor].some((value) => value.includes(q));
   });
 
   const currentCancelledFiltered = filteredCancelled.slice(cancelledFirstIndex, cancelledLastIndex);
 
   const cancelledTotalPagesFiltered = Math.max(1, Math.ceil(filteredCancelled.length / rowsPerPage));
 
-  const currentData = isMobile
+  const currentData = isMobile && activeTable !== "cancelled"
     ? activeTable === "all"
       ? filteredAllOrders
-      : activeTable === "receipts"
+      : activeTable === "in_progress"
+        ? filteredInProgressProjects
+        : activeTable === "receipts"
         ? filteredReceipts
         : activeTable === "projects"
           ? filteredCompleted
-          : activeTable === "feedback"
-            ? filteredFeedbackOrders
-            : filteredCancelled
+          : filteredFeedbackOrders
     : activeTable === "all"
       ? currentAll
+      : activeTable === "in_progress"
+      ? currentInProgress
       : activeTable === "receipts"
       ? currentReceipts
       : activeTable === "projects"
@@ -1510,6 +1602,8 @@ function Transactions() {
 
   const activePage = activeTable === "all"
     ? allPage
+    : activeTable === "in_progress"
+    ? inProgressPage
     : activeTable === "receipts"
     ? receiptPage
     : activeTable === "projects"
@@ -1519,6 +1613,8 @@ function Transactions() {
     : cancelledPage;
   const activeTotalPages = activeTable === "all"
     ? allTotalPages
+    : activeTable === "in_progress"
+    ? inProgressTotalPages
     : activeTable === "receipts"
     ? receiptTotalPages
     : activeTable === "projects"
@@ -1528,6 +1624,7 @@ function Transactions() {
     : cancelledTotalPagesFiltered;
   const setActivePage = (page) => {
     if (activeTable === "all") setAllPage(page);
+    else if (activeTable === "in_progress") setInProgressPage(page);
     else if (activeTable === "receipts") setReceiptPage(page);
     else if (activeTable === "projects") setProjectPage(page);
     else if (activeTable === "feedback") setFeedbackPage(page);
@@ -1631,7 +1728,7 @@ function Transactions() {
             {!pendingPaymentProof && verifiedPaymentRecords.length > 0 && (
               <div>
                 <label htmlFor="payment-action-mode" className={`mb-2 block text-[11px] font-extrabold uppercase tracking-[0.18em] ${labelClass}`}>PAYMENT ACTION</label>
-                <select
+                <CustomerDropdown darkMode={darkMode}
                   id="payment-action-mode"
                   value={editPaymentAction}
                   onChange={(event) => {
@@ -1650,13 +1747,13 @@ function Transactions() {
                 >
                   <option value="record">Record a new payment</option>
                   <option value="adjust">Correct a verified payment</option>
-                </select>
+                </CustomerDropdown>
               </div>
             )}
             {adjustingVerifiedPayment && (
               <div>
                 <label htmlFor="payment-record-to-adjust" className={`mb-2 block text-[11px] font-extrabold uppercase tracking-[0.18em] ${labelClass}`}>VERIFIED PAYMENT TO CORRECT</label>
-                <select
+                <CustomerDropdown darkMode={darkMode}
                   id="payment-record-to-adjust"
                   value={editPaymentRecordId}
                   onChange={(event) => {
@@ -1672,7 +1769,7 @@ function Transactions() {
                       {formatDateToMMMDDYYYY(record.verified_at)} · ₱{Number(record.verified_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </option>
                   ))}
-                </select>
+                </CustomerDropdown>
               </div>
             )}
             {(() => {
@@ -1690,7 +1787,7 @@ function Transactions() {
                         const differs = Math.round(customerAmount * 100) !== Math.round(adminAmount * 100);
                         return differs ? (
                           <p role="alert" className="mt-2 font-semibold">
-                            Payment discrepancy: customer-reported {formatCurrency(customerAmount)}, admin amount to verify {formatCurrency(adminAmount)}, difference {formatCurrency(Math.abs(customerAmount - adminAmount))}. Add a reason and review any supporting evidence before saving.
+                            Payment discrepancy: customer-reported <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(customerAmount)}</span>, admin amount to verify <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(adminAmount)}</span>, difference <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(Math.abs(customerAmount - adminAmount))}</span>. Add a reason and review any supporting evidence before saving.
                           </p>
                         ) : null;
                       })()}
@@ -1716,16 +1813,7 @@ function Transactions() {
 
                     <div>
                       <div className={`mb-2 text-[11px] font-extrabold uppercase tracking-[0.18em] ${labelClass}`}>PROOF OF PAYMENT</div>
-                      <a
-                        href={proof.fileUrl || "#"}
-                        target={proof.fileUrl ? "_blank" : undefined}
-                        rel={proof.fileUrl ? "noreferrer" : undefined}
-                        onClick={(event) => {
-                          if (!proof.fileUrl) {
-                            event.preventDefault();
-                          }
-                        }}
-                        className={linkClass}
+                      <button type="button" onClick={() => proof.fileUrl && openPaymentDocumentPreview(proof.fileUrl, proof.fileName || "Payment proof")} className={linkClass}
                       >
                         <span className="flex items-center gap-2">
                           <span className={proofIconBoxClass}>
@@ -1735,18 +1823,16 @@ function Transactions() {
                           </span>
                           <span className="font-medium">View Proof of Payment</span>
                         </span>
-                        <span className={tertiaryTextClass}>↗</span>
-                      </a>
+                        <span className={tertiaryTextClass}>↗</span></button>
 
                       {proof.fileUrl ? (
                         <div className={`mt-3 overflow-hidden rounded-xl border p-3 ${panelClass}`}>
-                          <a href={proof.fileUrl} target="_blank" rel="noreferrer" className={darkMode ? "block overflow-hidden rounded-lg border border-slate-700 bg-white" : "block overflow-hidden rounded-lg border border-slate-200 bg-white"}>
+                          <button type="button" onClick={() => openPaymentDocumentPreview(proof.fileUrl, proof.fileName || "Proof of payment")} className={darkMode ? "block w-full overflow-hidden rounded-lg border border-slate-700 bg-white" : "block w-full overflow-hidden rounded-lg border border-slate-200 bg-white"}>
                             <img
                               src={proof.fileUrl}
                               alt="Proof of payment"
                               className="max-h-[420px] w-full object-contain"
-                            />
-                          </a>
+                            /></button>
                         </div>
                       ) : null}
 
@@ -1793,24 +1879,14 @@ function Transactions() {
 
                           <div className="mt-3">
                             <div className={`mb-2 text-[11px] font-extrabold uppercase tracking-[0.14em] ${labelClass}`}>View proof</div>
-                            <a
-                              href={proof.fileUrl || "#"}
-                              target={proof.fileUrl ? "_blank" : undefined}
-                              rel={proof.fileUrl ? "noreferrer" : undefined}
-                              onClick={(event) => {
-                                if (!proof.fileUrl) {
-                                  event.preventDefault();
-                                }
-                              }}
-                              className={proofLinkClass}
+                            <button type="button" onClick={() => proof.fileUrl && openPaymentDocumentPreview(proof.fileUrl, proof.fileName || "Payment proof")} className={proofLinkClass}
                             >
                               <span className={proofIconBoxClass}>
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">
                                   <path d="M10.5 13.5l6.1-6.1a3.2 3.2 0 1 1 4.5 4.5l-8.8 8.8a4.8 4.8 0 1 1-6.8-6.8l8.5-8.5" />
                                 </svg>
                               </span>
-                              <span className="truncate">{proof.fileName || "Proof of payment"}</span>
-                            </a>
+                              <span className="truncate">{proof.fileName || "Proof of payment"}</span></button>
                           </div>
                         </div>
                       </div>
@@ -1903,8 +1979,8 @@ function Transactions() {
                         <span className={tertiaryTextClass}>{formatDateToMMMDDYYYY(record.payment_date || record.recorded_at || record.verified_at || record.submitted_at)}</span>
                       </div>
                       <p className={`mt-1 text-sm ${secondaryTextClass}`}>
-                        {record.submitted_amount != null && <>Submitted {formatCurrency(Number(record.submitted_amount))} · </>}
-                        {record.verified_amount != null && <>Verified {formatCurrency(Number(record.verified_amount))}</>}
+                        {record.submitted_amount != null && <>Submitted <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(Number(record.submitted_amount))}</span> · </>}
+                        {record.verified_amount != null && <>Verified <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(Number(record.verified_amount))}</span></>}
                         {record.payment_method ? ` · ${record.payment_method}` : ""}
                       </p>
                         {(record.discrepancies || []).map((discrepancy) => (
@@ -1914,7 +1990,7 @@ function Transactions() {
                               <span className={`text-[11px] ${tertiaryTextClass}`}>{formatDateTimeToMMDDYYYY(discrepancy.detected_at)}</span>
                             </div>
                             <p className={`mt-1 text-xs ${secondaryTextClass}`}>
-                              Customer reported {formatCurrency(Number(discrepancy.customer_reported_amount))} · Admin recorded {formatCurrency(Number(discrepancy.admin_recorded_amount))} · Difference {formatCurrency(Number(discrepancy.difference))}
+                              Customer reported <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(Number(discrepancy.customer_reported_amount))}</span> · Admin recorded <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(Number(discrepancy.admin_recorded_amount))}</span> · Difference <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(Number(discrepancy.difference))}</span>
                             </p>
                             {discrepancy.reason && <p className={`mt-1 text-xs ${secondaryTextClass}`}>Admin reason: {discrepancy.reason}</p>}
                             {(discrepancy.status_history || []).map((entry, historyIndex) => (
@@ -1950,8 +2026,8 @@ function Transactions() {
                           </div>
                         ))}
                       {record.admin_reason && <p className={`mt-1 text-xs ${tertiaryTextClass}`}>Admin note: {record.admin_reason}</p>}
-                      {record.downpayment_exception?.status === "approved" && <p className="mt-1 text-xs font-bold text-amber-600">Downpayment Exception Approved · shortfall {formatCurrency(Number(record.downpayment_exception.shortfall) || 0)} · {record.downpayment_exception.reason}</p>}
-                      {record.proof_file_url && <a href={record.proof_file_url} target="_blank" rel="noreferrer" className="mt-2 inline-flex text-xs font-semibold text-sky-600 underline">View payment proof{record.proof_file_name ? `: ${record.proof_file_name}` : ""}</a>}
+                      {record.downpayment_exception?.status === "approved" && <p className="mt-1 text-xs font-bold text-amber-600">Downpayment Exception Approved · shortfall <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(Number(record.downpayment_exception.shortfall) || 0)}</span> · {record.downpayment_exception.reason}</p>}
+                      {record.proof_file_url && <button type="button" onClick={() => openPaymentDocumentPreview(record.proof_file_url, record.proof_file_name || "Payment proof")} className="mt-2 inline-flex text-xs font-semibold text-sky-600 underline">View payment proof{record.proof_file_name ? `: ${record.proof_file_name}` : ""}</button>}
                     </div>
                   ))}
                 </div>
@@ -2104,15 +2180,15 @@ function Transactions() {
           <details className={`order-1 mx-3 my-2 rounded-xl border p-3 lg:hidden ${darkMode ? "border-slate-700 bg-[#132238]" : "border-slate-200 bg-slate-50"}`}>
             <summary className="group flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-bold marker:hidden">
               <span className={strongTextClass}>Payment Summary</span>
-              <span className="flex shrink-0 items-center gap-2 text-red-500"><span>{formatCurrency(paymentSummary.totalAmount)}</span><ChevronDown size={16} className="text-slate-500 transition-transform group-open:rotate-180" aria-hidden="true" /></span>
+              <span className="flex shrink-0 items-center gap-2 text-red-500"><span><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(paymentSummary.totalAmount)}</span></span><ChevronDown size={16} className="text-slate-500 transition-transform group-open:rotate-180" aria-hidden="true" /></span>
             </summary>
             <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-3 border-t border-slate-500/20 pt-3 text-xs sm:grid-cols-3">
               <div className="min-w-0"><span className={tertiaryTextClass}>ORDER TRACKING ID</span><p className={`mt-1 break-all font-bold ${strongTextClass}`}>{editPaymentOrder.tracking || editPaymentOrder._id}</p></div>
-              <div><span className={tertiaryTextClass}>TOTAL PROJECT COST</span><p className={`mt-1 font-bold ${strongTextClass}`}>{formatCurrency(paymentSummary.totalAmount)}</p></div>
-              <div><span className={tertiaryTextClass}>{editPaymentOrder.payment_terms === "full_payment" ? "REQUIRED FULL PAYMENT" : "REQUIRED DOWNPAYMENT"}</span><p className={`mt-1 font-bold ${strongTextClass}`}>{formatCurrency(paymentSummary.requiredAmount)}</p><p className={`mt-1 text-[10px] ${tertiaryTextClass}`}>Site Inspection terms: {getSavedPaymentTermsLabel(editPaymentOrder.payment_terms)}</p></div>
-              <div><span className={tertiaryTextClass}>AMOUNT ALREADY PAID</span><p className={`mt-1 font-bold ${strongTextClass}`}>{formatCurrency(paymentSummary.paidAmount)}</p></div>
-              <div><span className={tertiaryTextClass}>DOWNPAYMENT REMAINING</span><p className={`mt-1 font-bold ${strongTextClass}`}>{formatCurrency(Math.max(paymentSummary.requiredAmount - paymentSummary.paidAmount, 0))}</p></div>
-              <div><span className={tertiaryTextClass}>REMAINING PROJECT BALANCE</span><p className={`mt-1 font-bold ${strongTextClass}`}>{formatCurrency(paymentSummary.remainingAmount)}</p></div>
+              <div><span className={tertiaryTextClass}>TOTAL PROJECT COST</span><p className={`mt-1 font-bold ${strongTextClass}`}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(paymentSummary.totalAmount)}</span></p></div>
+              <div><span className={tertiaryTextClass}>{editPaymentOrder.payment_terms === "full_payment" ? "REQUIRED FULL PAYMENT" : "REQUIRED DOWNPAYMENT"}</span><p className={`mt-1 font-bold ${strongTextClass}`}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(paymentSummary.requiredAmount)}</span></p><p className={`mt-1 text-[10px] ${tertiaryTextClass}`}>Site Inspection terms: {getSavedPaymentTermsLabel(editPaymentOrder.payment_terms)}</p></div>
+              <div><span className={tertiaryTextClass}>AMOUNT ALREADY PAID</span><p className={`mt-1 font-bold ${strongTextClass}`}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(paymentSummary.paidAmount)}</span></p></div>
+              <div><span className={tertiaryTextClass}>DOWNPAYMENT REMAINING</span><p className={`mt-1 font-bold ${strongTextClass}`}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(Math.max(paymentSummary.requiredAmount - paymentSummary.paidAmount, 0))}</span></p></div>
+              <div><span className={tertiaryTextClass}>REMAINING PROJECT BALANCE</span><p className={`mt-1 font-bold ${strongTextClass}`}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(paymentSummary.remainingAmount)}</span></p></div>
             </div>
           </details>
 
@@ -2120,11 +2196,11 @@ function Transactions() {
             <h3 className={`mb-3 text-xs font-extrabold uppercase tracking-[0.16em] ${tertiaryTextClass}`}>Payment Summary</h3>
             <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-xs sm:grid-cols-3 lg:grid-cols-1">
               <div className="min-w-0"><span className={tertiaryTextClass}>ORDER TRACKING ID</span><p className={`mt-1 break-all font-bold ${strongTextClass}`}>{editPaymentOrder.tracking || editPaymentOrder._id}</p></div>
-              <div><span className={tertiaryTextClass}>TOTAL PROJECT COST</span><p className={`mt-1 font-bold ${strongTextClass}`}>{formatCurrency(paymentSummary.totalAmount)}</p></div>
-              <div><span className={tertiaryTextClass}>{editPaymentOrder.payment_terms === "full_payment" ? "REQUIRED FULL PAYMENT" : "REQUIRED DOWNPAYMENT"}</span><p className={`mt-1 font-bold ${strongTextClass}`}>{formatCurrency(paymentSummary.requiredAmount)}</p><p className={`mt-1 text-[10px] ${tertiaryTextClass}`}>Site Inspection terms: {getSavedPaymentTermsLabel(editPaymentOrder.payment_terms)}</p></div>
-              <div><span className={tertiaryTextClass}>AMOUNT ALREADY PAID</span><p className={`mt-1 font-bold ${strongTextClass}`}>{formatCurrency(paymentSummary.paidAmount)}</p></div>
-              <div><span className={tertiaryTextClass}>DOWNPAYMENT REMAINING</span><p className={`mt-1 font-bold ${strongTextClass}`}>{formatCurrency(Math.max(paymentSummary.requiredAmount - paymentSummary.paidAmount, 0))}</p></div>
-              <div><span className={tertiaryTextClass}>REMAINING PROJECT BALANCE</span><p className={`mt-1 font-bold ${strongTextClass}`}>{formatCurrency(paymentSummary.remainingAmount)}</p></div>
+              <div><span className={tertiaryTextClass}>TOTAL PROJECT COST</span><p className={`mt-1 font-bold ${strongTextClass}`}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(paymentSummary.totalAmount)}</span></p></div>
+              <div><span className={tertiaryTextClass}>{editPaymentOrder.payment_terms === "full_payment" ? "REQUIRED FULL PAYMENT" : "REQUIRED DOWNPAYMENT"}</span><p className={`mt-1 font-bold ${strongTextClass}`}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(paymentSummary.requiredAmount)}</span></p><p className={`mt-1 text-[10px] ${tertiaryTextClass}`}>Site Inspection terms: {getSavedPaymentTermsLabel(editPaymentOrder.payment_terms)}</p></div>
+              <div><span className={tertiaryTextClass}>AMOUNT ALREADY PAID</span><p className={`mt-1 font-bold ${strongTextClass}`}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(paymentSummary.paidAmount)}</span></p></div>
+              <div><span className={tertiaryTextClass}>DOWNPAYMENT REMAINING</span><p className={`mt-1 font-bold ${strongTextClass}`}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(Math.max(paymentSummary.requiredAmount - paymentSummary.paidAmount, 0))}</span></p></div>
+              <div><span className={tertiaryTextClass}>REMAINING PROJECT BALANCE</span><p className={`mt-1 font-bold ${strongTextClass}`}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(paymentSummary.remainingAmount)}</span></p></div>
             </div>
           </aside>
           </div>
@@ -2161,7 +2237,7 @@ function Transactions() {
           />
 
           <div className="mt-6 md:hidden">
-            <select
+            <CustomerDropdown darkMode={darkMode}
               aria-label="Transaction category"
               value={activeTable}
               onChange={(event) => setActiveTable(event.target.value)}
@@ -2170,7 +2246,7 @@ function Transactions() {
               {transactionTabs.map((tab) => (
                 <option key={tab.key} value={tab.key}>{tab.label} ({tab.count})</option>
               ))}
-            </select>
+            </CustomerDropdown>
           </div>
 
           <div className={`mt-6 hidden max-w-full flex-wrap gap-1.5 rounded-2xl border p-1.5 md:flex ${darkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-slate-100"}`} role="tablist" aria-label="Filter transactions">
@@ -2199,6 +2275,7 @@ function Transactions() {
               onChange={(e) => {
                 setTableSearch(e.target.value);
                 if (activeTable === "feedback") setFeedbackPage(1);
+                if (activeTable === "in_progress") setInProgressPage(1);
               }}
               className={`w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/10 sm:max-w-sm ${darkMode ? "border-slate-700 bg-slate-900 text-slate-100 placeholder:text-slate-500" : "border-slate-200 bg-white text-slate-900 placeholder:text-slate-400"}`}
             />
@@ -2227,11 +2304,11 @@ function Transactions() {
             </div>
           </div>
 
-          <div className="bg-white rounded-3xl shadow mt-6 overflow-hidden">
+          <div className={`mt-6 overflow-hidden rounded-3xl border shadow-sm ${darkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-white"}`}>
             <div className="hidden md:block">
               <div className="overflow-x-auto">
                 <table className="w-full">
-                  <thead className="bg-gray-50">
+                  <thead className={darkMode ? "bg-slate-800/80" : "bg-slate-50"}>
                     {activeTable === "feedback" ? (
                       <tr>
                         <th className="p-4 text-left"><div className="flex items-center gap-2">{canManageFeedbackVisibility && <input type="checkbox" aria-label="Select all visible reviews" checked={allVisibleFeedbackSelected} disabled={selectableFeedbackOrders.length === 0} onChange={(event) => toggleAllVisibleFeedback(event.target.checked)} className="h-4 w-4 accent-red-700" />}<span>Customer</span></div></th>
@@ -2258,6 +2335,16 @@ function Transactions() {
                           </div>
                         </th>
                       </tr>
+                    ) : activeTable === "cancelled" ? (
+                      <tr className={`border-b ${darkMode ? "border-slate-700" : "border-slate-200"}`}>
+                        <th className={`px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wider ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Customer Name</th>
+                        <th className={`px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wider ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Product / Project Description</th>
+                        <th className={`px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wider ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Original Project Date</th>
+                        <th className={`px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wider ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Cancellation Date</th>
+                        <th className={`px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wider ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Previous Project Status</th>
+                        <th className={`px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wider ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Cancelled By</th>
+                        <th className={`px-4 py-3 text-center text-[10px] font-bold uppercase tracking-wider ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Actions</th>
+                      </tr>
                     ) : (
                       <tr>
                         <th className="p-4 text-left">Client</th>
@@ -2266,7 +2353,6 @@ function Transactions() {
                         <th className="p-4 text-left">Paid / Total</th>
                         <th className="p-4 text-left">Method</th>
                         <th className="p-4 text-left">Customer Type</th>
-                        <th className="p-4 text-left">Install Date</th>
                         <th className="p-4 text-left">Project Progress</th>
                         {activeTable === "receipts" && <th className="p-4 text-left">Warranty Status</th>}
                         <th className="p-4 text-left">Status</th>
@@ -2303,9 +2389,8 @@ function Transactions() {
                       const paymentProgress = amountVal > 0 ? Math.min(Math.max((paidAmount / amountVal) * 100, 0), 100) : 0;
                       const amount = hidePaymentAmounts ? "••••••" : `₱${Number(amountVal || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
                       const inspectionLabel = productLabel;
-                      const orderType = order.order_type === "walk_in_customer" ? "Walk-in" : "Website Order";
+                      const orderType = order.order_type === "walk_in_customer" ? "Walk-in" : "Website";
                       const paymentMethod = order.payment_method || (order.acceptance_method === "online" ? "Online" : "Cash");
-                      const installDate = order.estimated_installation_date ? formatDateToMMDDYYYY(order.estimated_installation_date) : "—";
                       const projectCategory = isCompletedProject(order) ? "Completed" : "In Progress";
                       const statusLabel = getAdminPaymentStatusLabel(paymentSummary.status);
                       const isFullyPaid = paymentSummary.status.key === "paid";
@@ -2313,6 +2398,26 @@ function Transactions() {
                         ? getUnresolvedPaymentProofRecords(order).length > 0
                         : Boolean(order.payment_proof_submitted_at && !isPaymentProofConfirmed(order));
                       const warrantyStatus = getWarrantyStatus(order);
+                      const warrantyStatusLabel = warrantyStatus === "Pending installation" ? "Pending" : warrantyStatus;
+
+                      if (activeTable === "cancelled") {
+                        const cancellationDate = order.cancellation_date || order.updatedAt;
+                        return (
+                          <tr key={order._id || order.id || index} className={`border-t transition-colors ${darkMode ? "border-slate-700 text-slate-200 hover:bg-slate-800/60" : "border-slate-100 text-slate-700 hover:bg-slate-50"}`}>
+                            <td className={`px-4 py-4 text-sm font-semibold ${darkMode ? "text-slate-100" : "text-slate-900"}`}>{customerName}</td>
+                            <td className={`px-4 py-4 text-sm font-semibold ${darkMode ? "text-slate-200" : "text-slate-800"}`}>{productLabel}</td>
+                            <td className={`whitespace-nowrap px-4 py-4 text-sm tabular-nums ${darkMode ? "text-slate-300" : "text-slate-600"}`}>{formatCancelledDate(order.createdAt)}</td>
+                            <td className={`whitespace-nowrap px-4 py-4 text-sm font-medium tabular-nums ${darkMode ? "text-slate-200" : "text-slate-700"}`}>{formatCancelledDate(cancellationDate)}</td>
+                            <td className="px-4 py-4"><span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${darkMode ? "border-slate-600 bg-slate-800 text-slate-200" : "border-slate-200 bg-slate-100 text-slate-700"}`}>{formatCancelledStatus(order.cancellation_previous_status)}</span></td>
+                            <td className={`px-4 py-4 text-sm font-medium ${darkMode ? "text-slate-300" : "text-slate-700"}`}>{formatCancelledStatus(order.cancelled_by_name)}</td>
+                            <td className="px-4 py-4 text-center">
+                              <button type="button" title="View Transaction" aria-label={`View cancelled project ${order.tracking || "details"}`} onClick={() => openContractModal(order)} className={`inline-flex h-9 w-9 items-center justify-center rounded-lg ${darkMode ? "bg-blue-500/15 text-blue-300" : "bg-blue-100 text-blue-600"}`}>
+                                <Search size={18} aria-hidden="true" />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      }
 
                       return (
                         <tr
@@ -2342,9 +2447,8 @@ function Transactions() {
                               <td className="p-4">
                                 <div className="flex flex-wrap gap-2">
                                   {(order.review?.photos || []).map((photo, photoIndex) => (
-                                    <a key={`${photo}-${photoIndex}`} href={photo} target="_blank" rel="noreferrer" aria-label={`Open review photo ${photoIndex + 1}`}>
-                                      <img src={photo} alt={`Review attachment ${photoIndex + 1}`} className="h-12 w-12 rounded-md border border-slate-200 object-cover" />
-                                    </a>
+                                    <button key={`${photo}-${photoIndex}`} type="button" onClick={() => openPaymentDocumentPreview(photo, `Review photo ${photoIndex + 1}`)} aria-label={`Open review photo ${photoIndex + 1}`}>
+                                      <img src={photo} alt={`Review attachment ${photoIndex + 1}`} className="h-12 w-12 rounded-md border border-slate-200 object-cover" /></button>
                                   ))}
                                   {!(order.review?.photos || []).length && <span className="text-sm text-slate-400">None</span>}
                                 </div>
@@ -2376,7 +2480,7 @@ function Transactions() {
                             <>
                               <td className="p-4"><div className="max-w-[180px]"><p className="truncate text-sm font-semibold text-slate-800">{customerName}</p><p className="mt-1 truncate text-xs text-slate-500">{order.customer?.email || order.customer_email || ""}</p></div></td>
                               <td className="p-4"><div className="font-semibold text-slate-900">{inspectionLabel}</div></td>
-                              <td className="p-4 font-bold text-slate-900">{formatCurrency((Number(amountVal) || 0) * 0.3333)}</td>
+                              <td className="p-4 font-bold text-slate-900"><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency((Number(amountVal) || 0) * 0.3333)}</span></td>
                               <td className="p-4">
                                 <div className="font-bold text-emerald-600">{hidePaymentAmounts ? "••••••" : `₱${paidAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</div>
                                 <div className="text-xs text-slate-500">of {amount}</div>
@@ -2389,14 +2493,13 @@ function Transactions() {
                               </td>
                               <td className="p-4"><span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${paymentMethod === "Online" ? (darkMode ? "border border-rose-400/40 bg-rose-500/15 text-rose-300" : "bg-rose-50 text-rose-700") : (darkMode ? "border border-emerald-400/40 bg-emerald-500/15 text-emerald-300" : "bg-emerald-50 text-emerald-700")}`}>{paymentMethod}</span></td>
                               <td className="p-4"><span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">{orderType}</span></td>
-                              <td className="p-4 text-sm text-slate-600">{installDate}</td>
                               <td className="p-4"><span className={`inline-flex rounded-md px-3 py-1 text-xs font-semibold ${projectCategory === "Completed" ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-violet-50 text-violet-700"}`}>{projectCategory}</span></td>
-                              {activeTable === "receipts" && <td className="p-4"><span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${getWarrantyStatusClass(warrantyStatus)}`}>{warrantyStatus}</span></td>}
-                              <td className="p-4"><div className="flex flex-col items-start gap-1.5"><span className={`${statusBadgeBaseClassName} ${getPaymentStatusBadgeClassName(isFullyPaid ? "paid" : paymentSummary.status.key, darkMode)}`}>{statusLabel}</span>{showNeedsConfirmation && (<span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold ${darkMode ? "border border-rose-400/40 bg-rose-500/15 text-rose-300" : "bg-rose-100 text-rose-700"}`}><span aria-hidden="true">🔔</span>Needs Confirmation</span>)}</div></td>
+                              {activeTable === "receipts" && <td className="p-4"><span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${getWarrantyStatusClass(warrantyStatus)}`}>{warrantyStatusLabel}</span></td>}
+                              <td className="p-4"><div className="flex flex-col items-start gap-1.5"><span className={`${statusBadgeBaseClassName} !max-w-none !whitespace-nowrap !break-normal ${getPaymentStatusBadgeClassName(isFullyPaid ? "paid" : paymentSummary.status.key, darkMode)}`}>{paymentSummary.status.key === "partial" ? "Partial" : statusLabel}</span>{showNeedsConfirmation && (<span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold ${darkMode ? "border border-rose-400/40 bg-rose-500/15 text-rose-300" : "bg-rose-100 text-rose-700"}`}>Unverified</span>)}</div></td>
                               <td
-                                className={`${showTransactionActions ? "p-4" : "px-1 py-4"} text-center transition-[width,padding] duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none`}
+                                className={`${showTransactionActions ? "p-4" : "px-1 py-4"} text-right transition-[width,padding] duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none`}
                                 style={{ width: showTransactionActions ? ("190px") : "56px" }}
-                              ><div className={`mx-auto flex flex-nowrap justify-center gap-2 overflow-hidden transition-[width,opacity,transform] duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none ${showTransactionActions ? "translate-x-0 opacity-100" : "translate-x-2 opacity-0 pointer-events-none"}`} style={{ width: showTransactionActions ? ("128px") : "0px" }}><button title="View Transaction" onClick={() => openContractModal(order)} className="shrink-0 p-2 rounded-lg bg-blue-100 text-blue-600 hover:bg-blue-200 transition"><Search size={20} strokeWidth={2.6} /></button>{isFullyPaid ? (<button type="button" title="Fully paid" aria-label="Fully paid. Payment editing is locked." disabled className={`shrink-0 cursor-not-allowed rounded-lg p-2 ${darkMode ? "bg-slate-700 text-slate-400" : "bg-slate-100 text-slate-500"}`}><Lock size={18} aria-hidden="true" /></button>) : (<button type="button" title="Add Payment" aria-label="Add Payment" onClick={() => openEditPaymentModal(order)} className="shrink-0 p-2 rounded-lg bg-violet-100 text-violet-700 hover:bg-violet-200 transition"><Pencil size={18} /></button>)}<button type="button" title="View Contract" aria-label="View Contract" onClick={() => openReadOnlyContract(order)} className="shrink-0 p-2 rounded-lg bg-amber-100 text-amber-700 hover:bg-amber-200 transition"><FileText size={18} /></button></div></td>
+                              ><div className={`ml-auto flex flex-nowrap justify-end gap-2 overflow-hidden transition-[width,opacity,transform] duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none ${showTransactionActions ? "translate-x-0 opacity-100" : "translate-x-2 opacity-0 pointer-events-none"}`} style={{ width: showTransactionActions ? (canCancelTransactions ? "164px" : "128px") : "0px" }}><button title="View Transaction" onClick={() => openContractModal(order)} className="shrink-0 p-2 rounded-lg bg-blue-100 text-blue-600 hover:bg-blue-200 transition"><Search size={20} strokeWidth={2.6} /></button>{isFullyPaid ? (<button type="button" title="Fully paid" aria-label="Fully paid. Payment editing is locked." disabled className={`shrink-0 cursor-not-allowed rounded-lg p-2 ${darkMode ? "bg-slate-700 text-slate-400" : "bg-slate-100 text-slate-500"}`}><Lock size={18} aria-hidden="true" /></button>) : (<button type="button" title="Add Payment" aria-label="Add Payment" onClick={() => openEditPaymentModal(order)} className="shrink-0 p-2 rounded-lg bg-violet-100 text-violet-700 hover:bg-violet-200 transition"><Pencil size={18} /></button>)}<button type="button" title="View Contract" aria-label="View Contract" onClick={() => openReadOnlyContract(order)} className="shrink-0 p-2 rounded-lg bg-amber-100 text-amber-700 hover:bg-amber-200 transition"><FileText size={18} /></button>{isEligibleForAdminCancellation(order) && <button type="button" title="Cancel Transaction" aria-label={`Cancel project ${order.tracking || "transaction"}`} onClick={() => { setCancelTransactionOrder(order); setCancellationReason(""); }} className={`shrink-0 rounded-lg p-2 ${darkMode ? "bg-red-500/15 text-red-300 hover:bg-red-500/25" : "bg-red-100 text-red-700 hover:bg-red-200"}`}><Ban size={18} aria-hidden="true" /></button>}</div></td>
                             </>
                           )}
                         </tr>
@@ -2449,6 +2552,29 @@ function Transactions() {
                     </article>
                   );
                 }
+                if (activeTable === "cancelled") {
+                  const productLabel = Array.isArray(order.items) && order.items.length > 0 ? (order.items.length > 1 ? "Batch Order" : (order.items[0].name || order.items[0].product_name || "Project")) : "N/A";
+                  return (
+                    <article key={order._id || order.id || index} className={`rounded-2xl border p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${darkMode ? "border-slate-700 bg-slate-900 text-slate-100" : "border-slate-200 bg-white text-slate-900"}`}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-bold">{productLabel}</p>
+                          <p className={`mt-1 text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>{customerName}</p>
+                        </div>
+                        <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-bold ${darkMode ? "border-rose-400/30 bg-rose-500/15 text-rose-300" : "border-rose-200 bg-rose-50 text-rose-700"}`}>Cancelled</span>
+                      </div>
+                      <dl className={`mt-3 grid grid-cols-2 gap-3 border-t pt-3 text-xs ${darkMode ? "border-slate-700" : "border-slate-200"}`}>
+                        <div><dt className={`text-[10px] font-bold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Original Project Date</dt><dd className="mt-1 font-medium tabular-nums">{formatCancelledDate(order.createdAt)}</dd></div>
+                        <div><dt className={`text-[10px] font-bold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Cancellation Date</dt><dd className="mt-1 font-medium tabular-nums">{formatCancelledDate(order.cancellation_date)}</dd></div>
+                        <div><dt className={`text-[10px] font-bold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Previous Project Status</dt><dd className="mt-1 font-semibold">{formatCancelledStatus(order.cancellation_previous_status)}</dd></div>
+                        <div><dt className={`text-[10px] font-bold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Cancelled By</dt><dd className="mt-1 font-medium">{formatCancelledStatus(order.cancelled_by_name)}</dd></div>
+                      </dl>
+                      <div className="mt-3 flex justify-end">
+                        <button type="button" title="View Transaction" aria-label={`View cancelled project ${order.tracking || "details"}`} onClick={() => openContractModal(order)} className={`inline-flex h-9 w-9 items-center justify-center rounded-lg ${darkMode ? "bg-blue-500/15 text-blue-300" : "bg-blue-100 text-blue-600"}`}><Search size={18} aria-hidden="true" /></button>
+                      </div>
+                    </article>
+                  );
+                }
                 const productLabel = Array.isArray(order.items) && order.items.length > 0 ? (order.items.length > 1 ? "Batch Order" : (order.items[0].name || order.items[0].product_name || "Project")) : "N/A";
                 const paymentSummary = getPaymentSummary(order);
                 const amountVal = paymentSummary.totalAmount;
@@ -2466,7 +2592,7 @@ function Transactions() {
                         <p className="truncate text-sm font-bold text-slate-900">{productLabel}</p>
                         <p className="mt-1 text-xs text-slate-500">{customerName}</p>
                       </div>
-                      <span className={`${statusBadgeBaseClassName} text-[10px] ${getPaymentStatusBadgeClassName(isFullyPaid ? "paid" : paymentSummary.status.key, darkMode)}`}>
+                      <span className={`${statusBadgeBaseClassName} !max-w-none shrink-0 !whitespace-nowrap !break-normal text-[10px] ${getPaymentStatusBadgeClassName(isFullyPaid ? "paid" : paymentSummary.status.key, darkMode)}`}>
                         {isFullyPaid ? "Fully Paid" : getAdminPaymentStatusLabel(paymentSummary.status)}
                       </span>
                     </div>
@@ -2477,14 +2603,14 @@ function Transactions() {
                       </div>
                       <div>
                         <p className="text-[10px] uppercase tracking-wide text-slate-400">Est. Profit (33.33%)</p>
-                        <p className="mt-1 font-semibold text-slate-900">{formatCurrency((Number(amountVal) || 0) * 0.3333)}</p>
+                        <p className="mt-1 font-semibold text-slate-900"><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency((Number(amountVal) || 0) * 0.3333)}</span></p>
                       </div>
                     </div>
                     {activeTable === "receipts" && (
                       <div className="mt-3 flex items-center justify-between gap-3 border-t border-gray-200 pt-3 text-xs">
                         <span className="text-slate-500">Warranty Status</span>
                         <span className={`inline-flex rounded-full px-2.5 py-1 font-semibold ${getWarrantyStatusClass(getWarrantyStatus(order))}`}>
-                          {getWarrantyStatus(order)}
+                          {getWarrantyStatus(order) === "Pending installation" ? "Pending" : getWarrantyStatus(order)}
                         </span>
                       </div>
                     )}
@@ -2498,12 +2624,21 @@ function Transactions() {
                         <button type="button" title="Add Payment" aria-label="Add Payment" onClick={() => openEditPaymentModal(order)} className="p-2 rounded-lg bg-violet-100 text-violet-700 hover:bg-violet-200 transition"><Pencil size={18} /></button>
                       )}
                       <button type="button" title="View Contract" aria-label="View Contract" onClick={() => openReadOnlyContract(order)} className="p-2 rounded-lg bg-amber-100 text-amber-700 hover:bg-amber-200 transition"><FileText size={18} /></button>
+                      {isEligibleForAdminCancellation(order) && <button type="button" title="Cancel Transaction" aria-label={`Cancel project ${order.tracking || "transaction"}`} onClick={() => { setCancelTransactionOrder(order); setCancellationReason(""); }} className={`rounded-lg p-2 ${darkMode ? "bg-red-500/15 text-red-300" : "bg-red-100 text-red-700"}`}><Ban size={18} aria-hidden="true" /></button>}
 
                     </div>
                   </div>
                 );
               })}
             </div>
+
+            {activeTable === "cancelled" && <div className={`flex items-center justify-between gap-3 border-t p-3 text-xs md:hidden ${darkMode ? "border-slate-700 bg-slate-900 text-slate-300" : "border-slate-200 bg-gray-50 text-slate-700"}`}>
+              <span>Page {activePage} of {activeTotalPages}</span>
+              <div className="flex gap-2">
+                <button type="button" disabled={activePage === 1} onClick={() => setActivePage(activePage - 1)} className={`rounded-lg border px-3 py-2 font-semibold disabled:opacity-50 ${darkMode ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>Previous</button>
+                <button type="button" disabled={activePage === activeTotalPages} onClick={() => setActivePage(activePage + 1)} className={`rounded-lg border px-3 py-2 font-semibold disabled:opacity-50 ${darkMode ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>Next</button>
+              </div>
+            </div>}
 
             {/* Pagination */}
 
@@ -2554,7 +2689,60 @@ function Transactions() {
 
           </div>
 
-          <Toaster position="bottom-right" />
+          <AppToaster />
+
+          {cancelTransactionOrder && (
+            <div
+              className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm"
+              role="presentation"
+              onMouseDown={(event) => event.target === event.currentTarget && !cancellationLoading && setCancelTransactionOrder(null)}
+            >
+              <section
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="cancel-project-title"
+                className={`w-full max-w-lg overflow-hidden rounded-2xl border shadow-2xl ${darkMode ? "border-slate-700 bg-[#132238] text-slate-100" : "border-slate-200 bg-white text-slate-900"}`}
+              >
+                <header className={`flex items-start justify-between gap-4 border-b p-5 ${darkMode ? "border-slate-700" : "border-slate-200"}`}>
+                  <div>
+                    <h2 id="cancel-project-title" className="text-lg font-bold">Cancel This Project?</h2>
+                    <p className={`mt-2 text-sm ${darkMode ? "text-slate-300" : "text-slate-600"}`}>
+                      Are you sure you want to cancel this transaction? Cancelling this transaction will mark the entire project as Cancelled and move it to the Cancelled list in Transaction and Progress Monitor.
+                    </p>
+                  </div>
+                  <button type="button" onClick={() => setCancelTransactionOrder(null)} disabled={cancellationLoading} aria-label="Close cancellation confirmation" className={`rounded-lg p-1.5 disabled:opacity-50 ${darkMode ? "text-slate-400 hover:bg-slate-800" : "text-slate-500 hover:bg-slate-100"}`}>
+                    <X size={18} aria-hidden="true" />
+                  </button>
+                </header>
+                <div className="space-y-4 p-5">
+                  <dl className={`grid grid-cols-2 gap-3 rounded-xl border p-3 text-sm ${darkMode ? "border-slate-700 bg-slate-900/60" : "border-slate-200 bg-slate-50"}`}>
+                    <div><dt className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Project / Transaction Reference</dt><dd className="mt-1 break-all font-mono text-xs font-semibold">{cancelTransactionOrder.tracking || cancelTransactionOrder._id || cancelTransactionOrder.id || "—"}</dd></div>
+                    <div><dt className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Customer Name</dt><dd className="mt-1 font-semibold">{cancelTransactionOrder.customer_name || `${cancelTransactionOrder.customer?.first_name || ""} ${cancelTransactionOrder.customer?.last_name || ""}`.trim() || "N/A"}</dd></div>
+                    <div className="col-span-2"><dt className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Current Project Status</dt><dd className="mt-1 font-semibold">{cancelTransactionOrder.status || "—"}</dd></div>
+                  </dl>
+                  <label className="block">
+                    <span className="mb-1.5 block text-sm font-semibold">Cancellation Reason <span className="text-red-600">*</span></span>
+                    <textarea
+                      required
+                      maxLength={1000}
+                      value={cancellationReason}
+                      onChange={(event) => setCancellationReason(event.target.value)}
+                      disabled={cancellationLoading}
+                      rows={4}
+                      className={`w-full resize-y rounded-xl border px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-red-500/20 disabled:opacity-60 ${darkMode ? "border-slate-600 bg-slate-900 text-slate-100 placeholder:text-slate-500 focus:border-red-400" : "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400 focus:border-red-500"}`}
+                    />
+                  </label>
+                </div>
+                <footer className={`flex flex-col-reverse justify-end gap-2 border-t p-5 sm:flex-row ${darkMode ? "border-slate-700" : "border-slate-200"}`}>
+                  <button type="button" onClick={() => setCancelTransactionOrder(null)} disabled={cancellationLoading} className={`rounded-lg border px-4 py-2.5 text-sm font-semibold disabled:opacity-50 ${darkMode ? "border-slate-600 text-slate-200 hover:bg-slate-800" : "border-slate-300 text-slate-700 hover:bg-slate-50"}`}>Keep Transaction</button>
+                  <button type="button" onClick={handleConfirmProjectCancellation} disabled={cancellationLoading || !cancellationReason.trim()} className="inline-flex items-center justify-center gap-2 rounded-lg bg-red-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-800 disabled:cursor-wait disabled:opacity-50">
+                    {cancellationLoading && <LoaderCircle size={16} className="animate-spin" aria-hidden="true" />}
+                    {cancellationLoading ? "Cancelling..." : "Confirm Cancellation"}
+                  </button>
+                </footer>
+              </section>
+            </div>
+          )}
 
           {showGenerateReportModal && (
             <div
@@ -2588,13 +2776,13 @@ function Transactions() {
                   <div className="grid max-h-[65vh] gap-4 overflow-y-auto p-5 sm:grid-cols-2">
                     <label className="block sm:col-span-2">
                       <span className={`mb-1.5 block text-xs font-bold ${darkMode ? "text-slate-300" : "text-slate-700"}`}>Report category</span>
-                      <select
+                      <CustomerDropdown darkMode={darkMode}
                         value={reportType}
                         onChange={(event) => setReportType(event.target.value)}
                         className={`w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/10 ${darkMode ? "border-slate-600 bg-[#1d2f45] text-slate-100" : "border-slate-200 bg-white text-slate-900"}`}
                       >
                         {TRANSACTION_REPORT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                      </select>
+                      </CustomerDropdown>
                     </label>
 
                     <label className="block">
@@ -2623,7 +2811,7 @@ function Transactions() {
                     {reportHasProjectStatus && (
                       <label className="block">
                         <span className={`mb-1.5 block text-xs font-bold ${darkMode ? "text-slate-300" : "text-slate-700"}`}>Project status</span>
-                        <select
+                        <CustomerDropdown darkMode={darkMode}
                           value={reportProjectStatus}
                           onChange={(event) => setReportProjectStatus(event.target.value)}
                           className={`w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/10 ${darkMode ? "border-slate-600 bg-[#1d2f45] text-slate-100" : "border-slate-200 bg-white text-slate-900"}`}
@@ -2633,14 +2821,14 @@ function Transactions() {
                           <option value="active">Active / In Progress</option>
                           <option value="completed">Completed</option>
                           <option value="cancelled">Cancelled</option>
-                        </select>
+                        </CustomerDropdown>
                       </label>
                     )}
 
                     {reportHasPaymentStatus && (
                       <label className="block">
                         <span className={`mb-1.5 block text-xs font-bold ${darkMode ? "text-slate-300" : "text-slate-700"}`}>Payment status</span>
-                        <select
+                        <CustomerDropdown darkMode={darkMode}
                           value={reportPaymentStatus}
                           onChange={(event) => setReportPaymentStatus(event.target.value)}
                           className={`w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/10 ${darkMode ? "border-slate-600 bg-[#1d2f45] text-slate-100" : "border-slate-200 bg-white text-slate-900"}`}
@@ -2651,20 +2839,20 @@ function Transactions() {
                           <option value="downpayment">Paid</option>
                           <option value="partial">Partial Payment</option>
                           <option value="paid">Fully Paid</option>
-                        </select>
+                        </CustomerDropdown>
                       </label>
                     )}
 
                     <label className="block">
                       <span className={`mb-1.5 block text-xs font-bold ${darkMode ? "text-slate-300" : "text-slate-700"}`}>Customer</span>
-                      <select
+                      <CustomerDropdown darkMode={darkMode}
                         value={reportCustomer}
                         onChange={(event) => setReportCustomer(event.target.value)}
                         className={`w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/10 ${darkMode ? "border-slate-600 bg-[#1d2f45] text-slate-100" : "border-slate-200 bg-white text-slate-900"}`}
                       >
                         <option value="all">All customers</option>
                         {reportCustomerOptions.map((customer) => <option key={customer.value} value={customer.value}>{customer.label}</option>)}
-                      </select>
+                      </CustomerDropdown>
                     </label>
 
                     <label className="block sm:col-span-2">
@@ -2798,10 +2986,10 @@ function Transactions() {
                   <div className="space-y-3 px-5 py-4 text-sm">
                     <p className="text-xs font-semibold text-slate-500">Order {editPaymentOrder.tracking || editPaymentOrder._id}</p>
                     <div className="grid grid-cols-2 gap-3">
-                      <div><span className="text-xs text-slate-500">{editPaymentOrder.payment_terms === "full_payment" ? "Required full payment" : "Required downpayment"} · {getSavedPaymentTermsLabel(editPaymentOrder.payment_terms)}</span><p className="mt-1 font-bold">{formatCurrency(lowDownpaymentWarning.requiredAmount)}</p></div>
-                      <div><span className="text-xs text-slate-500">Entered payment</span><p className="mt-1 font-bold">{formatCurrency(lowDownpaymentWarning.enteredAmount)}</p></div>
-                      <div><span className="text-xs text-slate-500">Remaining shortfall</span><p className="mt-1 font-bold text-amber-600">{formatCurrency(lowDownpaymentWarning.remainingDownpayment)}</p></div>
-                      <div><span className="text-xs text-slate-500">Remaining project balance</span><p className="mt-1 font-bold">{formatCurrency(lowDownpaymentWarning.remainingProjectBalance)}</p></div>
+                      <div><span className="text-xs text-slate-500">{editPaymentOrder.payment_terms === "full_payment" ? "Required full payment" : "Required downpayment"} · {getSavedPaymentTermsLabel(editPaymentOrder.payment_terms)}</span><p className="mt-1 font-bold"><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(lowDownpaymentWarning.requiredAmount)}</span></p></div>
+                      <div><span className="text-xs text-slate-500">Entered payment</span><p className="mt-1 font-bold"><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(lowDownpaymentWarning.enteredAmount)}</span></p></div>
+                      <div><span className="text-xs text-slate-500">Remaining shortfall</span><p className="mt-1 font-bold text-amber-600"><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(lowDownpaymentWarning.remainingDownpayment)}</span></p></div>
+                      <div><span className="text-xs text-slate-500">Remaining project balance</span><p className="mt-1 font-bold"><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(lowDownpaymentWarning.remainingProjectBalance)}</span></p></div>
                     </div>
                     <p className={`rounded-lg px-3 py-2 text-xs ${darkMode ? "bg-amber-500/10 text-amber-200" : "bg-amber-50 text-amber-900"}`}>The configured downpayment remains unchanged. Approval verifies only the submitted amount; it does not mark the downpayment as paid.</p>
                     <label htmlFor="downpayment-seller-approval-party" className="block text-xs font-bold">Seller or authorized approving party <span className="text-red-500">(required)</span></label>
@@ -2899,7 +3087,7 @@ function Transactions() {
                 </div>
                 <form onSubmit={handleSaveFeedbackReply} className="mt-5 space-y-4">
                   <label htmlFor="feedback-admin-response" className="block text-sm font-semibold">Admin Response</label>
-                  <select
+                  <CustomerDropdown darkMode={darkMode}
                     aria-label="Choose a response template"
                     value={feedbackReplyTemplate}
                     onChange={(event) => {
@@ -2913,7 +3101,7 @@ function Transactions() {
                     {ADMIN_FEEDBACK_RESPONSE_TEMPLATES.map((template) => (
                       <option key={template.value} value={template.value}>{template.label}</option>
                     ))}
-                  </select>
+                  </CustomerDropdown>
                   <textarea
                     id="feedback-admin-response"
                     value={feedbackReplyText}
@@ -3041,16 +3229,15 @@ function Transactions() {
                     {(feedbackPreviewOrder.review?.photos || []).length > 0 ? (
                       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                         {feedbackPreviewOrder.review.photos.map((photo, index) => (
-                          <a
+                          <button
+                            type="button"
+                            onClick={() => openPaymentDocumentPreview(photo, `Review photo ${index + 1}`)}
                             key={`${photo}-${index}`}
-                            href={photo}
-                            target="_blank"
-                            rel="noreferrer"
                             aria-label={`Open review photo ${index + 1}`}
                             className={`aspect-square overflow-hidden rounded-lg border ${darkMode ? "border-slate-700 bg-slate-800" : "border-slate-200 bg-slate-50"}`}
                           >
                             <img src={photo} alt={`Review photo ${index + 1}`} className="h-full w-full object-cover" />
-                          </a>
+                          </button>
                         ))}
                       </div>
                     ) : (

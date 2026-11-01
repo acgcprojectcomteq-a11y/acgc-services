@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Check, ChevronLeft, ChevronRight, Clipboard, Copy, X } from "lucide-react";
 import { formatDateToMMMDDYYYY } from "@/lib/dateUtils";
+import CustomerDropdown from "@/components/CustomerDropdown";
 import { isAdminModalRoute } from "@/lib/globalModalBehavior";
 import ItemCard from "./ItemCard";
 import { formatOrderItemMeasurements } from "./OrderProgressTimeline";
@@ -208,6 +209,8 @@ export default function OrderTimelineModal({
   }, [notificationTarget, rows, entries]);
 
   const trackingId = order?.trackingId || order?.tracking || order?._id || order?.id || "Order";
+  const cancellationReason = String(order?.cancellation_reason || order?.cancellationReason || "").trim();
+  const isCancelledOrder = String(order?.status || "").trim().toLowerCase() === "cancelled";
   const placedDate = order?.createdAt || order?.created_at;
   const dateLabel = placedDate ? formatDateToMMMDDYYYY(placedDate) : "Date unavailable";
   const expandAll = () => setExpandedKeys(new Set(allKeys));
@@ -344,15 +347,13 @@ export default function OrderTimelineModal({
                   <label className="sr-only" htmlFor="timeline-stage-filter">Filter items by stage</label>
                 )}
                 {items.length >= 10 && (
-                  <select
-                    id="timeline-stage-filter"
-                    value={stageFilter}
+                  <CustomerDropdown id="timeline-stage-filter" ariaLabel="Filter items by stage" darkMode={darkMode} value={stageFilter}
                     onChange={(event) => setStageFilter(event.target.value)}
-                    className={`w-full rounded-lg border px-2 py-2 text-xs sm:w-32 sm:py-1.5 ${darkMode ? "border-slate-700 bg-slate-900 text-slate-200" : "border-slate-300 bg-white text-slate-700"}`}
+                    className="sm:w-32"
                   >
                     <option value="all">All stages</option>
                     {stageOptions.map((stage) => <option key={stage} value={stage}>{stage}</option>)}
-                  </select>
+                  </CustomerDropdown>
                 )}
                 <button
                   type="button"
@@ -403,6 +404,17 @@ export default function OrderTimelineModal({
                 />
               ))}
             </div>
+          )}
+          {isCancelledOrder && cancellationReason && (
+            <section
+              aria-label="Cancellation reason"
+              className={`mt-3 rounded-xl border p-3 ${darkMode ? "border-red-700 bg-red-950/60" : "border-red-300 bg-red-100"}`}
+            >
+              <h3 className={`text-xs font-bold ${darkMode ? "text-red-200" : "text-red-900"}`}>Cancellation reason</h3>
+              <p className={`mt-1 whitespace-pre-wrap break-words text-sm ${darkMode ? "text-slate-100" : "text-slate-800"}`}>
+                {cancellationReason}
+              </p>
+            </section>
           )}
         </div>
 

@@ -94,6 +94,12 @@ export const updateOrderStatus = (orderId, payload) =>
     body: JSON.stringify(payload),
   });
 
+export const cancelAdminOrder = (orderId, payload) =>
+  apiFetch(`/orders/admin/${orderId}/cancel`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+
 export const updateOrderInspection = (orderId, payload) =>
   apiFetch(`/orders/admin/${orderId}/inspection`, {
     method: "PUT",

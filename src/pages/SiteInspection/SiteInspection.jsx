@@ -1,3 +1,4 @@
+import CustomerDropdown from "@/components/CustomerDropdown";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
@@ -24,7 +25,8 @@ import {
   Lock,
   Unlock,
 } from "lucide-react";
-import toast, { Toaster } from 'react-hot-toast';
+import toast from 'react-hot-toast';
+import AppToaster from "@/components/AppToaster";
 import { toJpeg } from "html-to-image";
 import jsPDF from "jspdf";
 
@@ -57,6 +59,34 @@ import { recordActivity } from "@/lib/activityLog";
 import ProfileAvatar from "../../components/ui/ProfileAvatar";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import useNotificationHighlight from "@/hooks/useNotificationHighlight";
+
+const ORDER_TYPE_TOKENS = {
+  standard: {
+    label: "Standard Order",
+    dot: "bg-slate-600",
+    halo: "ring-slate-600/25",
+    chip: "border-slate-600 bg-slate-50 text-slate-800",
+    bar: "border-l-slate-600",
+    gradientLight: "linear-gradient(90deg, rgba(71,85,105,.11), rgba(71,85,105,0) 140px)",
+  },
+  rush: {
+    label: "Rush Order",
+    dot: "bg-red-700",
+    halo: "ring-red-700/25",
+    chip: "border-red-700 bg-red-50 text-red-800",
+    bar: "border-l-red-700",
+    gradientLight: "linear-gradient(90deg, rgba(185,28,28,.10), rgba(185,28,28,0) 140px)",
+  },
+  restricted: {
+    label: "Restricted Account",
+    dot: "bg-orange-700",
+    halo: "ring-orange-700/25",
+    chip: "border-orange-700 bg-orange-50 text-orange-900",
+    bar: "border-l-orange-700",
+    gradientLight: "linear-gradient(90deg, rgba(194,65,12,.11), rgba(194,65,12,0) 140px)",
+  },
+};
+const ORDER_TYPE_LEGEND = [ORDER_TYPE_TOKENS.standard, ORDER_TYPE_TOKENS.rush, ORDER_TYPE_TOKENS.restricted];
 
 const getDefaultInspection = () => ({
   customerId: null,
@@ -1687,7 +1717,7 @@ function SiteInspection() {
         </div>)}
         {chargesTotal > 0 && <div className={`flex items-center justify-between gap-3 rounded-lg px-3 py-2 ${darkMode ? "bg-emerald-400/10 text-emerald-200" : "bg-emerald-50 text-emerald-800"}`}>
           <span className="text-xs font-semibold">Total product charges</span>
-          <span className="text-sm font-extrabold tabular-nums">{formatCurrency(chargesTotal)}</span>
+          <span className="text-sm font-extrabold tabular-nums"><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(chargesTotal)}</span></span>
         </div>}
       </div>
     </div>;
@@ -1856,7 +1886,7 @@ function SiteInspection() {
                   <span>optional</span>
                 </label>
               ) : (
-                <span className="shrink-0 font-semibold">{formatCurrency(Number(charge.amount) || 0)}{charge.type === "per_blade" ? " / blade" : charge.type === "per_sqft" ? " / sq ft" : charge.type === "percentage" ? "%" : ""}</span>
+                <span className="shrink-0 font-semibold"><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(Number(charge.amount) || 0)}</span>{charge.type === "per_blade" ? " / blade" : charge.type === "per_sqft" ? " / sq ft" : charge.type === "percentage" ? "%" : ""}</span>
               )}
             </div>
           );
@@ -1919,10 +1949,10 @@ function SiteInspection() {
       <div className={`w-full space-y-2 rounded-lg border p-2 ${darkMode ? "border-slate-700 bg-slate-900/70" : "border-slate-200 bg-slate-50"}`}>
         <label className="block">
           <span className={labelClass}>Glass type</span>
-          <select aria-label={`Glass type for measurement ${rowIndex + 1}`} value={item.blade_glass_type || product?.default_blade_glass_type || glassTypes[0]?.name || ""} onChange={(event) => onFieldChange(item.id, "blade_glass_type", event.target.value)} className={fieldClass}>
+          <CustomerDropdown darkMode={darkMode} aria-label={`Glass type for measurement ${rowIndex + 1}`} value={item.blade_glass_type || product?.default_blade_glass_type || glassTypes[0]?.name || ""} onChange={(event) => onFieldChange(item.id, "blade_glass_type", event.target.value)} className={fieldClass}>
             <option value="">Select glass</option>
             {glassTypes.map((glass) => <option key={glass.name} value={glass.name}>{glass.name} · {hidePaymentAmounts ? "••••••" : `₱${Number(glass.price_per_blade || 0).toLocaleString()}`}/blade</option>)}
-          </select>
+          </CustomerDropdown>
         </label>
 
         {(sellBladesOnly || sellWithFrame) && (
@@ -1945,14 +1975,14 @@ function SiteInspection() {
         {saleMode === "frame" && frameTypes.length > 0 && (
           <label className="block">
             <span className={labelClass}>Frame type</span>
-            <select aria-label={`Frame type for measurement ${rowIndex + 1}`} value={item.frame_type || product?.default_frame_type || frameTypes[0]?.name || ""} onChange={(event) => {
+            <CustomerDropdown darkMode={darkMode} aria-label={`Frame type for measurement ${rowIndex + 1}`} value={item.frame_type || product?.default_frame_type || frameTypes[0]?.name || ""} onChange={(event) => {
               const frame = frameTypes.find((candidate) => candidate.name === event.target.value);
               onFieldChange(item.id, "frame_type", event.target.value);
               onFieldChange(item.id, "blade_count", Number(frame?.blade_count) || minimumBlades);
               onFieldChange(item.id, "frame_price", Number(frame?.price) || 0);
             }} className={fieldClass}>
               {frameTypes.map((frame) => <option key={frame.name} value={frame.name}>{frame.name} · {frame.blade_count} blades · {hidePaymentAmounts ? "••••••" : `₱${Number(frame.price || 0).toLocaleString()}`}</option>)}
-            </select>
+            </CustomerDropdown>
           </label>
         )}
 
@@ -2045,12 +2075,12 @@ function SiteInspection() {
         <div className="grid grid-cols-1 items-end gap-4 p-4 min-[620px]:grid-cols-[minmax(0,1.6fr)_76px_minmax(110px,0.8fr)_minmax(90px,auto)_36px]">
           <label className="min-w-0">
             <span className={labelClasses}>Product / Description</span>
-            <select id={productSelectId} value={item.product_id || ""} onChange={(event) => onProductChange(item.id, event.target.value)} className={`${inputClasses} ${item.product_id ? `font-semibold ${darkMode ? "!text-red-300" : "!text-red-600"}` : ""}`}>
+            <CustomerDropdown darkMode={darkMode} id={productSelectId} value={item.product_id || ""} onChange={(event) => onProductChange(item.id, event.target.value)} className={`${inputClasses} ${item.product_id ? `font-semibold ${darkMode ? "!text-red-300" : "!text-red-600"}` : ""}`}>
               <option value="">-- Select Active Product --</option>
               {products.map((product) => (
                 <option key={String(product._id || product.id)} value={String(product._id || product.id)}>{product.name}</option>
               ))}
-            </select>
+            </CustomerDropdown>
           </label>
 
           <label className="min-w-0">
@@ -2060,12 +2090,12 @@ function SiteInspection() {
 
           <div className={`blade-readonly-control flex h-[42px] items-center justify-between gap-2 rounded-lg border px-3 text-xs font-semibold ${darkMode ? "border-[#263040] bg-[#1b2230] text-[#eef1f6]" : "border-[#dde3ec] bg-[#f6f8fb] text-[#1a2230]"}`}>
             <span className={mutedClass}>Price / blade</span>
-            <span className="whitespace-nowrap font-bold">{formatCurrency(bladeRate)}</span>
+            <span className="whitespace-nowrap font-bold"><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(bladeRate)}</span></span>
           </div>
 
           <div className={`blade-readonly-control flex h-[42px] flex-col justify-center rounded-lg border px-3 min-[620px]:text-right ${darkMode ? "border-[#263040] bg-[#1b2230] text-[#eef1f6]" : "border-[#dde3ec] bg-[#f6f8fb] text-[#1a2230]"}`}>
             <span className={`text-[10px] font-bold uppercase tracking-wider ${mutedClass}`}>Total</span>
-            <span className={`text-sm font-black ${darkMode ? "text-[#93a0b4]" : "text-[#6f7a8c]"}`}>{formatCurrency(rowTotal)}</span>
+            <span className={`text-sm font-black ${darkMode ? "text-[#93a0b4]" : "text-[#6f7a8c]"}`}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(rowTotal)}</span></span>
           </div>
 
           {!isMobileMode && (
@@ -2078,15 +2108,15 @@ function SiteInspection() {
         <div className={`grid grid-cols-1 gap-4 px-4 pb-4 ${saleMode === "frame" ? "min-[620px]:grid-cols-3" : "min-[620px]:grid-cols-2"}`}>
           <label className="min-w-0">
             <span className={labelClasses}>Glass type</span>
-            <select id={glassSelectId} aria-label={`Glass type for measurement ${index + 1}`} value={item.blade_glass_type || glassTypes[0]?.name || ""} onChange={(event) => onFieldChange(item.id, "blade_glass_type", event.target.value)} className={inputClasses}>
+            <CustomerDropdown darkMode={darkMode} id={glassSelectId} aria-label={`Glass type for measurement ${index + 1}`} value={item.blade_glass_type || glassTypes[0]?.name || ""} onChange={(event) => onFieldChange(item.id, "blade_glass_type", event.target.value)} className={inputClasses}>
               <option value="">Select glass</option>
-              {glassTypes.map((glass) => <option key={glass.name} value={glass.name}>{glass.name} - {formatCurrency(Number(glass.price_per_blade || 0))}/blade</option>)}
-            </select>
+              {glassTypes.map((glass) => <option key={glass.name} value={glass.name}>{glass.name} - <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(Number(glass.price_per_blade || 0))}</span>/blade</option>)}
+            </CustomerDropdown>
           </label>
 
           <label className="min-w-0">
             <span className={labelClasses}>Frame</span>
-            <select id={frameSelectId} aria-label={`Frame type for measurement ${index + 1}`} value={item.frame_type || selectedFrame?.name || ""} onChange={(event) => {
+            <CustomerDropdown darkMode={darkMode} id={frameSelectId} aria-label={`Frame type for measurement ${index + 1}`} value={item.frame_type || selectedFrame?.name || ""} onChange={(event) => {
               const frame = frameTypes.find((candidate) => candidate.name === event.target.value);
               onFieldChange(item.id, "sale_mode", "frame");
               onFieldChange(item.id, "frame_type", event.target.value);
@@ -2094,8 +2124,8 @@ function SiteInspection() {
               onFieldChange(item.id, "frame_price", Number(frame?.price) || 0);
             }} className={inputClasses}>
               {frameTypes.length === 0 && <option value="">No frame configured</option>}
-              {frameTypes.map((frame) => <option key={frame.name} value={frame.name}>{frame.name} - {Number(frame.blade_count) || 0} blades - {formatCurrency(Number(frame.price || 0))}</option>)}
-            </select>
+              {frameTypes.map((frame) => <option key={frame.name} value={frame.name}>{frame.name} - {Number(frame.blade_count) || 0} blades - <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(Number(frame.price || 0))}</span></option>)}
+            </CustomerDropdown>
           </label>
 
           {saleMode === "frame" && product?.allow_custom_frame_size && (
@@ -2141,7 +2171,7 @@ function SiteInspection() {
               <span className={labelClasses}>Frame price (PHP)</span>
               <input id={framePriceId} type={hidePaymentAmounts ? "password" : "number"} min="0" step="0.01" inputMode="decimal" value={framePrice} onChange={(event) => onFieldChange(item.id, "frame_price", event.target.value)} className={`${inputClasses} text-right`} />
             </label>
-            {selectedFrame?.price !== undefined && <span className={`mt-1 block text-[11px] ${mutedClass}`}>Standard: {formatCurrency(Number(selectedFrame.price) || 0)}</span>}
+            {selectedFrame?.price !== undefined && <span className={`mt-1 block text-[11px] ${mutedClass}`}>Standard: <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(Number(selectedFrame.price) || 0)}</span></span>}
           </div>
         )}
 
@@ -2166,7 +2196,7 @@ function SiteInspection() {
                       {charge.type === "percentage" ? "% rate" : charge.type === "per_blade" ? "per blade" : "PHP fixed"}
                     </span>
                     <input type={hidePaymentAmounts ? "password" : "number"} min="0" step="0.01" inputMode="decimal" value={charge.amount ?? 0} onChange={(event) => updateExtraCharge(chargeIndex, { amount: event.target.value })} className={`${inputClasses} h-[38px] py-2 text-right`} aria-label={`${charge.label || charge.name} amount`} />
-                    <div className={`blade-extra-charge-total text-right text-sm font-bold ${darkMode ? "text-slate-100" : "text-slate-900"}`}>{formatCurrency(chargeTotal)}</div>
+                    <div className={`blade-extra-charge-total text-right text-sm font-bold ${darkMode ? "text-slate-100" : "text-slate-900"}`}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(chargeTotal)}</span></div>
                   </div>
                 );
               })}
@@ -2181,7 +2211,7 @@ function SiteInspection() {
             <div className={`grid items-end gap-3 ${getItemWarrantySelectValue(item) === "Custom" ? "sm:grid-cols-[minmax(0,1.2fr)_minmax(180px,0.8fr)]" : "sm:grid-cols-1"}`}>
               <label className="min-w-0">
                 <span className={labelClasses}>Warranty period</span>
-                <select
+                <CustomerDropdown darkMode={darkMode}
                   id={`${mode}-blade-warranty-${index}`}
                   value={getItemWarrantySelectValue(item)}
                   onChange={(event) => {
@@ -2200,7 +2230,7 @@ function SiteInspection() {
                   <option value="60">60 Days</option>
                   <option value="90">90 Days</option>
                   <option value="Custom">Custom</option>
-                </select>
+                </CustomerDropdown>
               </label>
               {getItemWarrantySelectValue(item) === "Custom" && (
                 <label className="min-w-0">
@@ -2903,7 +2933,7 @@ function SiteInspection() {
   };
 
   const getCustomerTypeLabel = (inspection = {}) => {
-    return isOnlineInspection(inspection) ? "Website Order" : "Walk-in Customer";
+    return isOnlineInspection(inspection) ? "Website" : "Walk-in";
   };
 
   const generateContractData = (order) => {
@@ -3940,7 +3970,7 @@ function SiteInspection() {
 
   const sourceList = activeTab === "cancelled" ? cancelledInspections : inspections.filter(isSiteInspectionVisible);
   const searchedList = filterInspections(sourceList);
-  const customerTypeFilteredList = activeTab === "site" && customerTypeFilter !== "all"
+  const customerTypeFilteredList = customerTypeFilter !== "all"
     ? searchedList.filter((inspection) => (
         customerTypeFilter === "online" ? isOnlineInspection(inspection) : isWalkInInspection(inspection)
       ))
@@ -3952,7 +3982,7 @@ function SiteInspection() {
           : !hasValidInspectionDate(inspection)
       ))
     : customerTypeFilteredList;
-  const priorityFilteredList = activeTab === "site" && priorityFilter !== "all"
+  const priorityFilteredList = priorityFilter !== "all"
     ? filteredList.filter((inspection) => {
         const isRushOrder = getRushSlotsForInspection(inspection) > 0;
         const isRestrictedCustomer = isRestrictedCustomerOrder(inspection, restrictionClock);
@@ -3961,8 +3991,7 @@ function SiteInspection() {
         return !isRushOrder && !isRestrictedCustomer;
       })
     : filteredList;
-  const prioritizedList = activeTab === "site"
-    ? [...priorityFilteredList].sort((left, right) => {
+  const prioritizedList = [...priorityFilteredList].sort((left, right) => {
         const leftIsRush = getRushSlotsForInspection(left) > 0;
         const rightIsRush = getRushSlotsForInspection(right) > 0;
         if (leftIsRush !== rightIsRush) return leftIsRush ? -1 : 1;
@@ -3971,8 +4000,7 @@ function SiteInspection() {
         const leftCreatedAt = Date.parse(left.createdAt || left.created_at || left.order_date || "") || Number.POSITIVE_INFINITY;
         const rightCreatedAt = Date.parse(right.createdAt || right.created_at || right.order_date || "") || Number.POSITIVE_INFINITY;
         return leftCreatedAt - rightCreatedAt;
-      })
-    : filteredList;
+      });
   const totalPages = Math.max(1, Math.ceil(prioritizedList.length / pageSize));
   const currentPageIndex = Math.min(Math.max(currentPage, 1), totalPages);
   const paginatedList = prioritizedList.slice((currentPageIndex - 1) * pageSize, currentPageIndex * pageSize);
@@ -4344,7 +4372,7 @@ function SiteInspection() {
             </div>
           )}
 
-          <Toaster position="bottom-right" />
+          <AppToaster />
 
           {/* SEARCH */}
           <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -4378,7 +4406,7 @@ function SiteInspection() {
                     ]}
                   />
                 )}
-                {activeTab === "site" && (
+                {activeTab === "site" || activeTab === "cancelled" ? (
                   <FilterDropdown
                     label="All Customers"
                     value={customerTypeFilter}
@@ -4391,8 +4419,8 @@ function SiteInspection() {
                       ["walk-in", "Walk-in Customers"],
                     ]}
                   />
-                )}
-                {activeTab === "site" && (
+                ) : null}
+                {activeTab === "site" || activeTab === "cancelled" ? (
                   <FilterDropdown
                     label="All Priorities"
                     value={priorityFilter}
@@ -4406,7 +4434,7 @@ function SiteInspection() {
                       ["restricted", "Restricted Account"],
                     ]}
                   />
-                )}
+                ) : null}
                 <button
                   onClick={() => { const initialInspection = resetNewInspectionForm(); setNewInspectionStep(1); newInspectionBaselineRef.current = createUnsavedSnapshot({ inspection: initialInspection, customerSearch: "", selectedCustomer: null }); setShowModal(true); }}
                   className="inline-flex whitespace-nowrap items-center justify-center rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700"
@@ -4441,11 +4469,21 @@ function SiteInspection() {
                     </span>
                   </button>
                 ))}
-                <div aria-label="Order priority legend" className={`ml-auto flex w-full flex-nowrap items-center justify-between gap-1 rounded-xl border px-2 py-2 text-[9px] font-semibold whitespace-nowrap sm:w-auto sm:justify-start sm:gap-3 sm:px-3 sm:text-xs ${darkMode ? "border-slate-700 bg-slate-900/50 text-slate-300" : "border-slate-200 bg-white text-slate-600"}`}>
-                    <span className="inline-flex shrink-0 items-center gap-1 sm:gap-1.5"><span className={`size-2 shrink-0 rounded-full sm:size-3 ${darkMode ? "bg-slate-400" : "bg-slate-500"}`} aria-hidden="true" />Standard Order</span>
-                    <span className="inline-flex shrink-0 items-center gap-1 sm:gap-1.5"><span className="size-2 shrink-0 rounded-full bg-red-600 sm:size-3" aria-hidden="true" />Rush Order</span>
-                    <span className="inline-flex shrink-0 items-center gap-1 sm:gap-1.5" title="Customer is under an online ordering cancellation cooldown"><span className={`size-2 shrink-0 rounded-full sm:size-3 ${darkMode ? "bg-amber-400" : "bg-amber-600"}`} aria-hidden="true" />Restricted Account</span>
+                <div aria-label="Order priority legend" className="site-inspection-order-legend ml-auto flex w-full flex-wrap items-center justify-start gap-x-2 gap-y-2 sm:w-auto sm:justify-end">
+                  <span className={`shrink-0 text-[10.5px] font-bold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`}>LEGEND</span>
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    {ORDER_TYPE_LEGEND.map((orderType, index) => (
+                      <span
+                        key={orderType.label}
+                        title={index === 2 ? "Customer is under an online ordering cancellation cooldown" : undefined}
+                        className={`order-type-chip order-type-chip--${["standard", "rush", "restricted"][index]} inline-flex h-8 shrink-0 items-center gap-2 rounded-full border-[1.5px] px-3 text-[13px] font-bold whitespace-nowrap ${orderType.chip}`}
+                      >
+                        <span className={`order-type-chip-dot order-type-chip-dot--${["standard", "rush", "restricted"][index]} size-3 shrink-0 rounded-full ring-[3px] ${orderType.dot} ${orderType.halo}`} aria-hidden="true" />
+                        {orderType.label}
+                      </span>
+                    ))}
                   </div>
+                </div>
               </div>
             </div>
 
@@ -4521,11 +4559,10 @@ function SiteInspection() {
                         const rowActions = getInspectionActionButtons(inspection);
                         const isRestrictedCustomer = isRestrictedCustomerOrder(inspection, restrictionClock);
                         const isRushOrder = getRushSlotsForInspection(inspection) > 0;
-                        const clientPriorityCellClass = isRushOrder
-                          ? darkMode ? "rounded-l-xl border-l-[4px] border-l-red-500" : "rounded-l-xl border-l-[4px] border-l-red-700"
-                          : isRestrictedCustomer
-                            ? darkMode ? "rounded-l-xl border-l-[4px] border-l-amber-500" : "rounded-l-xl border-l-[4px] border-l-amber-700"
-                            : darkMode ? "rounded-l-xl border-l-[4px] border-l-slate-400" : "rounded-l-xl border-l-[4px] border-l-slate-600";
+                        const orderTypeToken = isRushOrder ? ORDER_TYPE_TOKENS.rush : isRestrictedCustomer ? ORDER_TYPE_TOKENS.restricted : ORDER_TYPE_TOKENS.standard;
+                        const orderTypeKey = isRushOrder ? "rush" : isRestrictedCustomer ? "restricted" : "standard";
+                        const clientPriorityCellClass = `order-type-row-cell order-type-row-cell--${orderTypeKey} rounded-l-xl border-l-[6px] ${orderTypeToken.bar}`;
+                        const priorityGradient = orderTypeToken.gradientLight;
                         return (
                           <tr
                             key={inspection._id || inspection.id || index}
@@ -4533,10 +4570,13 @@ function SiteInspection() {
                             data-notification-target="inspection"
                             className={`group border-t ${highlightedNotificationRecordId === String(inspection._id || inspection.id || "") ? "notification-target-highlight" : ""} ${darkMode ? "border-slate-700 bg-slate-900/20 hover:bg-slate-800/50" : "border-slate-200 bg-white hover:bg-slate-50"}`}
                           >
-                            <td className={`px-2 py-3 ${clientPriorityCellClass}`}>
-                              <div className="w-full min-w-0 rounded-lg px-2 py-1 leading-snug">
-                                <div className="break-words text-[12px] font-bold text-slate-800 dark:text-slate-100">{clientName}</div>
-                                <div className="mt-2 break-words text-[12px] font-semibold text-slate-700 dark:text-slate-300">{phone}</div>
+                            <td className={`px-2 py-3 ${clientPriorityCellClass}`} style={{ backgroundImage: priorityGradient }}>
+                              <div className="flex w-full min-w-0 items-start gap-2 rounded-lg px-2 py-1 leading-snug">
+                                <span role="img" title={orderTypeToken.label} aria-label={orderTypeToken.label} className={`order-type-row-dot order-type-row-dot--${orderTypeKey} mt-1 size-[11px] shrink-0 rounded-full ring-[3px] ${orderTypeToken.dot} ${orderTypeToken.halo}`} />
+                                <div className="min-w-0 flex-1">
+                                  <div className="break-words text-[12px] font-bold text-slate-800 dark:text-slate-100">{clientName}</div>
+                                  <div className="mt-1 break-words text-[12px] font-semibold text-slate-700 dark:text-slate-300">{phone}</div>
+                                </div>
                               </div>
                             </td>
                             <td className="px-2 py-3 text-[13px] font-semibold text-slate-800 dark:text-slate-200">{customerTypeLabel}</td>
@@ -4545,7 +4585,7 @@ function SiteInspection() {
                             <td className="px-2 py-3 text-[13px] font-medium text-slate-800 dark:text-slate-200">{inspectionDate}{inspectionTime && <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{inspectionTime}</div>}</td>
                             <td className="px-2 py-3 text-[13px] font-medium text-slate-800 dark:text-slate-200">{installDate}{installationTime && <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{installationTime}</div>}</td>
                             <td className="px-1 py-3"><span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold ${progressColor}`}>{statusDisplay === "Need to be Called" && <Phone size={12} aria-hidden="true" />}{statusDisplay}</span></td>
-                            <td className="px-1 py-3 rounded-r-xl text-left text-[12px] font-bold text-slate-900 dark:text-slate-100">{formatCurrency(total)}</td>
+                            <td className="px-1 py-3 rounded-r-xl text-left text-[12px] font-bold text-slate-900 dark:text-slate-100"><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(total)}</span></td>
                             <td style={{ width: showInspectionActions ? "220px" : "56px", minWidth: showInspectionActions ? "220px" : "56px" }} className="py-3 pl-1 pr-2 text-left">
                               <div className={`mr-auto flex w-full min-w-0 flex-nowrap items-center justify-start gap-1 overflow-hidden transition-[max-width,max-height,opacity,transform] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${showInspectionActions ? "max-h-10 min-w-[200px] max-w-[200px] translate-x-0 opacity-100" : "max-h-0 max-w-0 translate-x-2 opacity-0 pointer-events-none"}`}>
                                 {rowActions}
@@ -4607,7 +4647,7 @@ function SiteInspection() {
                       </div>
                       <div className="col-span-2">
                         <p className={`text-[10px] uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-gray-400"}`}>Estimated Total</p>
-                        <p className={`mt-1 font-semibold ${darkMode ? "text-slate-100" : "text-gray-900"}`}>{formatCurrency(total)}</p>
+                        <p className={`mt-1 font-semibold ${darkMode ? "text-slate-100" : "text-gray-900"}`}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(total)}</span></p>
                       </div>
                     </div>
                     <div className={`mt-3 flex flex-wrap justify-end gap-1.5 rounded-xl p-1.5 ${darkMode ? "bg-[#0b2338]" : "bg-white"}`}>
@@ -5027,7 +5067,7 @@ function SiteInspection() {
                           <div key={item.id} className={`m-0 grid min-w-[980px] grid-cols-[minmax(220px,1.65fr)_repeat(2,minmax(100px,0.85fr))_minmax(88px,0.72fr)_minmax(72px,0.58fr)_minmax(135px,1fr)_minmax(125px,0.92fr)_40px] items-end gap-3 border-b p-4 transition-colors last:border-b-0 ${rowIncomplete ? "ring-2 ring-inset ring-red-500" : ""} ${hasSelectedRushCharge(item) ? darkMode ? "border-red-400/80 bg-red-500/20 hover:bg-red-500/30" : "border-red-500 bg-red-100 hover:bg-red-200" : darkMode ? "border-[#263040] bg-[#161c26] hover:bg-[#1b2230]" : "border-[#dde3ec] bg-white hover:bg-[#f6f8fb]"}`}>
                             <div className="flex min-w-0 flex-col items-start gap-1.5">
                               <span className={`text-[10px] font-bold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Product</span>
-                              <select
+                              <CustomerDropdown darkMode={darkMode}
                                 value={normalizeProductId(item.product_id)}
                                 onChange={(e) => handleItemProductChange(item.id, e.target.value)}
                                 className={`product-measurement-select min-h-11 w-full rounded-lg border ${!item.product_id ? "border-dashed" : ""} px-2 py-2 text-sm outline-none transition focus:border-[#2563eb] ${darkMode ? `border-[#263040] bg-[#161c26] ${hasSelectedProduct ? "font-semibold text-red-300" : "text-[#eef1f6]"} placeholder:text-[#93a0b4] focus:ring-2 focus:ring-[#6ea8fe]/20` : `border-[#dde3ec] bg-white ${hasSelectedProduct ? "font-semibold text-red-600" : "text-[#1a2230]"} placeholder:text-[#6f7a8c] focus:ring-2 focus:ring-[#2563eb]/15`}`}
@@ -5037,7 +5077,7 @@ function SiteInspection() {
                                 {products.map((product) => (
                                   <option key={String(product._id || product.id)} value={String(product._id || product.id)}>{product.name}</option>
                                 ))}
-                              </select>
+                              </CustomerDropdown>
                               {renderBladeMeasurementOptions(item, handleItemFieldChange, index)}
                             </div>
                             <div className="col-span-2 grid grid-cols-2 gap-3">
@@ -5050,7 +5090,7 @@ function SiteInspection() {
                             </div>
                             <label className="min-w-0">
                               <span className={`mb-1 block text-[10px] font-bold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Unit</span>
-                              <select
+                              <CustomerDropdown darkMode={darkMode}
                               aria-label={`Measurement unit for product ${index + 1}`}
                               value={hasSelectedProduct ? item.measurement_unit || item.measurementUnit || "in" : ""}
                               disabled={!hasSelectedProduct}
@@ -5062,7 +5102,7 @@ function SiteInspection() {
                               <option value="ft">ft</option>
                               <option value="cm">cm</option>
                               <option value="m">m</option>
-                              </select>
+                              </CustomerDropdown>
                             </label>
                             <label className="min-w-0">
                               <span className={`mb-1 block text-[10px] font-bold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Quantity</span>
@@ -5097,7 +5137,7 @@ function SiteInspection() {
                               <div className={`col-span-full grid gap-3 border-t pt-3 sm:grid-cols-[minmax(0,1fr)_minmax(180px,0.8fr)] ${darkMode ? "border-slate-700" : "border-slate-200"}`}>
                                 <label className="min-w-0">
                                   <span className={`mb-1 block text-[10px] font-bold uppercase ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Warranty for {item.name || `product ${index + 1}`}</span>
-                                  <select
+                                  <CustomerDropdown darkMode={darkMode}
                                     aria-label={`Warranty for ${item.name || `product ${index + 1}`}`}
                                     value={getItemWarrantySelectValue(item)}
                                     onChange={(event) => {
@@ -5116,7 +5156,7 @@ function SiteInspection() {
                                     <option value="60">60 Days</option>
                                     <option value="90">90 Days</option>
                                     <option value="Custom">Custom</option>
-                                  </select>
+                                  </CustomerDropdown>
                                 </label>
                                 {getItemWarrantySelectValue(item) === "Custom" && (
                                   <label className="min-w-0">
@@ -5163,7 +5203,7 @@ function SiteInspection() {
                             </div>
                             <div className="mt-2">
                               <label className={labelClasses} htmlFor={`new-measurement-product-${index}`}>Product / Description</label>
-                              <select
+                              <CustomerDropdown darkMode={darkMode}
                                 id={`new-measurement-product-${index}`}
                                 value={normalizeProductId(item.product_id)}
                                 onChange={(event) => handleItemProductChange(item.id, event.target.value)}
@@ -5174,14 +5214,14 @@ function SiteInspection() {
                                 {products.map((product) => (
                                   <option key={String(product._id || product.id)} value={String(product._id || product.id)}>{product.name}</option>
                                 ))}
-                              </select>
+                              </CustomerDropdown>
                               {renderBladeMeasurementOptions(item, handleItemFieldChange, index)}
                               {renderOptionalChargeOptions(item, handleItemFieldChange)}
                               {renderItemAdditionalCharges(item, index, handleItemFieldChange)}
                                 {newInspection.items.length > 1 && newInspection.warranty_assignment_mode === "per_product" && (
                                   <div className="mt-3">
                                     <label className={labelClasses} htmlFor={`new-measurement-warranty-${index}`}>Warranty</label>
-                                    <select
+                                    <CustomerDropdown darkMode={darkMode}
                                       id={`new-measurement-warranty-${index}`}
                                       value={getItemWarrantySelectValue(item)}
                                       onChange={(event) => {
@@ -5200,7 +5240,7 @@ function SiteInspection() {
                                       <option value="60">60 Days</option>
                                       <option value="90">90 Days</option>
                                       <option value="Custom">Custom</option>
-                                    </select>
+                                    </CustomerDropdown>
                                     {getItemWarrantySelectValue(item) === "Custom" && (
                                       <input
                                         type="number"
@@ -5225,13 +5265,13 @@ function SiteInspection() {
                               ))}
                               <label className="min-w-0">
                                 <span className={labelClasses}>Measurement Unit</span>
-                                <select aria-label={`Measurement unit for measurement ${index + 1}`} value={hasSelectedProduct ? item.measurement_unit || item.measurementUnit || "in" : ""} disabled={!hasSelectedProduct} onChange={(event) => handleItemFieldChange(item.id, "measurement_unit", event.target.value)} className={inputClasses}>
+                                <CustomerDropdown darkMode={darkMode} aria-label={`Measurement unit for measurement ${index + 1}`} value={hasSelectedProduct ? item.measurement_unit || item.measurementUnit || "in" : ""} disabled={!hasSelectedProduct} onChange={(event) => handleItemFieldChange(item.id, "measurement_unit", event.target.value)} className={inputClasses}>
                                   {!hasSelectedProduct && <option value="">—</option>}
                                   <option value="in">in</option>
                                   <option value="ft">ft</option>
                                   <option value="cm">cm</option>
                                   <option value="m">m</option>
-                                </select>
+                                </CustomerDropdown>
                               </label>
                               <label className="min-w-0">
                                 <span className={labelClasses}>Quantity</span>
@@ -5261,8 +5301,8 @@ function SiteInspection() {
 
                     <div className={`mt-4 flex justify-end border-t pt-4 ${darkMode ? "border-slate-700" : "border-slate-200"}`}>
                       <div className={`text-right ${darkMode ? "text-slate-100" : "text-slate-900"}`}>
-                        {((newInspection.project_additional_charges || []).some((charge) => String(charge.name || "").trim() && String(charge.amount ?? "").trim() !== "") || (newInspection.items || []).some((item) => getItemAdditionalChargesTotal(item) > 0)) && <p className="mb-1 text-xs font-medium text-slate-500">Products + {formatCurrency((newInspection.project_additional_charges || []).reduce((sum, charge) => String(charge.name || "").trim() && String(charge.amount ?? "").trim() !== "" ? sum + (Number(charge.amount) || 0) : sum, 0) + (newInspection.items || []).reduce((sum, item) => sum + getItemAdditionalChargesTotal(item), 0))} additional charges</p>}
-                        <div className="text-lg font-black">Project total <span className={`ml-2 text-xl ${darkMode ? "text-red-300" : "text-red-600"}`}>{formatCurrency(computeTotals().totalEstimate)}</span></div>
+                        {((newInspection.project_additional_charges || []).some((charge) => String(charge.name || "").trim() && String(charge.amount ?? "").trim() !== "") || (newInspection.items || []).some((item) => getItemAdditionalChargesTotal(item) > 0)) && <p className="mb-1 text-xs font-medium text-slate-500">Products + <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency((newInspection.project_additional_charges || []).reduce((sum, charge) => String(charge.name || "").trim() && String(charge.amount ?? "").trim() !== "" ? sum + (Number(charge.amount) || 0) : sum, 0) + (newInspection.items || []).reduce((sum, item) => sum + getItemAdditionalChargesTotal(item), 0))}</span> additional charges</p>}
+                        <div className="text-lg font-black">Project total <span className={`ml-2 text-xl ${darkMode ? "text-red-300" : "text-red-600"}`}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(computeTotals().totalEstimate)}</span></span></div>
                       </div>
                     </div>
                   </section>}
@@ -5278,7 +5318,7 @@ function SiteInspection() {
                       <div>
                         <label className={`mb-2 block text-[14px] font-bold ${labelClass}`}>Estimated Cost</label>
                         <div className={`rounded-xl border px-3 py-3 text-xl font-black ${darkMode ? "border-slate-600 bg-[#122d42] text-white" : "border-slate-200 bg-white text-slate-900"}`}>
-                          {formatCurrency(computeTotals().totalEstimate)}
+                          <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(computeTotals().totalEstimate)}</span>
                         </div>
                       </div>
 
@@ -5325,7 +5365,7 @@ function SiteInspection() {
                       <div className="flex items-center justify-between gap-4 text-[14px] font-bold">
                         <span>Final Project Cost</span>
                         <span className={`text-[18px] font-black ${darkMode ? "text-white" : "text-slate-900"}`}>
-                          {formatCurrency(Number(newInspection.manual_override) || computeTotals().totalEstimate)}
+                          <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(Number(newInspection.manual_override) || computeTotals().totalEstimate)}</span>
                         </span>
                       </div>
                       <div className={`mt-3 flex items-center justify-between gap-4 border-t pt-3 text-[14px] font-bold ${darkMode ? "border-slate-700 text-red-400" : "border-slate-200 text-red-600"}`}>
@@ -5348,14 +5388,14 @@ function SiteInspection() {
                     <div className="mt-5 grid gap-5 md:grid-cols-2">
                       <div>
                         <label className={`mb-2 block text-[14px] font-bold ${labelClass}`}>Payment Terms</label>
-                        <select
+                        <CustomerDropdown darkMode={darkMode}
                           className={fieldClass}
                           value={newInspection.payment_terms}
                           onChange={(e) => handleInspectionFieldChange("payment_terms", e.target.value)}
                         >
                           <option value="50%_down_payment">50% downpayment, 50% upon completion</option>
                           <option value="full_payment">Full Payment</option>
-                        </select>
+                        </CustomerDropdown>
                         {shouldShowAgreedPaymentDate(newInspection.payment_terms) && (
                           <div className="mt-3">
                             <label className={`mb-2 block text-[14px] font-bold ${labelClass}`}>Agreed Payment Date (optional)</label>
@@ -5698,7 +5738,7 @@ function SiteInspection() {
                                   <div className="mt-2 flex min-w-0 flex-wrap gap-1.5">
                                     {measurement.baseTotal > 0 && (
                                       <span className={`max-w-full rounded-full border px-2.5 py-1 text-[11.5px] font-medium leading-tight ${darkMode ? "border-slate-600 bg-slate-800 text-slate-200" : "border-slate-300 bg-slate-50 text-slate-700"}`}>
-                                        Base price: {formatCurrency(measurement.baseTotal)}
+                                        Base price: <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(measurement.baseTotal)}</span>
                                       </span>
                                     )}
                                     {measurement.chargeOptions.map((charge, chargeIndex) => (
@@ -5713,7 +5753,7 @@ function SiteInspection() {
                               </div>
                               <div className="shrink-0 text-right sm:pl-4">
                                 <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">Est. Total</p>
-                                <p className="mt-0.5 text-xl font-bold leading-tight text-foreground">{formatCurrency(measurement.lineTotal)}</p>
+                                <p className="mt-0.5 text-xl font-bold leading-tight text-foreground"><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(measurement.lineTotal)}</span></p>
                               </div>
                             </header>
 
@@ -5772,7 +5812,7 @@ function SiteInspection() {
 
                       <div className="mt-3.5 flex justify-end gap-2 border-t border-border px-4 py-3.5 text-foreground">
                         <span className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Total:</span>
-                        <span className="text-xl font-bold leading-none">{formatCurrency(estimatedTotal)}</span>
+                        <span className="text-xl font-bold leading-none"><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(estimatedTotal)}</span></span>
                       </div>
                     </div>
                     <div className={`rounded-[16px] border p-3 sm:p-5 ${darkMode ? "border-slate-700 bg-[#122d42]" : "border-slate-200 bg-white"}`}>
@@ -5782,12 +5822,12 @@ function SiteInspection() {
                         <div className="space-y-2 sm:space-y-3">
                           <div className="flex items-center justify-between gap-3 text-xs sm:text-sm">
                             <span className={darkMode ? "text-slate-300" : "text-slate-600"}>Final Project Cost</span>
-                            <span className={`shrink-0 font-bold ${darkMode ? "text-slate-100" : "text-slate-900"}`}>{formatCurrency(estimatedTotal)}</span>
+                            <span className={`shrink-0 font-bold ${darkMode ? "text-slate-100" : "text-slate-900"}`}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(estimatedTotal)}</span></span>
                           </div>
 
                           <div className={`flex min-h-9 items-center justify-between gap-3 rounded-lg border border-l-[3px] px-2.5 text-xs font-semibold sm:min-h-10 sm:px-3 sm:text-sm ${darkMode ? "border-amber-700/60 border-l-amber-400 bg-amber-950/30 text-amber-200" : "border-amber-200 border-l-amber-700 bg-amber-50 text-amber-950"}`}>
                             <span>{isFullPaymentMethod ? "Full Payment Required" : "Downpayment to be Paid"}</span>
-                            <span className="shrink-0">{formatCurrency(downPayment)}</span>
+                            <span className="shrink-0"><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(downPayment)}</span></span>
                           </div>
 
                           <div className="flex items-center justify-between gap-3 text-xs sm:text-sm">
@@ -6197,7 +6237,7 @@ function SiteInspection() {
                           <div key={item.id || `${item.product_id || "row"}-${index}`} className={`m-0 grid min-w-[980px] grid-cols-[minmax(220px,1.65fr)_repeat(2,minmax(100px,0.85fr))_minmax(88px,0.72fr)_minmax(72px,0.58fr)_minmax(135px,1fr)_minmax(125px,0.92fr)_40px] items-end gap-3 border-b p-4 transition-colors last:border-b-0 ${rowIncomplete ? "ring-2 ring-inset ring-red-500" : ""} ${hasSelectedRushCharge(item) ? darkMode ? "border-red-400/80 bg-red-500/20 hover:bg-red-500/30" : "border-red-500 bg-red-100 hover:bg-red-200" : darkMode ? "border-[#263040] bg-[#161c26] hover:bg-[#1b2230]" : "border-[#dde3ec] bg-white hover:bg-[#f6f8fb]"}`}>
                             <div className="flex min-w-0 flex-col items-start gap-1.5">
                               <span className={`text-[10px] font-bold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Product</span>
-                              <select
+                              <CustomerDropdown darkMode={darkMode}
                                 value={normalizeProductId(item.product_id)}
                                 onChange={(e) => handleEditItemProductChange(item.id, e.target.value)}
                                 className={`product-measurement-select min-h-11 w-full rounded-lg border ${!item.product_id ? "border-dashed" : ""} px-2 py-2 text-sm outline-none transition focus:border-[#2563eb] ${darkMode ? `border-[#263040] bg-[#161c26] ${hasSelectedProduct ? "font-semibold text-red-300" : "text-[#eef1f6]"} focus:ring-2 focus:ring-[#6ea8fe]/20` : `border-[#dde3ec] bg-white ${hasSelectedProduct ? "font-semibold text-red-600" : "text-[#1a2230]"} focus:ring-2 focus:ring-[#2563eb]/15`}`}
@@ -6207,7 +6247,7 @@ function SiteInspection() {
                                 {products.map((product) => (
                                   <option key={String(product._id || product.id)} value={String(product._id || product.id)}>{product.name}</option>
                                 ))}
-                              </select>
+                              </CustomerDropdown>
                               {renderBladeMeasurementOptions(item, handleEditItemFieldChange, index)}
                             </div>
 
@@ -6222,7 +6262,7 @@ function SiteInspection() {
 
                             <label className="min-w-0">
                               <span className={`mb-1 block text-[10px] font-bold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Unit</span>
-                              <select
+                              <CustomerDropdown darkMode={darkMode}
                               aria-label={`Measurement unit for ${item.name || "item"}`}
                               value={hasSelectedProduct ? item.measurement_unit || item.measurementUnit || "in" : ""}
                               disabled={!hasSelectedProduct}
@@ -6234,7 +6274,7 @@ function SiteInspection() {
                               <option value="ft">ft</option>
                               <option value="cm">cm</option>
                               <option value="m">m</option>
-                              </select>
+                              </CustomerDropdown>
                             </label>
 
                             <label className="min-w-0">
@@ -6272,7 +6312,7 @@ function SiteInspection() {
                               <div className={`col-span-full grid gap-3 border-t pt-3 sm:grid-cols-[minmax(0,1fr)_minmax(180px,0.8fr)] ${darkMode ? "border-slate-700" : "border-slate-200"}`}>
                                 <label className="min-w-0">
                                   <span className={`mb-1 block text-[10px] font-bold uppercase ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Warranty for {item.name || `product ${index + 1}`}</span>
-                                  <select
+                                  <CustomerDropdown darkMode={darkMode}
                                     aria-label={`Warranty for ${item.name || "product"}`}
                                     value={getItemWarrantySelectValue(item)}
                                     onChange={(event) => {
@@ -6291,7 +6331,7 @@ function SiteInspection() {
                                     <option value="60">60 Days</option>
                                     <option value="90">90 Days</option>
                                     <option value="Custom">Custom</option>
-                                  </select>
+                                  </CustomerDropdown>
                                 </label>
                                 {getItemWarrantySelectValue(item) === "Custom" && (
                                   <label className="min-w-0">
@@ -6340,7 +6380,7 @@ function SiteInspection() {
                             </div>
                             <div className="mt-2">
                               <label className={labelClasses} htmlFor={`edit-measurement-product-${index}`}>Product / Description</label>
-                              <select
+                              <CustomerDropdown darkMode={darkMode}
                                 id={`edit-measurement-product-${index}`}
                                 value={normalizeProductId(item.product_id)}
                                 onChange={(event) => handleEditItemProductChange(item.id, event.target.value)}
@@ -6351,14 +6391,14 @@ function SiteInspection() {
                                 {products.map((product) => (
                                   <option key={String(product._id || product.id)} value={String(product._id || product.id)}>{product.name}</option>
                                 ))}
-                              </select>
+                              </CustomerDropdown>
                               {renderBladeMeasurementOptions(item, handleEditItemFieldChange, index)}
                               {renderOptionalChargeOptions(item, handleEditItemFieldChange)}
                               {renderItemAdditionalCharges(item, index, handleEditItemFieldChange)}
                               {editInspection.items.length > 1 && editInspection.warranty_assignment_mode === "per_product" && (
                                 <div className="mt-3">
                                   <label className={labelClasses} htmlFor={`edit-measurement-warranty-${index}`}>Warranty</label>
-                                  <select
+                                  <CustomerDropdown darkMode={darkMode}
                                     id={`edit-measurement-warranty-${index}`}
                                     value={getItemWarrantySelectValue(item)}
                                     onChange={(event) => {
@@ -6377,7 +6417,7 @@ function SiteInspection() {
                                     <option value="60">60 Days</option>
                                     <option value="90">90 Days</option>
                                     <option value="Custom">Custom</option>
-                                  </select>
+                                  </CustomerDropdown>
                                   {getItemWarrantySelectValue(item) === "Custom" && (
                                     <input type="number" min="1" step="1" aria-label={`Custom warranty days for item ${index + 1}`} value={getItemWarrantyCustomDays(item)} onChange={(event) => handleEditItemFieldChange(item.id, "custom_warranty_days", event.target.value)} className={`${inputClasses} mt-2`} placeholder="Custom warranty days" />
                                   )}
@@ -6393,13 +6433,13 @@ function SiteInspection() {
                               ))}
                               <label className="min-w-0">
                                 <span className={labelClasses}>Measurement Unit</span>
-                                <select aria-label={`Measurement unit for ${item.name || `measurement ${index + 1}`}`} value={hasSelectedProduct ? item.measurement_unit || item.measurementUnit || "in" : ""} disabled={!hasSelectedProduct} onChange={(event) => handleEditItemFieldChange(item.id, "measurement_unit", event.target.value)} className={inputClasses}>
+                                <CustomerDropdown darkMode={darkMode} aria-label={`Measurement unit for ${item.name || `measurement ${index + 1}`}`} value={hasSelectedProduct ? item.measurement_unit || item.measurementUnit || "in" : ""} disabled={!hasSelectedProduct} onChange={(event) => handleEditItemFieldChange(item.id, "measurement_unit", event.target.value)} className={inputClasses}>
                                   {!hasSelectedProduct && <option value="">—</option>}
                                   <option value="in">in</option>
                                   <option value="ft">ft</option>
                                   <option value="cm">cm</option>
                                   <option value="m">m</option>
-                                </select>
+                                </CustomerDropdown>
                               </label>
                               <label className="min-w-0">
                                 <span className={labelClasses}>Quantity</span>
@@ -6430,8 +6470,8 @@ function SiteInspection() {
 
                     <div className={`mt-4 flex justify-end border-t pt-4 ${darkMode ? "border-slate-700" : "border-slate-200"}`}>
                       <div className={`text-right ${darkMode ? "text-slate-100" : "text-slate-900"}`}>
-                        {((editInspection.project_additional_charges || []).some((charge) => String(charge.name || "").trim() && String(charge.amount ?? "").trim() !== "") || (editInspection.items || []).some((item) => getItemAdditionalChargesTotal(item) > 0)) && <p className="mb-1 text-xs font-medium text-slate-500">Products + {formatCurrency((editInspection.project_additional_charges || []).reduce((sum, charge) => String(charge.name || "").trim() && String(charge.amount ?? "").trim() !== "" ? sum + (Number(charge.amount) || 0) : sum, 0) + (editInspection.items || []).reduce((sum, item) => sum + getItemAdditionalChargesTotal(item), 0))} additional charges</p>}
-                        <div className="text-lg font-black">Project total <span className={`ml-2 text-xl ${darkMode ? "text-red-300" : "text-red-600"}`}>{formatCurrency(computeEditTotals().totalEstimate)}</span></div>
+                        {((editInspection.project_additional_charges || []).some((charge) => String(charge.name || "").trim() && String(charge.amount ?? "").trim() !== "") || (editInspection.items || []).some((item) => getItemAdditionalChargesTotal(item) > 0)) && <p className="mb-1 text-xs font-medium text-slate-500">Products + <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency((editInspection.project_additional_charges || []).reduce((sum, charge) => String(charge.name || "").trim() && String(charge.amount ?? "").trim() !== "" ? sum + (Number(charge.amount) || 0) : sum, 0) + (editInspection.items || []).reduce((sum, item) => sum + getItemAdditionalChargesTotal(item), 0))}</span> additional charges</p>}
+                        <div className="text-lg font-black">Project total <span className={`ml-2 text-xl ${darkMode ? "text-red-300" : "text-red-600"}`}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(computeEditTotals().totalEstimate)}</span></span></div>
                       </div>
                     </div>
                   </section>
@@ -6464,7 +6504,7 @@ function SiteInspection() {
                           <div className="mb-5 space-y-3">
                             <div className={proofNoticeClass}>
                               <p className="font-medium leading-6">
-                                Customer says they paid <span className={`font-bold ${darkMode ? "text-white" : "text-slate-900"}`}>{formatCurrency(proof.amount)}</span>. Confirm it matches what you received.
+                                Customer says they paid <span className={`font-bold ${darkMode ? "text-white" : "text-slate-900"}`}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(proof.amount)}</span></span>. Confirm it matches what you received.
                               </p>
                               <p className={`mt-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${darkMode ? "text-amber-300" : "text-amber-700"}`}>Use this amount</p>
                             </div>
@@ -6494,7 +6534,7 @@ function SiteInspection() {
                                   <div className={`rounded-lg border p-3 ${darkMode ? "border-slate-600 bg-slate-900/80" : "border-slate-200 bg-slate-50"}`}>
                                     <div className={`mb-2 text-[11px] font-bold uppercase tracking-[0.12em] ${proofSecondaryTextClass}`}>Customer declared</div>
                                     <div className={`text-xl font-bold tracking-tight ${darkMode ? "text-white" : "text-slate-900"}`}>
-                                      {formatCurrency(proof.amount)}
+                                      <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(proof.amount)}</span>
                                     </div>
                                   </div>
 
@@ -6502,7 +6542,7 @@ function SiteInspection() {
                                     <div className="flex items-center justify-between gap-2">
                                       <span className="font-medium">Admin recorded</span>
                                       <span className={`font-semibold ${darkMode ? "text-red-400" : "text-red-600"}`}>
-                                        {formatCurrency(proof.amount)}
+                                        <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(proof.amount)}</span>
                                       </span>
                                     </div>
                                     {proof.transactionNumber && (
@@ -6537,7 +6577,7 @@ function SiteInspection() {
                       <div>
                         <label className={`mb-2 block text-[14px] font-bold ${labelClass}`}>Estimated Cost</label>
                         <div className={`rounded-xl border px-3 py-3 text-xl font-black ${darkMode ? "border-slate-600 bg-[#122d42] text-white" : "border-slate-200 bg-white text-slate-900"}`}>
-                          {formatCurrency(computeEditTotals().totalEstimate)}
+                          <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(computeEditTotals().totalEstimate)}</span>
                         </div>
                       </div>
 
@@ -6590,7 +6630,7 @@ function SiteInspection() {
                       <div className="flex items-center justify-between gap-4 text-[14px] font-bold">
                         <span>Final Project Cost</span>
                         <span className={`text-[18px] font-black ${darkMode ? "text-white" : "text-slate-900"}`}>
-                          {formatCurrency(Number(editInspection.manual_override) || computeEditTotals().totalEstimate)}
+                          <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(Number(editInspection.manual_override) || computeEditTotals().totalEstimate)}</span>
                         </span>
                       </div>
                       <div className={`mt-3 flex items-center justify-between gap-4 border-t pt-3 text-[14px] font-bold ${darkMode ? "border-slate-700 text-red-400" : "border-slate-200 text-red-600"}`}>
@@ -6613,14 +6653,14 @@ function SiteInspection() {
                     <div className="mt-5 grid gap-5 md:grid-cols-2">
                       <div>
                         <label className={`mb-2 block text-[14px] font-bold ${labelClass}`}>Payment Terms</label>
-                        <select
+                        <CustomerDropdown darkMode={darkMode}
                           className={fieldClass}
                           value={editInspection.payment_terms || ""}
                           onChange={(e) => handleEditChange("payment_terms", e.target.value)}
                         >
                           <option value="50%_down_payment">50% downpayment, 50% upon completion</option>
                           <option value="full_payment">Full Payment</option>
-                        </select>
+                        </CustomerDropdown>
                         {shouldShowAgreedPaymentDate(editInspection.payment_terms || "") && (
                           <div className="mt-3">
                             <label className={`mb-2 block text-[14px] font-bold ${labelClass}`}>Agreed Payment Date (optional)</label>

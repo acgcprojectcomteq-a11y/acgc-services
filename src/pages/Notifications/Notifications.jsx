@@ -188,6 +188,7 @@ export default function Notifications() {
               rejected: "Warranty claim rejected",
               quotation_issued: "Repair quotation issued",
               customer_accepted: "Customer accepted quotation",
+              quotation_declined: "Customer declined quotation",
               payment_proof_submitted: "Repair payment proof submitted",
               payment_proof_approved: "Repair payment verified",
               payment_proof_rejected: "Repair payment proof rejected",

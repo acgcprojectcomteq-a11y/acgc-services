@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { Link } from "react-router-dom";
 import logo from "../../assets/images/ACGCLOGO1.png";
 import { ChevronDown, ChevronUp, CircleAlert, CircleCheck, CircleX, LoaderCircle, Truck } from "lucide-react";
@@ -307,16 +307,16 @@ function TrackOrder() {
                   <div className="mt-4 grid grid-cols-2 gap-4 rounded-xl border border-border bg-muted/30 px-3 py-3.5 sm:gap-4 sm:py-4 xl:grid-cols-4">
                     <div className="min-w-0">
                       <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">GRAND TOTAL</p>
-                      <p className="mt-1 text-[18px] font-medium text-brand dark:text-brand-dark-text">{formatCurrency(trackingPaymentSummary.totalAmount)}</p>
+                      <p className="mt-1 text-[18px] font-medium text-brand dark:text-brand-dark-text"><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(trackingPaymentSummary.totalAmount)}</span></p>
                     </div>
                     <div className="min-w-0">
                       <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">AMOUNT PAID</p>
-                      <p className="mt-1 text-[18px] font-medium text-emerald-600 dark:text-emerald-400">{formatCurrency(trackingPaymentSummary.paidAmount)}</p>
-                      <p className="mt-1 text-[10px] text-muted-foreground">Required downpayment: {formatCurrency(trackingPaymentSummary.requiredAmount)}</p>
+                      <p className="mt-1 text-[18px] font-medium text-emerald-600 dark:text-emerald-400"><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(trackingPaymentSummary.paidAmount)}</span></p>
+                      <p className="mt-1 text-[10px] text-muted-foreground">Required downpayment: <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(trackingPaymentSummary.requiredAmount)}</span></p>
                     </div>
                     <div className="min-w-0">
                       <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">BALANCE</p>
-                      <p className="mt-1 text-[18px] font-medium text-foreground">{formatCurrency(trackingPaymentSummary.remainingAmount)}</p>
+                      <p className="mt-1 text-[18px] font-medium text-foreground"><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(trackingPaymentSummary.remainingAmount)}</span></p>
                     </div>
                     <div className="min-w-0">
                       <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">PAYMENT STATUS</p>
@@ -376,7 +376,7 @@ function TrackOrder() {
                             <p className="break-words text-sm font-medium text-foreground">{itemName}</p>
                             <p className="text-xs text-muted-foreground">Qty: {itemQty}</p>
                           </div>
-                          <span className="shrink-0 text-sm font-medium text-foreground">{formatCurrency(itemTotal)}</span>
+                          <span className="shrink-0 text-sm font-medium text-foreground"><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(itemTotal)}</span></span>
                         </div>
                       );
                     })}
@@ -389,7 +389,7 @@ function TrackOrder() {
                     </div>
                     <div className="text-right">
                       <p className="text-xs text-muted-foreground">Total</p>
-                      <p className="text-[22px] font-medium leading-tight text-brand dark:text-brand-dark-text">{formatCurrency(getFinalProjectCost(trackingResult))}</p>
+                      <p className="text-[22px] font-medium leading-tight text-brand dark:text-brand-dark-text"><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(getFinalProjectCost(trackingResult))}</span></p>
                     </div>
                   </div>
                 </aside>

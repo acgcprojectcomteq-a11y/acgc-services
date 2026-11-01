@@ -53,4 +53,8 @@ describe("isProgressMonitorEligibleOrder", () => {
       transaction_approved: false,
     })).toBe(false);
   });
+
+  it("keeps cancelled projects available for the read-only cancelled history tab", () => {
+    expect(isProgressMonitorEligibleOrder({ status: "cancelled" })).toBe(true);
+  });
 });

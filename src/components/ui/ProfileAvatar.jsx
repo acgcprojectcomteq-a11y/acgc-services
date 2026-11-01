@@ -1,4 +1,4 @@
-function ProfileAvatar({ name = "Customer", email = "", compact = false, avatarOnly = false, size, className = "" }) {
+function ProfileAvatar({ name = "Customer", email = "", compact = false, avatarOnly = false, size, className = "", nameClassName = "", emailClassName = "" }) {
   const displayName = String(name || "Customer").trim() || "Customer";
   const nameParts = displayName.split(/\s+/).filter(Boolean);
   const initials = (nameParts.length > 1
@@ -24,8 +24,8 @@ function ProfileAvatar({ name = "Customer", email = "", compact = false, avatarO
         {initials}
       </span>
       <div className="min-w-0">
-        <div className="truncate font-semibold text-slate-900">{displayName}</div>
-        {email && <div className="truncate text-xs text-slate-500">{email}</div>}
+        <div className={`truncate font-semibold ${nameClassName || "text-slate-900"}`}>{displayName}</div>
+        {email && <div className={`truncate text-xs ${emailClassName || "text-slate-500"}`}>{email}</div>}
       </div>
     </div>
   );

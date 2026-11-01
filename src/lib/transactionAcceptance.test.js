@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hasAcceptedTransactionContract } from "./transactionAcceptance";
+import { hasAcceptedTransactionContract, isRecordedCancelledTransaction } from "./transactionAcceptance";
 
 describe("hasAcceptedTransactionContract", () => {
   it("includes an accepted online contract using the stored acceptance field", () => {
@@ -37,5 +37,29 @@ describe("hasAcceptedTransactionContract", () => {
       acceptance_method: "online",
       acceptedByCustomer: false,
     })).toBe(false);
+  });
+});
+
+describe("isRecordedCancelledTransaction", () => {
+  const cancelledTransaction = {
+    status: "cancelled",
+    contract_status: "accepted",
+    acceptance_method: "online",
+    acceptedByCustomer: true,
+    cancellation_date: "2026-11-01T00:00:00.000Z",
+    cancellation_reason: "Project no longer needed",
+    cancellation_previous_status: "processing",
+    cancelled_by: "admin-id",
+  };
+
+  it("includes accepted transactions with a complete cancellation record", () => {
+    expect(isRecordedCancelledTransaction(cancelledTransaction)).toBe(true);
+  });
+
+  it("excludes canceled orders without transaction acceptance or a complete cancellation record", () => {
+    expect(isRecordedCancelledTransaction({ ...cancelledTransaction, contract_status: "declined" })).toBe(false);
+    expect(isRecordedCancelledTransaction({ ...cancelledTransaction, cancellation_date: null })).toBe(false);
+    expect(isRecordedCancelledTransaction({ ...cancelledTransaction, cancellation_reason: "  " })).toBe(false);
+    expect(isRecordedCancelledTransaction({ ...cancelledTransaction, cancelled_by: null })).toBe(false);
   });
 });

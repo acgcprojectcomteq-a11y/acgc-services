@@ -53,7 +53,7 @@ export function RealtimeProvider({ children }) {
     const socket = io(realtimeUrl, {
       auth: { token, clientId },
       withCredentials: true,
-      transports: ["polling"],
+      transports: ["websocket", "polling"],
       reconnection: true,
       reconnectionDelay: 500,
       reconnectionDelayMax: 10000,
