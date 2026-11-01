@@ -454,8 +454,9 @@ function LandingPage() {
       blade_glass_type: options.blade_glass_type || product.default_blade_glass_type || "",
       sale_mode: options.sale_mode || product.default_sale_mode || "blades_only",
       frame_type: options.frame_type || product.default_frame_type || "",
+      frame_blade_count: Number(options.frame_blade_count) || 0,
       custom_frame_size: Boolean(options.custom_frame_size),
-      blade_count: getDefaultBladeCount(product, options),
+      blade_count: getDefaultBladeCount(product, { ...options, frame_blade_count: Number(options.frame_blade_count) || 0 }),
       extra_charges: Array.isArray(options.extra_charges)
         ? options.extra_charges
         : getDefaultExtraChargeSelections(product),
@@ -483,6 +484,7 @@ function LandingPage() {
     bladeGlassType: item.blade_glass_type || "",
     saleMode: item.sale_mode || "",
     frameType: item.frame_type || "",
+    frameBladeCount: Number(item.frame_blade_count) || 0,
     customFrameSize: Boolean(item.custom_frame_size),
     bladeCount: Number(item.blade_count) || 0,
     extraCharges: (item.extra_charges || [])

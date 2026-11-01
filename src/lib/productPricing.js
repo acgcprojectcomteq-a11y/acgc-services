@@ -40,7 +40,10 @@ const getBladePricing = (product = {}, item = {}) => {
   const glassType = glassTypes.find((glass) => String(glass.name).toLowerCase() === String(glassName).toLowerCase());
   const saleMode = item.sale_mode || product.default_sale_mode || "blades_only";
   const frameName = item.frame_type || product.default_frame_type || "";
-  const frameType = frameTypes.find((frame) => String(frame.name).toLowerCase() === String(frameName).toLowerCase());
+  const requestedFrameBladeCount = Number(item.frame_blade_count) || 0;
+  const frameType = frameTypes.find((frame) => String(frame.name).toLowerCase() === String(frameName).toLowerCase()
+    && (!requestedFrameBladeCount || Number(frame.blade_count) === requestedFrameBladeCount))
+    || frameTypes.find((frame) => String(frame.name).toLowerCase() === String(frameName).toLowerCase());
   const configuredBladeCount = Number(item.blade_count) || Number(frameType?.blade_count) || Number(product.blade_count) || Number(product.minimum_blades) || 0;
   const bladeCount = Math.max(0, configuredBladeCount);
   const configuredBladeRate = toNonNegativeNumber(glassType?.price_per_blade ?? product.price_per_blade ?? item.price_per_blade);
@@ -59,7 +62,11 @@ export const getDefaultBladeCount = (product = {}, selections = {}) => {
   const frameTypes = Array.isArray(product.blade_frame_types) ? product.blade_frame_types : [];
   const saleMode = selections.sale_mode || product.default_sale_mode || (product.sell_blades_only === false ? "frame" : "blades_only");
   const frameName = selections.frame_type || product.default_frame_type || "";
-  const frame = frameTypes.find((candidate) => candidate.name === frameName) || frameTypes[0];
+  const requestedFrameBladeCount = Number(selections.frame_blade_count) || 0;
+  const frame = frameTypes.find((candidate) => candidate.name === frameName
+    && (!requestedFrameBladeCount || Number(candidate.blade_count) === requestedFrameBladeCount))
+    || frameTypes.find((candidate) => candidate.name === frameName)
+    || frameTypes[0];
   const selectedCount = Number(selections.blade_count);
   const minimumBlades = Math.max(1, Number(product.minimum_blades) || 1);
 
@@ -232,6 +239,7 @@ export const getDefaultProductLineTotal = (product = {}) => {
   const bladeCount = getDefaultBladeCount(product, {
     sale_mode: defaultSaleMode,
     frame_type: defaultFrame?.name || product.default_frame_type,
+    frame_blade_count: Number(defaultFrame?.blade_count) || 0,
   });
 
   return getProductLineTotal(product, {
@@ -241,6 +249,7 @@ export const getDefaultProductLineTotal = (product = {}) => {
     blade_glass_type: product.default_blade_glass_type || product.blade_glass_types?.[0]?.name || "",
     sale_mode: defaultSaleMode,
     frame_type: defaultFrame?.name || product.default_frame_type || "",
+    frame_blade_count: Number(defaultFrame?.blade_count) || 0,
     blade_count: isBladePricing ? bladeCount : Number(product.blade_count) || undefined,
     extra_charges: getDefaultExtraChargeSelections(product),
     quantity: 1,
@@ -426,6 +435,7 @@ export const buildProductPriceSnapshot = (product, item) => {
     blade_glass_type: item.blade_glass_type || product.default_blade_glass_type || "",
     sale_mode: item.sale_mode || product.default_sale_mode || "blades_only",
     frame_type: item.frame_type || product.default_frame_type || "",
+    frame_blade_count: Number(item.frame_blade_count) || Number(bladePricing?.frameType?.blade_count) || 0,
     frame_price: bladePricing?.framePrice || 0,
     blade_glass_types: Array.isArray(product.blade_glass_types) ? product.blade_glass_types : [],
     sell_blades_only: product.sell_blades_only !== false,

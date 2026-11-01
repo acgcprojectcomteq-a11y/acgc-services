@@ -35,6 +35,7 @@ export const getDefaultProductEstimatorForm = (product = {}) => {
     blade_glass_type: product.default_blade_glass_type || glassTypes[0]?.name || "",
     sale_mode: saleMode,
     frame_type: defaultFrame?.name || "",
+    frame_blade_count: Number(defaultFrame?.blade_count) || 0,
     custom_frame_size: saleMode === "frame" && frameTypes.length === 0 && Boolean(product.allow_custom_frame_size),
     blade_count: product.customer_can_choose_blade_count ? "" : defaultBladeCount,
     extra_charges: getDefaultExtraChargeSelections(product),
@@ -100,7 +101,12 @@ export const getProductEstimatorState = (product, form = {}) => {
   const glassTypes = Array.isArray(product.blade_glass_types) ? product.blade_glass_types : [];
   const frameTypes = Array.isArray(product.blade_frame_types) ? product.blade_frame_types : [];
   const selectedGlass = glassTypes.find((glass) => glass.name === form.blade_glass_type) || glassTypes[0] || null;
-  const selectedFrame = frameTypes.find((frame) => frame.name === form.frame_type) || frameTypes[0] || null;
+  const requestedFrameBladeCount = Number(form.frame_blade_count) || 0;
+  const selectedFrame = frameTypes.find((frame) => frame.name === form.frame_type
+    && (!requestedFrameBladeCount || Number(frame.blade_count) === requestedFrameBladeCount))
+    || frameTypes.find((frame) => frame.name === form.frame_type)
+    || frameTypes[0]
+    || null;
   const width = Number(form.width) || 0;
   const height = Number(form.height) || 0;
   const quantityError = getProductEstimatorQuantityError(form.quantity ?? 1);
@@ -144,6 +150,8 @@ export const getProductEstimatorState = (product, form = {}) => {
     blade_glass_type: selectedGlass?.name || form.blade_glass_type,
     sale_mode: form.sale_mode || product.default_sale_mode || "blades_only",
     frame_type: selectedFrame?.name || form.frame_type,
+    frame_blade_count: Number(selectedFrame?.blade_count) || Number(form.frame_blade_count) || 0,
+    frame_price: Number(selectedFrame?.price) || 0,
     custom_frame_size: Boolean(form.custom_frame_size),
     blade_count: bladeCount,
     extra_charges: form.extra_charges?.length ? form.extra_charges : getDefaultExtraChargeSelections(product),
@@ -346,20 +354,21 @@ function ProductPriceEstimator({ product, form, onFormChange, darkMode = false, 
                     ? darkMode ? "border-red-700 bg-red-950/40 text-red-100" : "border-red-300 bg-red-50 text-red-900"
                     : darkMode ? "border-slate-600 bg-slate-900 text-slate-200 hover:border-slate-500" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
                 }`}>
-                  <input type="radio" checked={(form.sale_mode || "blades_only") === "blades_only"} onChange={() => updateForm({ sale_mode: "blades_only", custom_frame_size: false, frame_type: "", blade_count: product.customer_can_choose_blade_count ? "" : minimumBlades })} className="h-4 w-4 shrink-0 accent-red-700" />
+                  <input type="radio" name={`product-frame-${product?._id || product?.id || product?.product_name || product?.name || "estimator"}`} checked={(form.sale_mode || "blades_only") === "blades_only"} onChange={() => updateForm({ sale_mode: "blades_only", custom_frame_size: false, frame_type: "", frame_blade_count: 0, blade_count: product.customer_can_choose_blade_count ? "" : minimumBlades })} className="h-4 w-4 shrink-0 accent-red-700" />
                   <span className="leading-5">Blades only (no frame)</span>
                 </label>
               )}
-              {frameTypes.map((frame) => (
-                <label key={frame.name} className={`flex cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-2 transition-colors ${
-                  form.sale_mode === "frame" && !form.custom_frame_size && (form.frame_type || selectedFrame?.name) === frame.name
+              {frameTypes.map((frame, frameIndex) => (
+                <label key={`${frame.name}-${frame.blade_count}-${frameIndex}`} className={`flex cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-2 transition-colors ${
+                  form.sale_mode === "frame" && !form.custom_frame_size && selectedFrame === frame
                     ? darkMode ? "border-red-700 bg-red-950/40 text-red-100" : "border-red-300 bg-red-50 text-red-900"
                     : darkMode ? "border-slate-600 bg-slate-900 text-slate-200 hover:border-slate-500" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
                 }`}>
                   <input
                     type="radio"
-                    checked={form.sale_mode === "frame" && !form.custom_frame_size && (form.frame_type || selectedFrame?.name) === frame.name}
-                    onChange={() => updateForm({ sale_mode: "frame", custom_frame_size: false, frame_type: frame.name, blade_count: product.customer_can_choose_blade_count ? "" : Number(frame.blade_count) || minimumBlades })}
+                    name={`product-frame-${product?._id || product?.id || product?.product_name || product?.name || "estimator"}`}
+                    checked={form.sale_mode === "frame" && !form.custom_frame_size && selectedFrame === frame}
+                    onChange={() => updateForm({ sale_mode: "frame", custom_frame_size: false, frame_type: frame.name, frame_blade_count: Number(frame.blade_count) || 0, blade_count: product.customer_can_choose_blade_count ? "" : Number(frame.blade_count) || minimumBlades })}
                     className="h-4 w-4 shrink-0 accent-red-700"
                   />
                   <span className="leading-5">{frame.name} - {Number(frame.blade_count) || 0} blades - +<span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(frame.price)}</span></span>
@@ -371,7 +380,7 @@ function ProductPriceEstimator({ product, form, onFormChange, darkMode = false, 
                     ? darkMode ? "border-red-700 bg-red-950/40 text-red-100" : "border-red-300 bg-red-50 text-red-900"
                     : darkMode ? "border-slate-600 bg-slate-900 text-slate-200 hover:border-slate-500" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
                 }`}>
-                  <input type="radio" checked={form.sale_mode === "frame" && Boolean(form.custom_frame_size)} onChange={() => updateForm({ sale_mode: "frame", custom_frame_size: true, frame_type: "", blade_count: product.customer_can_choose_blade_count ? "" : minimumBlades, unit: product.custom_frame_size_unit || form.unit || "in" })} className="h-4 w-4 shrink-0 accent-red-700" />
+                  <input type="radio" name={`product-frame-${product?._id || product?.id || product?.product_name || product?.name || "estimator"}`} checked={form.sale_mode === "frame" && Boolean(form.custom_frame_size)} onChange={() => updateForm({ sale_mode: "frame", custom_frame_size: true, frame_type: "", frame_blade_count: 0, blade_count: product.customer_can_choose_blade_count ? "" : minimumBlades, unit: product.custom_frame_size_unit || form.unit || "in" })} className="h-4 w-4 shrink-0 accent-red-700" />
                   <span className="leading-5">Custom size - +<span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(product.custom_frame_price)}</span></span>
                 </label>
               )}

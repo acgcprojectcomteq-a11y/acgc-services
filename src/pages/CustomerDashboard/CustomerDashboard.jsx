@@ -627,6 +627,7 @@ function CustomerDashboard() {
     blade_glass_type: form.blade_glass_type,
     sale_mode: form.sale_mode,
     frame_type: form.frame_type,
+    frame_blade_count: form.frame_blade_count,
     custom_frame_size: form.custom_frame_size,
     blade_count: form.blade_count,
     extra_charges: form.extra_charges,
@@ -4376,11 +4377,16 @@ function CustomerDashboard() {
     const selectedSaleMode = item.sale_mode || product.default_sale_mode || (product.sell_blades_only === false ? "frame" : "blades_only");
     const saleMode = selectedSaleMode === "frame" && !product.sell_with_frame ? "blades_only" : selectedSaleMode;
     const defaultFrame = frameTypes.find((candidate) => candidate.name === product.default_frame_type) || frameTypes[0];
-    const frame = frameTypes.find((candidate) => candidate.name === (item.frame_type || defaultFrame?.name)) || defaultFrame;
+    const requestedFrameBladeCount = Number(item.frame_blade_count) || 0;
+    const frame = frameTypes.find((candidate) => candidate.name === (item.frame_type || defaultFrame?.name)
+      && (!requestedFrameBladeCount || Number(candidate.blade_count) === requestedFrameBladeCount))
+      || frameTypes.find((candidate) => candidate.name === (item.frame_type || defaultFrame?.name))
+      || defaultFrame;
     const customFrameSize = Boolean(item.custom_frame_size && product.allow_custom_frame_size);
     const bladeCount = getDefaultBladeCount(product, {
       sale_mode: saleMode,
       frame_type: frame?.name,
+      frame_blade_count: Number(frame?.blade_count) || 0,
       custom_frame_size: customFrameSize,
       blade_count: item.blade_count,
     });
