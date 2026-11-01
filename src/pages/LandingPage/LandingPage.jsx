@@ -189,6 +189,7 @@ function LandingPage() {
     const method = String(product?.pricing_method || product?.unit || "").toLowerCase();
     return method ? ["blade", "per_blade"].includes(method) : /jalousie/i.test(product?.product_name || product?.name || "");
   };
+  const isAreaProduct = (product) => ["sqft", "per_sqft", "area", "per_area"].includes(String(product?.pricing_method || product?.unit || "").toLowerCase());
 
   const normalizeBrowseProduct = (product) => {
     if (!product || !isBladeProduct(product) || !/jalousie/i.test(product.product_name || product.name || "")) return product;
@@ -784,6 +785,8 @@ function LandingPage() {
       )
     : "N/A";
   const isProductModalReadOnly = !customerPermissions.can_request_orders && !customerPermissions.can_estimate_pricing;
+  const hasStructuredProductModal = !isProductModalReadOnly && (isBladeProduct(selectedProduct) || isAreaProduct(selectedProduct));
+  const selectedProductDefaultDimensions = selectedProduct ? getProductDefaultDimensions(selectedProduct) : null;
 
   const continueProductActionAfterLogin = (
     actionType,
@@ -1028,6 +1031,39 @@ function LandingPage() {
       return <Star key={index} size={size} className="text-slate-300" />;
     });
   };
+
+  const productEstimatorContent = selectedProduct && !isProductModalReadOnly && (customerPermissions.can_estimate_pricing || pendingActionError) ? <>
+    {customerPermissions.can_estimate_pricing && <ProductPriceEstimator
+      product={selectedProduct}
+      form={productEstimatorForm}
+      onFormChange={setProductEstimatorForm}
+      formatCurrency={formatCurrency}
+      bladeModalLayout={isBladeProduct(selectedProduct)}
+      defaultMeasurements={isAreaProduct(selectedProduct) && selectedProductDefaultDimensions?.width > 0 && selectedProductDefaultDimensions?.height > 0 ? selectedProductDefaultDimensions : null}
+      footer={customerPermissions.can_request_orders && <div className="grid gap-3 sm:grid-cols-2">
+        <button
+          type="button"
+          onClick={() => continueProductActionAfterLogin("direct")}
+          disabled={Boolean(productEstimatorDimensionError || productEstimatorQuantityError || selectedEstimatorState?.bladeCountError)}
+          className={`inline-flex w-full items-center justify-center gap-2 text-sm font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${isBladeProduct(selectedProduct) ? "h-[46px] rounded-[10px] bg-red-600 text-white hover:bg-red-700" : "min-h-12 rounded-xl bg-red-600 px-4 py-3 text-white hover:bg-red-700"}`}
+        >
+          <Package size={17} aria-hidden="true" /> Place Order
+        </button>
+        <button
+          type="button"
+          onClick={() => handleAddToCart(selectedProduct, productEstimatorForm)}
+          disabled={addingCartProductId === String(selectedProduct._id || selectedProduct.id || "") || Boolean(productEstimatorDimensionError || productEstimatorQuantityError || selectedEstimatorState?.bladeCountError)}
+          className={`inline-flex w-full items-center justify-center gap-2 text-sm font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500 disabled:cursor-not-allowed disabled:opacity-50 ${isBladeProduct(selectedProduct) ? "h-[46px] rounded-[10px] border border-slate-200 bg-white text-slate-900 hover:bg-slate-50" : "min-h-12 rounded-xl bg-slate-950 px-4 py-3 text-white hover:bg-slate-800"}`}
+        >
+          {addingCartProductId === String(selectedProduct._id || selectedProduct.id || "")
+            ? <LoaderCircle size={17} className="animate-spin" aria-hidden="true" />
+            : <ShoppingCart size={17} aria-hidden="true" />}
+          Add to Cart
+        </button>
+      </div>}
+    />}
+    {pendingActionError && <p role="alert" className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{pendingActionError}</p>}
+  </> : null;
 
   return (
   <div className="landing-page-shell flex min-h-screen flex-col overflow-x-hidden bg-white text-gray-900">
@@ -1541,9 +1577,9 @@ function LandingPage() {
         </div>
 
         {!isMobile && visibleProducts.length > 0 && (
-          <div className="mt-6 flex flex-col gap-4 rounded-[20px] border border-red-100 bg-white/80 p-4 shadow-[0_12px_30px_rgba(15,23,42,0.06)] backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between">
-            <label className="flex items-center gap-3 text-sm font-medium text-slate-600">
-              <span>Items per page</span>
+          <div className="mt-6 grid min-h-[116px] grid-cols-1 items-center gap-4 rounded-[24px] border border-red-100 bg-white/90 px-5 py-5 shadow-[0_12px_30px_rgba(15,23,42,0.06)] backdrop-blur-xl sm:grid-cols-[1fr_auto] md:grid-cols-[minmax(240px,1fr)_auto_minmax(240px,1fr)] md:gap-6">
+            <label className="flex items-center gap-4 text-base font-medium text-slate-600">
+              <span className="w-16 shrink-0 leading-6">Items per page</span>
               <CustomerDropdown
                 ariaLabel="Items per page"
                 value={productsPerPage}
@@ -1551,7 +1587,7 @@ function LandingPage() {
                   setProductsPerPage(Number(event.target.value));
                   setProductPage(1);
                 }}
-                className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-slate-800 outline-none focus:border-red-400 focus:ring-2 focus:ring-red-100"
+                className="h-[52px] w-[138px] rounded-[20px] border border-red-300 bg-white px-4 text-base font-semibold text-slate-800 outline-none ring-2 ring-red-200 focus:border-red-500 focus:ring-red-300"
               >
                 <option value={4}>4</option>
                 <option value={8}>8</option>
@@ -1559,24 +1595,24 @@ function LandingPage() {
                 <option value={16}>16</option>
               </CustomerDropdown>
             </label>
-            <p className="text-center text-sm font-medium text-slate-600">
+            <p className="text-center text-base font-medium text-slate-600">
               Showing {productPageStart + 1}-{Math.min(productPageStart + productsPerPage, visibleProducts.length)} of {visibleProducts.length}
             </p>
-            <div className="flex items-center justify-center gap-2">
+            <div className="col-span-full flex items-center justify-center gap-4 sm:col-span-2 md:col-span-1 md:justify-end">
               <button
                 type="button"
                 onClick={() => setProductPage((page) => Math.max(1, page - 1))}
                 disabled={currentProductPage === 1}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-red-200 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-40"
+                className="rounded-[20px] border border-slate-200 bg-white px-4 py-3 text-base font-semibold text-slate-700 transition hover:border-red-200 hover:text-red-700 disabled:cursor-not-allowed disabled:text-slate-400 disabled:opacity-60"
               >
                 Previous
               </button>
-              <span className="min-w-16 text-center text-sm font-bold text-slate-700">{currentProductPage} / {productPageCount}</span>
+              <span className="min-w-16 text-center text-base font-bold text-slate-700">{currentProductPage} / {productPageCount}</span>
               <button
                 type="button"
                 onClick={() => setProductPage((page) => Math.min(productPageCount, page + 1))}
                 disabled={currentProductPage === productPageCount}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-red-200 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-40"
+                className="rounded-[20px] border border-slate-200 bg-white px-4 py-3 text-base font-semibold text-slate-700 transition hover:border-red-200 hover:text-red-700 disabled:cursor-not-allowed disabled:text-slate-400 disabled:opacity-60"
               >
                 Next
               </button>
@@ -1590,13 +1626,14 @@ function LandingPage() {
 
 {selectedProduct && createPortal((
   <div
-    className="customer-modal-overlay mobile-fullscreen-overlay fixed inset-0 z-[100] flex min-h-dvh items-center justify-center overflow-y-auto bg-slate-950/60 p-3 backdrop-blur-sm sm:p-5"
+    className={`customer-modal-overlay mobile-fullscreen-overlay fixed inset-0 z-[100] flex min-h-dvh items-center justify-center overflow-y-auto bg-slate-950/60 p-3 backdrop-blur-sm sm:p-5 ${hasStructuredProductModal ? "max-[759px]:!items-stretch max-[759px]:!justify-start max-[759px]:!p-0" : ""}`}
   >
     <section
       role="dialog"
       aria-modal="true"
       aria-labelledby="landing-product-dialog-title"
-      className={`mobile-fullscreen-dialog relative flex min-h-0 w-full flex-col overflow-hidden rounded-2xl border border-white/20 bg-white shadow-2xl ${isBladeProduct(selectedProduct) ? "max-h-[92vh] max-w-7xl" : "max-h-[88vh] max-w-5xl"}`}
+      style={hasStructuredProductModal ? { maxWidth: "1000px" } : undefined}
+      className={`mobile-fullscreen-dialog relative flex min-h-0 w-full flex-col overflow-hidden rounded-2xl border border-white/20 bg-white shadow-2xl ${hasStructuredProductModal ? "max-h-[92vh] max-w-[1000px] max-[759px]:!h-dvh max-[759px]:!max-h-dvh max-[759px]:!max-w-none max-[759px]:!rounded-none" : "max-h-[88vh] max-w-5xl"}`}
       onClick={(event) => event.stopPropagation()}
     >
       {!isProductModalReadOnly ? <header className="flex shrink-0 flex-col border-b border-red-500/30 bg-gradient-to-r from-red-700 via-red-600 to-red-600 px-4 py-2.5 text-white shadow-[0_8px_18px_rgba(220,38,38,0.16)] sm:px-5 sm:py-3">
@@ -1635,9 +1672,12 @@ function LandingPage() {
       </button>}
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-      <div className={`grid items-start gap-5 p-4 sm:p-5 lg:gap-7 lg:p-6 ${isBladeProduct(selectedProduct) ? "md:grid-cols-[minmax(0,1fr)_minmax(400px,1fr)]" : "md:grid-cols-[minmax(0,1.3fr)_minmax(300px,0.9fr)]"}`}>
+      <div className={`grid items-start gap-4 p-[18px] sm:p-5 ${hasStructuredProductModal ? isAreaProduct(selectedProduct) ? "md:grid-cols-[minmax(0,1.3fr)_minmax(300px,0.9fr)]" : "min-[560px]:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]" : "md:grid-cols-[minmax(0,1.3fr)_minmax(300px,0.9fr)] lg:gap-7 lg:p-6"}`}>
         <div className="min-w-0 space-y-4">
-          <div className="relative aspect-[3/2] w-full overflow-hidden rounded-2xl bg-white shadow-sm">
+          <div
+            style={hasStructuredProductModal && isBladeProduct(selectedProduct) ? { height: "clamp(200px, 28vh, 320px)", maxHeight: "320px" } : undefined}
+            className={`relative w-full overflow-hidden rounded-2xl bg-white shadow-sm ${hasStructuredProductModal ? `rounded-[14px] border border-slate-200 ${isAreaProduct(selectedProduct) ? "aspect-[3/2]" : "min-h-[200px]"}` : "aspect-[3/2]"}`}
+          >
             <div data-product-image-skeleton className="absolute inset-0 animate-pulse bg-slate-200 motion-reduce:animate-none" />
             <img
               src={getProductImage(selectedProduct, 960) || PRODUCT_IMAGE_PLACEHOLDER}
@@ -1650,10 +1690,39 @@ function LandingPage() {
               decoding="async"
               onLoad={handleProductImageLoad}
               onError={handleProductImageError}
-              className="h-full w-full object-fill"
+              className={`h-full w-full ${hasStructuredProductModal ? "object-cover" : "object-fill"}`}
             />
           </div>
-          {!isProductModalReadOnly && <div className="grid gap-3 sm:grid-cols-2">
+          {hasStructuredProductModal && isAreaProduct(selectedProduct) && <>
+            <div className="rounded-[16px] border border-slate-200 bg-[#eef0ee] p-5">
+              <h3 className="text-base font-bold text-slate-900">Product Details</h3>
+              <p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-600">{selectedProduct.description || "No description available."}</p>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-3">
+              <div className="min-w-0 rounded-[14px] border border-slate-200 bg-white p-3">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Type</p>
+                <p className="mt-1 truncate text-sm font-bold text-slate-900">{selectedProduct.product_type || selectedProduct.type || "N/A"}</p>
+              </div>
+              <div className="min-w-0 rounded-[14px] border border-slate-200 bg-white p-3">
+                <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-end gap-1 text-center">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">Width</p>
+                    <p className="mt-1 truncate text-sm font-bold text-slate-900">{selectedProductDefaultDimensions?.width || "N/A"}</p>
+                  </div>
+                  <span className="pb-0.5 text-sm font-bold text-slate-700" aria-hidden="true">x</span>
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">Height</p>
+                    <p className="mt-1 truncate text-sm font-bold text-slate-900">{selectedProductDefaultDimensions?.height || "N/A"}</p>
+                  </div>
+                </div>
+              </div>
+              <div className="min-w-0 rounded-[14px] border border-slate-200 bg-white p-3">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Unit rate</p>
+                <p className="mt-1 truncate text-sm font-bold text-slate-900">{getProductUnitRate(selectedProduct)}</p>
+              </div>
+            </div>
+          </>}
+          {!hasStructuredProductModal && !isProductModalReadOnly && <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <h3 className="text-base font-bold text-slate-900">Product Details</h3>
               <p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-600">
@@ -1666,7 +1735,7 @@ function LandingPage() {
               <p className="mt-1 text-xs text-slate-500">Price may vary based on specifications.</p>
             </div>
           </div>}
-          {!isProductModalReadOnly && <div className={`grid gap-2 ${isBladeProduct(selectedProduct) ? "sm:grid-cols-2" : "sm:grid-cols-3"}`}>
+          {!hasStructuredProductModal && !isProductModalReadOnly && <div className="grid gap-2 sm:grid-cols-3">
             <div className="min-w-0 rounded-xl border border-slate-200 bg-white p-3">
               <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Type</p>
               <p className="mt-1 truncate text-sm font-bold text-slate-900">{selectedProduct.product_type || selectedProduct.type || "N/A"}</p>
@@ -1682,8 +1751,25 @@ function LandingPage() {
           </div>}
         </div>
 
-        <aside className="min-w-0 space-y-4">
-          {isProductModalReadOnly ? <>
+        <aside className="min-w-0 space-y-3">
+          {hasStructuredProductModal ? <div className="grid content-start gap-3">
+            <div className="min-w-0 rounded-[14px] border border-red-200 bg-red-50 px-5 py-4">
+              <p className={`text-[10.5px] font-bold uppercase ${isAreaProduct(selectedProduct) ? "tracking-[0.12em] text-slate-500" : "tracking-[0.08em] text-red-700"}`}>Starting from</p>
+              <p className={`mt-0.5 font-extrabold leading-tight text-red-700 ${isAreaProduct(selectedProduct) ? "text-[30px]" : "text-[28px]"}`}>{getProductPrice(selectedProduct)}</p>
+              <p className="mt-0.5 text-xs text-slate-500">Price may vary based on specifications</p>
+            </div>
+            {isBladeProduct(selectedProduct) && <div className="overflow-hidden rounded-[14px] border border-slate-200 bg-white">
+              <div className="px-4 py-3 text-slate-900">
+                <p className="text-[10.5px] font-bold uppercase tracking-[0.08em] text-slate-500">Type</p>
+                <p className="mt-0.5 text-[15px] font-bold">{selectedProduct.product_type || selectedProduct.type || "N/A"}</p>
+              </div>
+              <div className="border-t border-slate-200 px-4 py-3 text-slate-900">
+                <p className="text-[10.5px] font-bold uppercase tracking-[0.08em] text-slate-500">Unit rate</p>
+                <p className="mt-0.5 text-[15px] font-bold">{getProductUnitRate(selectedProduct)}</p>
+              </div>
+            </div>}
+            {isAreaProduct(selectedProduct) && productEstimatorContent && <div className="min-w-0">{productEstimatorContent}</div>}
+          </div> : isProductModalReadOnly ? <>
           <div className="flex flex-wrap items-center gap-2 pr-10">
             <span className="rounded-full bg-red-50 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-red-700">
               {selectedProduct.product_type || selectedProduct.type || "Glass & Aluminum"}
@@ -1899,39 +1985,12 @@ function LandingPage() {
           </>}
         </aside>
       </div>
-      {!isProductModalReadOnly && (customerPermissions.can_estimate_pricing || customerPermissions.can_request_orders || pendingActionError) && <div className="mx-4 mb-4 sm:mx-5 lg:mx-6">
-        {customerPermissions.can_estimate_pricing && <ProductPriceEstimator
-            product={selectedProduct}
-            form={productEstimatorForm}
-            onFormChange={setProductEstimatorForm}
-            formatCurrency={formatCurrency}
-            footer={customerPermissions.can_request_orders && <div className="grid gap-3 sm:grid-cols-2">
-              <button
-                type="button"
-                onClick={() => continueProductActionAfterLogin("direct")}
-                disabled={Boolean(productEstimatorDimensionError || productEstimatorQuantityError || selectedEstimatorState?.bladeCountError)}
-                className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <Package size={17} aria-hidden="true" /> Place Order
-              </button>
-              <button
-                type="button"
-                onClick={() => handleAddToCart(selectedProduct, productEstimatorForm)}
-                disabled={addingCartProductId === String(selectedProduct._id || selectedProduct.id || "") || Boolean(productEstimatorDimensionError || productEstimatorQuantityError || selectedEstimatorState?.bladeCountError)}
-                className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-3 text-sm font-bold text-white transition hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {addingCartProductId === String(selectedProduct._id || selectedProduct.id || "")
-                  ? <LoaderCircle size={17} className="animate-spin" aria-hidden="true" />
-                  : <ShoppingCart size={17} aria-hidden="true" />}
-                Add to Cart
-              </button>
-            </div>}
-          />}
-        {pendingActionError && (
-          <p role="alert" className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-            {pendingActionError}
-          </p>
-        )}
+      {hasStructuredProductModal && isBladeProduct(selectedProduct) && <div className="mx-[18px] mb-4 rounded-[14px] border border-slate-200 bg-white px-4 py-3.5 sm:mx-5">
+        <h3 className="text-base font-bold text-slate-900">Product Details</h3>
+        <p className="mt-1 whitespace-pre-line text-sm leading-5 text-slate-600">{selectedProduct.description || "No description available."}</p>
+      </div>}
+      {!isProductModalReadOnly && !isAreaProduct(selectedProduct) && (customerPermissions.can_estimate_pricing || customerPermissions.can_request_orders || pendingActionError) && <div className={`${hasStructuredProductModal ? "mx-[18px] mb-4 sm:mx-5" : "mx-4 mb-4 sm:mx-5 lg:mx-6"}`}>
+        {productEstimatorContent}
       </div>}
       {canSeeCustomerRatings && customerPermissions.can_upload_feedback && (
         <section className="mx-4 mb-5 overflow-hidden rounded-xl border border-slate-200 bg-white sm:mx-5 lg:mx-6" aria-labelledby="landing-product-ratings-heading">

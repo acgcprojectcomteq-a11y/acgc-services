@@ -165,6 +165,7 @@ export default function ProgressEditModal({ project, onClose, onSave, canUploadP
     return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 10);
   });
   const [installationTime, setInstallationTime] = useState(project.estimated_installation_time || project.rawOrder?.estimated_installation_time || "");
+  const [installationScheduleExpanded, setInstallationScheduleExpanded] = useState(true);
   const [businessHours, setBusinessHours] = useState({ open: "08:00", close: "18:00" });
   const inspectionDate = project.inspection_date || project.rawOrder?.inspection_date;
   const [stages, setStages] = useState(initialStages);
@@ -348,7 +349,7 @@ export default function ProgressEditModal({ project, onClose, onSave, canUploadP
 
   const currentStageIndex = stages.findIndex((stage) => !(stage.completed && stage.saved));
   const activeStageIndex = currentStageIndex === -1 ? stages.length - 1 : currentStageIndex;
-  const progressCooldownMs = 10 * 60 * 1000;
+  const progressCooldownMs = 5 * 60 * 1000;
   const latestProgressCompletion = stages.flatMap((stage) => [
     { value: stage.completedAt, label: stage.name },
     ...(stage.subStages || []).map((subStage) => ({ value: subStage.completedAt, label: `${stage.name} / ${subStage.name}` })),
@@ -365,7 +366,7 @@ export default function ProgressEditModal({ project, onClose, onSave, canUploadP
     <div role="status" aria-live="polite" className="progress-cooldown-notice w-full rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
       <p className="font-semibold">Completed: {latestProgressCompletion?.label || "Progress stage"}</p>
       <p className="mt-0.5 font-bold">Next progress available in {progressCountdownLabel}</p>
-      <p className="mt-0.5">Please wait 10 minutes before proceeding to the next progress stage.</p>
+      <p className="mt-0.5">Please wait 5 minutes before proceeding to the next progress stage.</p>
     </div>
   );
 
@@ -933,7 +934,7 @@ export default function ProgressEditModal({ project, onClose, onSave, canUploadP
 
   const handleMarkSubStageDone = (stageIndex, subIndex) => {
     if (progressCooldownRemainingMs > 0) {
-      setErrorMessage("Please wait 10 minutes before proceeding to the next progress stage.");
+      setErrorMessage("Please wait 5 minutes before proceeding to the next progress stage.");
       return;
     }
     const stage = stages[stageIndex];
@@ -956,7 +957,7 @@ export default function ProgressEditModal({ project, onClose, onSave, canUploadP
 
   const handleMarkStageDone = (stageIndex) => {
     if (progressCooldownRemainingMs > 0) {
-      setErrorMessage("Please wait 10 minutes before proceeding to the next progress stage.");
+      setErrorMessage("Please wait 5 minutes before proceeding to the next progress stage.");
       return;
     }
     const stage = stages[stageIndex];
@@ -1333,7 +1334,16 @@ export default function ProgressEditModal({ project, onClose, onSave, canUploadP
             </div>
             <p className="mt-2 text-xs text-slate-500">Automatically calculated from completed stages.</p>
           </div>
-          <div className="mt-4 grid gap-x-4 gap-y-0 sm:grid-cols-2">
+          <details
+            open={installationScheduleExpanded}
+            onToggle={(event) => setInstallationScheduleExpanded(event.currentTarget.open)}
+            className={`mt-4 rounded-xl border p-3 ${darkMode ? "border-blue-400/20 bg-blue-950/20" : "border-blue-100 bg-blue-50/40"}`}
+          >
+            <summary className={`flex cursor-pointer list-none items-center justify-between rounded-lg border px-3 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${darkMode ? "border-blue-400/30 bg-[#26364f] text-blue-100 hover:bg-[#2d405d]" : "border-blue-200 bg-blue-50 text-blue-900 hover:bg-blue-100"}`}>
+              <span>Installation Schedule</span>
+              <ChevronDown size={16} aria-hidden="true" className={`transition-transform ${installationScheduleExpanded ? "rotate-180" : ""}`} />
+            </summary>
+            <div className="mt-3 grid gap-x-4 gap-y-0 sm:grid-cols-2">
             <div>
               <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
                 <label htmlFor="progress-installation-date" className="block text-sm font-medium text-slate-700">Est. Installation Date</label>
@@ -1375,7 +1385,8 @@ export default function ProgressEditModal({ project, onClose, onSave, canUploadP
                 Must be after the Site Inspection Date. Earliest allowed date is {formatDateToMMDDYYYY(minimumInstallationDate)}.
               </p>
             )}
-          </div>
+            </div>
+          </details>
         </div>
 
         <div className="min-h-0 max-h-none flex-1 overflow-y-auto bg-slate-50 px-3 py-3 sm:px-4 lg:max-h-[460px]">

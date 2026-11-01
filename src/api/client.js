@@ -26,7 +26,10 @@ try {
 const isDev = import.meta.env.DEV === true;
 const normalizePath = (path) => (path.startsWith("/") ? path : `/${path}`);
 const buildRequestUrl = (path) => `${API_BASE.replace(/\/+$|\/$/, "")}${normalizePath(path)}`;
-const buildDirectDevUrl = (path) => `http://localhost:5000/api${normalizePath(path)}`;
+const buildDirectDevUrl = (path) => {
+  const host = (typeof window !== "undefined" && window.location?.hostname) || "localhost";
+  return `http://${host}:5000/api${normalizePath(path)}`;
+};
 
 export async function apiFetch(path, options = {}) {
   const token = localStorage.getItem("token");
@@ -82,7 +85,7 @@ export async function apiFetch(path, options = {}) {
           } catch (directFetchError) {
             const message =
               directFetchError?.message === "Failed to fetch"
-                ? "Unable to connect to the backend server at http://localhost:5000. Ensure the backend is running and try again."
+                ? `Unable to connect to the backend server at http://${(typeof window !== "undefined" && window.location?.hostname) || "localhost"}:5000. Ensure the backend is running and try again.`
                 : directFetchError?.message || "Network error while connecting to the backend.";
             const error = new Error(message);
             error.cause = directFetchError;
@@ -116,7 +119,7 @@ export async function apiFetch(path, options = {}) {
     } catch (directDevError) {
       const message =
         directDevError?.message === "Failed to fetch"
-          ? "Unable to connect to the backend server at http://localhost:5000. Ensure the backend is running and try again."
+          ? `Unable to connect to the backend server at http://${(typeof window !== "undefined" && window.location?.hostname) || "localhost"}:5000. Ensure the backend is running and try again.`
           : directDevError?.message || "Network error while connecting to the backend.";
       const error = new Error(message);
       error.cause = directDevError;

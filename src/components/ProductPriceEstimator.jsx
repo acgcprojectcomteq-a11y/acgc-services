@@ -226,7 +226,7 @@ export const getProductEstimatorState = (product, form = {}) => {
   };
 };
 
-function ProductPriceEstimator({ product, form, onFormChange, darkMode = false, formatCurrency = currency, compact = false, defaultMeasurements = null, footer = null, bladeModalLayout = false }) {
+function ProductPriceEstimator({ product, form, onFormChange, darkMode = false, formatCurrency = currency, compact = false, defaultMeasurements = null, footer = null, bladeModalLayout = false, structuredModalLayout = false }) {
   const state = getProductEstimatorState(product, form);
   const hasExactPriceOverride = Number(product?.estimated_price_override) > 0;
   const priceBreakdown = getProductLineBreakdown(product, state.item);
@@ -250,6 +250,7 @@ function ProductPriceEstimator({ product, form, onFormChange, darkMode = false, 
     frameTypes,
   } = state;
   const useSoftDark = darkMode && bladeModalLayout;
+  const useAreaModalLayout = structuredModalLayout && !isBladeEstimator;
   const fieldClass = `${bladeModalLayout ? "h-[42px] rounded-[9px]" : "h-10 rounded-lg"} w-full border px-3 text-sm outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/15 ${useSoftDark ? "border-[#3d4862] bg-[#343e55] text-[#e8ebf2]" : darkMode ? "border-slate-600 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-900"}`;
   const labelClass = `${bladeModalLayout ? "mb-1.5" : "mb-1"} block text-[11px] font-bold uppercase ${bladeModalLayout ? "tracking-[0.06em]" : "tracking-wide"} ${useSoftDark ? "text-[#a9b3c7]" : darkMode ? "text-slate-300" : "text-slate-700"}`;
   const textClass = useSoftDark ? "text-[#a9b3c7]" : darkMode ? "text-slate-200" : "text-slate-700";
@@ -270,8 +271,8 @@ function ProductPriceEstimator({ product, form, onFormChange, darkMode = false, 
     && (isMeterEstimator || Number(form.height) === Number(defaultMeasurements.height))
     && String(form.unit || "in") === String(defaultMeasurements.unit || "in");
   return (
-    <section className={`overflow-hidden border ${bladeModalLayout && isBladeEstimator ? `rounded-[14px] ${darkMode ? "border-[#3d4862] bg-[#2a3246]" : "border-slate-200 bg-white"}` : `rounded-xl border-t-2 p-3.5 ${darkMode ? "border-slate-700 border-t-red-500 bg-slate-900" : "border-slate-200 border-t-red-600 bg-white"}`}`} aria-labelledby="product-estimator-title">
-      <div className={`flex items-center gap-2 ${bladeModalLayout && isBladeEstimator ? `border-b px-[18px] py-3 ${darkMode ? "border-[#3d4862]" : "border-slate-200"}` : ""}`}>
+    <section className={`overflow-hidden border ${bladeModalLayout && isBladeEstimator ? `rounded-[14px] ${darkMode ? "border-[#3d4862] bg-[#2a3246]" : "border-slate-200 bg-white"}` : useAreaModalLayout ? "rounded-[14px] border-t-2 border-slate-200 border-t-red-600 bg-white" : `rounded-xl border-t-2 p-3.5 ${darkMode ? "border-slate-700 border-t-red-500 bg-slate-900" : "border-slate-200 border-t-red-600 bg-white"}`}`} aria-labelledby="product-estimator-title">
+      <div className={`flex items-center gap-2 ${bladeModalLayout && isBladeEstimator ? `border-b px-[18px] py-3 ${darkMode ? "border-[#3d4862]" : "border-slate-200"}` : useAreaModalLayout ? "border-b border-slate-200 px-[18px] py-3" : ""}`}>
         <ClipboardList size={15} className="text-red-600" aria-hidden="true" />
         <h4 id="product-estimator-title" className={`${bladeModalLayout && isBladeEstimator ? "text-[15px] font-extrabold" : "text-base font-bold"} ${strongClass}`}>Price Estimator</h4>
         {hasDefaultMeasurements && <span className={`ml-auto rounded-full px-2.5 py-1 text-[11px] font-semibold ${isShowingDefaultMeasurements
@@ -279,8 +280,9 @@ function ProductPriceEstimator({ product, form, onFormChange, darkMode = false, 
           : darkMode ? "bg-red-950/60 text-red-200" : "bg-red-50 text-red-700"}`}>{isShowingDefaultMeasurements ? "Default measurements" : "Customize measurements"}</span>}
       </div>
 
+      <div className={useAreaModalLayout ? "grid gap-y-4 min-[760px]:grid-cols-[1.35fr_1fr] min-[760px]:items-stretch" : "contents"}>
       {needsDimensions && (isMeterEstimator ? (
-        <div className="mt-4 grid grid-cols-[minmax(0,1fr)_minmax(88px,0.8fr)] gap-2">
+        <div className={`${useAreaModalLayout ? "min-w-0 p-[18px] min-[760px]:col-start-1" : "mt-4"} grid grid-cols-[minmax(0,1fr)_minmax(88px,0.8fr)] gap-2`}>
           <label className="min-w-0">
             <span className={labelClass}>Length</span>
             <input type="number" min="1" max="999" step="any" value={form.width || ""} onChange={(event) => updateForm({ width: event.target.value })} className={fieldClass} />
@@ -296,7 +298,7 @@ function ProductPriceEstimator({ product, form, onFormChange, darkMode = false, 
           </label>
         </div>
       ) : (
-        <div className="mt-4 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-2 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_minmax(88px,0.8fr)]">
+        <div className={`${useAreaModalLayout ? "min-w-0 p-[18px] min-[760px]:col-start-1" : "mt-4"} grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-2 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_minmax(88px,0.8fr)]`}>
           <label className="min-w-0">
             <span className={labelClass}>Width</span>
             <input type="number" min="1" max="999" step="any" value={form.width || ""} onChange={(event) => updateForm({ width: event.target.value })} className={fieldClass} />
@@ -319,8 +321,8 @@ function ProductPriceEstimator({ product, form, onFormChange, darkMode = false, 
       ))}
 
       <div className={isBladeEstimator ? bladeModalLayout ? "grid min-[760px]:grid-cols-[1.35fr_1fr] min-[760px]:items-stretch" : "mt-4 grid gap-4 sm:grid-cols-2 sm:items-stretch" : "contents"}>
-      <div className={isBladeEstimator ? bladeModalLayout ? "min-w-0 space-y-4 p-[18px]" : "min-w-0 space-y-3" : "contents"}>
-      <label className={isBladeEstimator ? "block" : "mt-4 block"}>
+      <div className={isBladeEstimator ? bladeModalLayout ? "min-w-0 space-y-4 p-[18px]" : "min-w-0 space-y-3" : useAreaModalLayout ? "min-w-0 space-y-4 p-[18px] min-[760px]:col-start-1 min-[760px]:row-start-2" : "contents"}>
+      <label className={isBladeEstimator || useAreaModalLayout ? "block" : "mt-4 block"}>
         <span className={labelClass}>Quantity</span>
         <input
           type="number"
@@ -418,10 +420,10 @@ function ProductPriceEstimator({ product, form, onFormChange, darkMode = false, 
       )}
 
       </div>
-      <div className={isBladeEstimator ? bladeModalLayout ? `min-w-0 flex flex-col gap-3.5 border-t p-[18px] min-[760px]:border-l min-[760px]:border-t-0 ${darkMode ? "border-[#3d4862] bg-[#343e55]" : "border-slate-200 bg-slate-50"}` : "min-w-0 flex h-full flex-col justify-center gap-4" : "contents"}>
+      <div className={isBladeEstimator ? bladeModalLayout ? `min-w-0 flex flex-col gap-3.5 border-t p-[18px] min-[760px]:border-l min-[760px]:border-t-0 ${darkMode ? "border-[#3d4862] bg-[#343e55]" : "border-slate-200 bg-slate-50"}` : "min-w-0 flex h-full flex-col justify-center gap-4" : useAreaModalLayout ? "min-w-0 flex flex-col gap-3.5 border-t border-slate-200 bg-slate-50 p-[18px] min-[760px]:col-start-2 min-[760px]:row-start-1 min-[760px]:row-span-2 min-[760px]:border-l min-[760px]:border-t-0" : "contents"}>
 
       {(product.extra_charges || []).some((charge) => charge.is_optional && charge.is_active !== false) && (
-        <div className={`${isBladeEstimator ? "" : "mt-4 "}space-y-2 rounded-lg border p-3 ${bladeModalLayout ? darkMode ? "border-[#3d4862] bg-[#2a3246]" : "border-slate-200 bg-white" : "border-slate-200 bg-slate-50"}`}>
+        <div className={`${isBladeEstimator || useAreaModalLayout ? "" : "mt-4 "}space-y-2 rounded-lg border p-3 ${bladeModalLayout ? darkMode ? "border-[#3d4862] bg-[#2a3246]" : "border-slate-200 bg-white" : "border-slate-200 bg-slate-50"}`}>
           <p className={labelClass}>Optional charges</p>
           {(product.extra_charges || []).map((charge, index) => {
             if (!charge.is_optional || charge.is_active === false) return null;
@@ -451,20 +453,20 @@ function ProductPriceEstimator({ product, form, onFormChange, darkMode = false, 
       )}
 
       {dimensionError ? (
-        <div role="alert" className={`mt-3 rounded-lg px-3 py-2.5 text-center text-xs font-semibold ${darkMode ? "bg-red-950/40 text-red-300" : "bg-red-50 text-red-700"}`}>
+        <div role="alert" className={`${useAreaModalLayout ? "" : "mt-3 "}rounded-lg px-3 py-2.5 text-center text-xs font-semibold ${darkMode ? "bg-red-950/40 text-red-300" : "bg-red-50 text-red-700"}`}>
           {dimensionError}
         </div>
       ) : quantityError ? (
-        <div role="alert" className={`mt-3 rounded-lg px-3 py-2.5 text-center text-xs font-semibold ${darkMode ? "bg-red-950/40 text-red-300" : "bg-red-50 text-red-700"}`}>
+        <div role="alert" className={`${useAreaModalLayout ? "" : "mt-3 "}rounded-lg px-3 py-2.5 text-center text-xs font-semibold ${darkMode ? "bg-red-950/40 text-red-300" : "bg-red-50 text-red-700"}`}>
           {quantityError}
         </div>
       ) : hasEstimate ? (
-        <div className={`${isBladeEstimator ? "" : "mt-4 "}space-y-3 text-sm ${textClass}`} aria-live="polite">
-          <div className={`flex min-h-8 items-center gap-2 py-1 ${bladeModalLayout ? "justify-between py-2" : "justify-center"}`}>
-            <span className="inline-flex items-center gap-2 leading-5">{!bladeModalLayout && <Ruler size={13} aria-hidden="true" />}{isBladeEstimator ? "Blades" : isMeterEstimator ? "Length" : isPieceEstimator ? "Quantity" : "Area"}</span>
+        <div className={`${isBladeEstimator || useAreaModalLayout ? "" : "mt-4 "}space-y-3 text-sm ${textClass}`} aria-live="polite">
+          <div className={`flex min-h-8 items-center gap-2 py-1 ${bladeModalLayout || useAreaModalLayout ? "justify-between py-2" : "justify-center"}`}>
+            <span className="inline-flex items-center gap-2 leading-5">{!bladeModalLayout && !useAreaModalLayout && <Ruler size={13} aria-hidden="true" />}{isBladeEstimator ? "Blades" : isMeterEstimator ? "Length" : isPieceEstimator ? "Quantity" : "Area"}</span>
             <span className={`font-bold leading-5 ${strongClass}`}>{isBladeEstimator ? bladeModalLayout ? bladeCount : `${bladeCount} blade(s)` : result?.areaDisplay || "N/A"}</span>
           </div>
-          <div className={`flex items-center justify-between gap-3 ${bladeModalLayout ? "py-2" : ""}`}>
+          <div className={`flex items-center justify-between gap-3 ${bladeModalLayout || useAreaModalLayout ? "py-2" : ""}`}>
             <span>{hasExactPriceOverride ? "Product price override" : "Base Rate"}</span>
             <span className={`font-bold ${strongClass}`}>{hasExactPriceOverride
               ? formatCurrency(product.estimated_price_override)
@@ -475,25 +477,26 @@ function ProductPriceEstimator({ product, form, onFormChange, darkMode = false, 
               <span>{charge.name}</span><strong className={strongClass}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(charge.total)}</span></strong>
             </div>
           ))}
-          <div className={`flex items-center justify-between gap-3 ${bladeModalLayout ? "rounded-[10px] border px-3.5 py-3" : "rounded-xl border px-3 py-3"} ${bladeModalLayout ? darkMode ? "border-red-400/40 bg-red-400/10 text-[#ff9f96]" : "border-red-200 bg-red-50 text-red-700" : darkMode ? "border-red-900 bg-slate-800 text-red-300" : "border-red-100 bg-red-50 text-red-800"}`}>
+          <div className={`flex items-center justify-between gap-3 ${bladeModalLayout || useAreaModalLayout ? "rounded-[10px] border px-3.5 py-3" : "rounded-xl border px-3 py-3"} ${bladeModalLayout ? darkMode ? "border-red-400/40 bg-red-400/10 text-[#ff9f96]" : "border-red-200 bg-red-50 text-red-700" : darkMode ? "border-red-900 bg-slate-800 text-red-300" : "border-red-100 bg-red-50 text-red-800"}`}>
             <span className="font-bold">Estimated Total</span>
-            <span className={`${bladeModalLayout ? "text-[22px]" : "text-base"} font-black`}>{formatCurrency(result.estimated_price)}</span>
+            <span className={`${bladeModalLayout || useAreaModalLayout ? "text-[22px]" : "text-base"} font-black`}>{formatCurrency(result.estimated_price)}</span>
           </div>
-          <div className={`flex items-center justify-between gap-3 px-1 ${bladeModalLayout ? "py-1" : ""}`}>
+          <div className={`flex items-center justify-between gap-3 px-1 ${bladeModalLayout || useAreaModalLayout ? "py-1" : ""}`}>
             <span>50% Downpayment</span>
-            <span className={`font-bold ${bladeModalLayout ? darkMode ? "text-[#6fe0b0]" : "text-emerald-700" : darkMode ? "text-red-300" : "text-red-800"}`}>{formatCurrency(result.estimated_price * 0.5)}</span>
+            <span className={`font-bold ${bladeModalLayout || useAreaModalLayout ? darkMode ? "text-[#6fe0b0]" : "text-emerald-700" : darkMode ? "text-red-300" : "text-red-800"}`}>{formatCurrency(result.estimated_price * 0.5)}</span>
           </div>
         </div>
       ) : (
-        <div className={`mt-3 flex min-h-12 items-center justify-center rounded-lg px-3 py-2.5 text-center text-xs ${darkMode ? "bg-slate-800 text-slate-300" : "bg-slate-50 text-slate-500"}`}>
+        <div className={`${useAreaModalLayout ? "" : "mt-3 "}flex min-h-12 items-center justify-center rounded-lg px-3 py-2.5 text-center text-xs ${darkMode ? "bg-slate-800 text-slate-300" : "bg-slate-50 text-slate-500"}`}>
           {isBladeEstimator ? "Choose a glass type and valid blade or frame option to estimate." : isMeterEstimator ? "Enter a length to calculate your estimate." : isPieceEstimator ? "A configured piece price is required to calculate your estimate." : "Enter width and height to calculate your estimate."}
         </div>
       )}
 
-      <p className={`${isBladeEstimator ? "" : "mt-2 "}text-xs font-medium leading-5 ${darkMode ? "text-slate-400" : "text-slate-600"}`}>
+      <p className={`${isBladeEstimator || useAreaModalLayout ? "" : "mt-2 "}text-xs font-medium leading-5 ${darkMode ? "text-slate-400" : "text-slate-600"}`}>
         Final pricing is subject to negotiation during shop discussion or on-site inspection.
       </p>
-      {footer && <div className={`${bladeModalLayout ? "mt-auto border-t pt-3" : "mt-3 border-t border-slate-200 pt-3 dark:border-slate-700"} ${bladeModalLayout ? darkMode ? "border-[#3d4862]" : "border-slate-200" : ""}`}>{footer}</div>}
+      {footer && <div className={`${bladeModalLayout || useAreaModalLayout ? "mt-auto border-t pt-3" : "mt-3 border-t border-slate-200 pt-3 dark:border-slate-700"} ${bladeModalLayout ? darkMode ? "border-[#3d4862]" : "border-slate-200" : useAreaModalLayout ? "border-slate-200" : ""}`}>{footer}</div>}
+      </div>
       </div>
       </div>
     </section>

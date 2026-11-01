@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   ArrowRight,
+  ArrowUpRight,
   ClipboardCheck,
   FolderOpen,
   ShieldCheck,
   Package,
+  UserCog,
+  Settings,
   Wrench,
   PanelRightClose,
   PanelRightOpen,
@@ -470,7 +473,7 @@ function Dashboard() {
     return activeProjectStatuses.has(status) && !isCompleted;
   };
   const dashboardPanelPageSize = 5;
-  const activeProjectsPerPage = 6;
+  const activeProjectsPerPage = 8;
   const allActiveProjects = orders.filter(isActiveProject);
   const activeProjectsCount = allActiveProjects.length;
   const activeProjectsPageCount = Math.max(1, Math.ceil(activeProjectsCount / activeProjectsPerPage));
@@ -599,75 +602,59 @@ function Dashboard() {
               className="h-full"
             />
 
-            <div className={`h-full rounded-3xl p-4 shadow-lg sm:p-6 ${darkMode ? "bg-slate-800 text-slate-100" : "bg-white text-gray-900"}`}>
-              <h2 className="text-lg font-bold">Quick Actions</h2>
-              <p className={`mb-4 mt-1 text-sm ${darkMode ? "text-slate-300" : "text-gray-500"}`}>Shortcuts</p>
+            <div className={`admin-quick-actions-panel self-start ${darkMode ? "is-dark" : ""}`}>
+              <h2 className="admin-quick-actions-title">Quick Actions</h2>
+              <p className="admin-quick-actions-subtitle">Shortcuts</p>
 
-              <div className="grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-4">
-                <button
-                  type="button"
-                  onClick={() => navigate("/site-inspection")}
-                  className={`rounded-2xl border p-3 text-left transition ${darkMode ? "border-red-400/80 bg-red-950/50 hover:bg-red-900/70" : "border-red-500 bg-red-50/50 hover:bg-red-100"}`}
-                >
-                  <ClipboardCheck className="mb-2 text-red-600" size={20} />
-                  <h3 className="text-xs font-bold leading-tight">View Inspection</h3>
-                  <p className={`mt-1 text-[11px] ${darkMode ? "text-slate-300" : "text-gray-500"}`}>Site inspection</p>
-                </button>
+              <div className="admin-quick-actions-grid">
+                <Link to="/site-inspection" style={{ "--quick-accent": darkMode ? "#ff8fa3" : "#e11d48" }} className={`admin-quick-action-tile ${darkMode ? "is-dark" : ""}`}>
+                  <span className="admin-quick-action-icon"><ClipboardCheck size={21} strokeWidth={2} aria-hidden="true" /></span>
+                  <span className="admin-quick-action-copy"><span className="admin-quick-action-title">View Inspection</span><span className="admin-quick-action-description">Site Inspection</span></span>
+                  <span className="admin-quick-action-arrow" aria-hidden="true"><ArrowUpRight size={15} /></span>
+                </Link>
 
-                <button
-                  type="button"
-                  onClick={() => navigate("/progress-monitor")}
-                  className={`rounded-2xl border p-3 text-left transition ${darkMode ? "border-blue-400/80 bg-blue-950/50 hover:bg-blue-900/70" : "border-blue-500 bg-blue-50/50 hover:bg-blue-100"}`}
-                >
-                  <FolderOpen className="mb-2 text-blue-600" size={20} />
-                  <h3 className="text-xs font-bold leading-tight">View Projects</h3>
-                  <p className={`mt-1 text-[11px] ${darkMode ? "text-slate-300" : "text-gray-500"}`}>Progress monitor</p>
-                </button>
+                <Link to="/product" style={{ "--quick-accent": darkMode ? "#c99bff" : "#9333ea" }} className={`admin-quick-action-tile ${darkMode ? "is-dark" : ""}`}>
+                  <span className="admin-quick-action-icon"><Package size={21} strokeWidth={2} aria-hidden="true" /></span>
+                  <span className="admin-quick-action-copy"><span className="admin-quick-action-title">View Product</span><span className="admin-quick-action-description">Product Management</span></span>
+                  <span className="admin-quick-action-arrow" aria-hidden="true"><ArrowUpRight size={15} /></span>
+                </Link>
 
-                <button
-                  type="button"
-                  onClick={() => navigate("/transactions", { state: { activeTable: "receipts" } })}
-                  className={`rounded-2xl border p-3 text-left transition ${darkMode ? "border-green-400/80 bg-green-950/50 hover:bg-green-900/70" : "border-green-500 bg-green-50/50 hover:bg-green-100"}`}
-                >
-                  <ShieldCheck className="mb-2 text-green-600" size={20} />
-                  <h3 className="text-xs font-bold leading-tight">View Warranty</h3>
-                  <p className={`mt-1 text-[11px] ${darkMode ? "text-slate-300" : "text-gray-500"}`}>Warranties</p>
-                </button>
+                <Link to="/profile" style={{ "--quick-accent": darkMode ? "#a5b4ff" : "#4f46e5" }} className={`admin-quick-action-tile ${darkMode ? "is-dark" : ""}`}>
+                  <span className="admin-quick-action-icon"><UserCog size={21} strokeWidth={2} aria-hidden="true" /></span>
+                  <span className="admin-quick-action-copy"><span className="admin-quick-action-title">Profile</span><span className="admin-quick-action-description">Manage Your Profile</span></span>
+                  <span className="admin-quick-action-arrow" aria-hidden="true"><ArrowUpRight size={15} /></span>
+                </Link>
 
-                <button
-                  type="button"
-                  onClick={() => navigate("/product")}
-                  className={`rounded-2xl border p-3 text-left transition ${darkMode ? "border-fuchsia-400/80 bg-fuchsia-950/50 hover:bg-fuchsia-900/70" : "border-purple-500 bg-purple-50 hover:bg-purple-100"}`}
-                >
-                  <Package className="mb-2 text-purple-600" size={20} />
-                  <h3 className="text-xs font-bold leading-tight">View Product</h3>
-                  <p className={`mt-1 text-[11px] ${darkMode ? "text-slate-300" : "text-gray-500"}`}>Inventory</p>
-                </button>
+                <Link to="/settings" style={{ "--quick-accent": darkMode ? "#b6c0d3" : "#475569" }} className={`admin-quick-action-tile ${darkMode ? "is-dark" : ""}`}>
+                  <span className="admin-quick-action-icon"><Settings size={21} strokeWidth={2} aria-hidden="true" /></span>
+                  <span className="admin-quick-action-copy"><span className="admin-quick-action-title">Settings</span><span className="admin-quick-action-description">Manage Preferences</span></span>
+                  <span className="admin-quick-action-arrow" aria-hidden="true"><ArrowUpRight size={15} /></span>
+                </Link>
               </div>
             </div>
           </div>
 
           {/* Statistics */}
-          <div className="mt-4 grid grid-cols-2 gap-3 sm:mt-6 sm:gap-5 xl:grid-cols-4">
-            <button type="button" onClick={() => navigate("/progress-monitor")} className={`group flex min-h-[142px] flex-col rounded-2xl border p-4 text-left shadow-sm transition duration-200 hover:-translate-y-1 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-blue-500 sm:min-h-[170px] sm:rounded-3xl sm:p-6 ${darkMode ? "border-slate-700 bg-slate-800 text-slate-100" : "border-slate-200 bg-white text-slate-900"}`}>
-              <div className="flex w-full items-center justify-between gap-2"><p className={`text-xs font-semibold sm:text-sm ${darkMode ? "text-slate-300" : "text-slate-500"}`}>Active Projects</p><span className={`flex size-8 shrink-0 items-center justify-center rounded-xl ${darkMode ? "bg-blue-400/10 text-blue-300" : "bg-blue-50 text-blue-600"}`}><FolderOpen size={17} aria-hidden="true" /></span></div>
-              <h2 className="mt-2 text-3xl font-extrabold leading-none tabular-nums sm:text-4xl">{activeProjectsCount}</h2>
-              <span className={`mt-auto flex items-center gap-1 pt-3 text-xs font-semibold sm:text-sm ${darkMode ? "text-blue-300 group-hover:text-blue-200" : "text-blue-600 group-hover:text-blue-700"}`}>View projects <ArrowRight size={14} aria-hidden="true" /></span>
+          <div className="mt-4 grid gap-[18px] sm:mt-6" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))" }}>
+            <button type="button" onClick={() => navigate("/progress-monitor")} style={{ "--summary-accent": darkMode ? "#8fb0ff" : "#2563eb" }} className={`admin-dashboard-summary-card ${darkMode ? "is-dark" : ""}`}>
+              <div className="admin-dashboard-summary-top"><p className="admin-dashboard-summary-label">Active Projects</p><span className="admin-dashboard-summary-icon"><FolderOpen size={21} strokeWidth={2} aria-hidden="true" /></span></div>
+              <h2 className="admin-dashboard-summary-count">{activeProjectsCount}</h2>
+              <span className="admin-dashboard-summary-link">View projects <ArrowRight size={15} strokeWidth={2.2} aria-hidden="true" /></span>
             </button>
-            <button type="button" onClick={() => navigate("/transactions", { state: { activeTable: "receipts" } })} className={`group flex min-h-[142px] flex-col rounded-2xl border p-4 text-left shadow-sm transition duration-200 hover:-translate-y-1 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-green-500 sm:min-h-[170px] sm:rounded-3xl sm:p-6 ${darkMode ? "border-slate-700 bg-slate-800 text-slate-100" : "border-slate-200 bg-white text-slate-900"}`}>
-              <div className="flex w-full items-center justify-between gap-2"><p className={`text-xs font-semibold sm:text-sm ${darkMode ? "text-slate-300" : "text-slate-500"}`}>Active Warranties</p><span className={`flex size-8 shrink-0 items-center justify-center rounded-xl ${darkMode ? "bg-emerald-400/10 text-emerald-300" : "bg-emerald-50 text-emerald-600"}`}><ShieldCheck size={17} aria-hidden="true" /></span></div>
-              <h2 className="mt-2 text-3xl font-extrabold leading-none tabular-nums sm:text-4xl">{activeWarrantiesCount}</h2>
-              <span className={`mt-auto flex items-center gap-1 pt-3 text-xs font-semibold sm:text-sm ${darkMode ? "text-emerald-300 group-hover:text-emerald-200" : "text-emerald-600 group-hover:text-emerald-700"}`}>View warranties <ArrowRight size={14} aria-hidden="true" /></span>
+            <button type="button" onClick={() => navigate("/transactions", { state: { activeTable: "receipts" } })} style={{ "--summary-accent": darkMode ? "#6fe0b0" : "#16875a" }} className={`admin-dashboard-summary-card ${darkMode ? "is-dark" : ""}`}>
+              <div className="admin-dashboard-summary-top"><p className="admin-dashboard-summary-label">Active Warranties</p><span className="admin-dashboard-summary-icon"><ShieldCheck size={21} strokeWidth={2} aria-hidden="true" /></span></div>
+              <h2 className="admin-dashboard-summary-count">{activeWarrantiesCount}</h2>
+              <span className="admin-dashboard-summary-link">View warranties <ArrowRight size={15} strokeWidth={2.2} aria-hidden="true" /></span>
             </button>
-            <button type="button" onClick={() => navigate("/site-inspection")} className={`group flex min-h-[142px] flex-col rounded-2xl border p-4 text-left shadow-sm transition duration-200 hover:-translate-y-1 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-red-500 sm:min-h-[170px] sm:rounded-3xl sm:p-6 ${darkMode ? "border-slate-700 bg-slate-800 text-slate-100" : "border-slate-200 bg-white text-slate-900"}`}>
-              <div className="flex w-full items-center justify-between gap-2"><p className={`text-xs font-semibold sm:text-sm ${darkMode ? "text-slate-300" : "text-slate-500"}`}>Pending Inspection</p><span className={`flex size-8 shrink-0 items-center justify-center rounded-xl ${darkMode ? "bg-rose-400/10 text-rose-300" : "bg-rose-50 text-rose-600"}`}><ClipboardCheck size={17} aria-hidden="true" /></span></div>
-              <h2 className="mt-2 text-3xl font-extrabold leading-none tabular-nums sm:text-4xl">{pendingInspectionCount}</h2>
-              <span className={`mt-auto flex items-center gap-1 pt-3 text-xs font-semibold sm:text-sm ${darkMode ? "text-rose-300 group-hover:text-rose-200" : "text-rose-600 group-hover:text-rose-700"}`}>View inspections <ArrowRight size={14} aria-hidden="true" /></span>
+            <button type="button" onClick={() => navigate("/site-inspection")} style={{ "--summary-accent": darkMode ? "#ff8fa3" : "#e11d48" }} className={`admin-dashboard-summary-card ${darkMode ? "is-dark" : ""}`}>
+              <div className="admin-dashboard-summary-top"><p className="admin-dashboard-summary-label">Pending Inspection</p><span className="admin-dashboard-summary-icon"><ClipboardCheck size={21} strokeWidth={2} aria-hidden="true" /></span></div>
+              <h2 className="admin-dashboard-summary-count">{pendingInspectionCount}</h2>
+              <span className="admin-dashboard-summary-link">View inspections <ArrowRight size={15} strokeWidth={2.2} aria-hidden="true" /></span>
             </button>
-            {canViewRepairManagement && <button type="button" onClick={() => navigate("/repair-requests")} className={`group flex min-h-[142px] flex-col rounded-2xl border p-4 text-left shadow-sm transition duration-200 hover:-translate-y-1 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-amber-500 sm:min-h-[170px] sm:rounded-3xl sm:p-6 ${darkMode ? "border-slate-700 bg-slate-800 text-slate-100" : "border-slate-200 bg-white text-slate-900"}`}>
-              <div className="flex w-full items-center justify-between gap-2"><p className={`text-xs font-semibold sm:text-sm ${darkMode ? "text-slate-300" : "text-slate-500"}`}>Pending Repair</p><span className={`flex size-8 shrink-0 items-center justify-center rounded-xl ${darkMode ? "bg-amber-400/10 text-amber-300" : "bg-amber-50 text-amber-600"}`}><Wrench size={17} aria-hidden="true" /></span></div>
-              <h2 className="mt-2 text-3xl font-extrabold leading-none tabular-nums sm:text-4xl">{pendingRepairCount}</h2>
-              <span className={`mt-auto flex items-center gap-1 pt-3 text-xs font-semibold sm:text-sm ${darkMode ? "text-amber-300 group-hover:text-amber-200" : "text-amber-600 group-hover:text-amber-700"}`}>View repairs <ArrowRight size={14} aria-hidden="true" /></span>
+            {canViewRepairManagement && <button type="button" onClick={() => navigate("/repair-requests")} style={{ "--summary-accent": darkMode ? "#f2b25e" : "#d9730d" }} className={`admin-dashboard-summary-card ${darkMode ? "is-dark" : ""}`}>
+              <div className="admin-dashboard-summary-top"><p className="admin-dashboard-summary-label">Pending Repair</p><span className="admin-dashboard-summary-icon"><Wrench size={21} strokeWidth={2} aria-hidden="true" /></span></div>
+              <h2 className="admin-dashboard-summary-count">{pendingRepairCount}</h2>
+              <span className="admin-dashboard-summary-link">View repairs <ArrowRight size={15} strokeWidth={2.2} aria-hidden="true" /></span>
             </button>}
           </div>
 
@@ -885,8 +872,8 @@ function Dashboard() {
             </div>
           </section>
 
-          <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-2">
-            <section className="flex h-full flex-col rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+          <div className="mt-6 grid grid-cols-1 items-start gap-6 xl:grid-cols-2">
+            <section className="flex flex-col rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <h2 className="text-xl font-bold text-gray-900">Active Projects</h2>
@@ -896,7 +883,7 @@ function Dashboard() {
                 </div>
               </div>
 
-              <div className="mt-5 grid flex-1 grid-cols-1 content-start gap-3 pb-4 sm:grid-cols-2">
+              <div className="mt-5 grid grid-cols-1 content-start gap-3 sm:grid-cols-2">
                 {activeProjects.length > 0 ? activeProjects.map((order) => {
                   const customerName = order.customer
                     ? `${order.customer.first_name || ""} ${order.customer.last_name || ""}`.trim() || order.customer.email || "Customer"
@@ -911,13 +898,13 @@ function Dashboard() {
                       type="button"
                       key={order._id || order.id}
                       onClick={() => handleViewProject(order)}
-                      className={`group flex min-h-[76px] w-full items-center justify-between gap-4 rounded-xl border px-4 py-3 text-left shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${darkMode ? "border-[#3d4862] bg-gradient-to-br from-[#2a3246] to-[#343e55] hover:border-blue-400/70" : "border-slate-200 bg-gradient-to-br from-white to-slate-50 hover:border-blue-200"}`}
+                      className={`group relative flex min-h-[76px] w-full items-start rounded-xl border px-4 py-3 text-left shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${darkMode ? "border-[#3d4862] bg-gradient-to-br from-[#2a3246] to-[#343e55] hover:border-blue-400/70" : "border-slate-200 bg-gradient-to-br from-white to-slate-50 hover:border-blue-200"}`}
                     >
-                      <div className="min-w-0">
+                      <div className="min-w-0 pr-[150px]">
                         <p className={`truncate text-[15px] font-bold leading-5 ${darkMode ? "text-[#e8ebf2]" : "text-slate-900"}`}>{productName}</p>
                         <p className={`mt-1 truncate text-[13px] leading-4 ${darkMode ? "text-[#a9b3c7]" : "text-slate-600"}`}>{customerName}</p>
                       </div>
-                      <span className={`w-[138px] shrink-0 text-left text-[13px] font-bold leading-5 transition-colors ${darkMode ? "text-[#a9c2ff] group-hover:text-[#c1d2ff]" : "text-blue-700 group-hover:text-blue-800"}`}>
+                      <span className={`absolute right-4 top-3 w-[138px] text-right text-[13px] font-bold leading-5 transition-colors ${darkMode ? "text-[#a9c2ff] group-hover:text-[#c1d2ff]" : "text-blue-700 group-hover:text-blue-800"}`}>
                         {status}
                       </span>
                     </button>
@@ -929,7 +916,7 @@ function Dashboard() {
                 )}
               </div>
               {activeProjectsCount > 0 && (
-                <div className="mt-auto flex flex-col items-center justify-center gap-3 rounded-xl border border-gray-200 bg-gray-50 p-3 sm:flex-row">
+                <div className="mt-4 flex flex-col items-center justify-center gap-3 rounded-xl border border-gray-200 bg-gray-50 p-3 sm:flex-row">
                   <div className="flex flex-wrap items-center justify-center gap-2" role="navigation" aria-label="Active projects pagination">
                     <button
                       type="button"
@@ -967,7 +954,7 @@ function Dashboard() {
               )}
             </section>
 
-            <section className="flex h-full flex-col rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+            <section className="flex flex-col rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <h2 className="text-xl font-bold text-gray-900">Active Warranties</h2>
@@ -977,7 +964,7 @@ function Dashboard() {
                 </div>
               </div>
 
-              <div className="mt-5 grid flex-1 grid-cols-1 content-start gap-3 sm:grid-cols-2">
+              <div className="mt-5 grid grid-cols-1 content-start gap-3 sm:grid-cols-2">
                 {warrantiesToDisplay.length > 0 ? warrantiesToDisplay.map(({ key, order, item, period, records }) => {
                   const customerName = order.customer
                     ? `${order.customer.first_name || ""} ${order.customer.last_name || ""}`.trim() || order.customer.email || "Customer"
@@ -1029,7 +1016,7 @@ function Dashboard() {
                 )}
               </div>
               {allWarrantiesToDisplay.length > 0 && (
-                <div className="mt-auto flex flex-col items-center justify-center gap-3 rounded-xl border border-gray-200 bg-gray-50 p-3 sm:flex-row">
+                <div className="mt-4 flex flex-col items-center justify-center gap-3 rounded-xl border border-gray-200 bg-gray-50 p-3 sm:flex-row">
                   <div className="flex flex-wrap items-center justify-center gap-2" role="navigation" aria-label="Active warranties pagination">
                     <button
                       type="button"

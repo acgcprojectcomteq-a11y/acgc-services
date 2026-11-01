@@ -3864,7 +3864,7 @@ export const updateOrderProgress = async (req, res) => {
     const auditEvents = [];
     const actor = req.user || {};
     const actorName = [actor.first_name, actor.last_name].filter(Boolean).join(" ") || actor.name || actor.email || "Staff";
-    const progressCooldownMs = 10 * 60 * 1000;
+    const progressCooldownMs = 5 * 60 * 1000;
     const progressRequestTime = new Date();
     const newlyCompletedTargets = [];
     const latestSavedCompletion = previousStages.flatMap((stage) => [
@@ -3945,7 +3945,7 @@ export const updateOrderProgress = async (req, res) => {
           return res.status(409).json({
             success: false,
             code: "PROGRESS_COOLDOWN",
-            message: "Please wait 10 minutes before proceeding to the next progress stage.",
+            message: "Please wait 5 minutes before proceeding to the next progress stage.",
             retryAt: new Date(latestSavedCompletion + progressCooldownMs).toISOString(),
             remainingMs: cooldownRemainingMs,
           });
@@ -4102,7 +4102,7 @@ export const updateOrderProgress = async (req, res) => {
         return res.status(409).json({
           success: false,
           code: "PROGRESS_COOLDOWN",
-          message: "Please wait 10 minutes before proceeding to the next progress stage.",
+          message: "Please wait 5 minutes before proceeding to the next progress stage.",
           retryAt: new Date(latestSavedCompletion + progressCooldownMs).toISOString(),
           remainingMs: cooldownRemainingMs,
         });

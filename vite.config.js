@@ -25,10 +25,10 @@ export default defineConfig({
         ws: true,
         configure: (proxy) => {
           proxy.on("error", (error, req, res) => {
-            console.error("[vite proxy] API proxy error", req.url, error.message);
-            if (!res.headersSent) {
+            console.error("[vite proxy] API proxy error", req?.url, error?.code || error?.message || error);
+            if (res && !res.headersSent && !res.destroyed) {
               res.writeHead(502, { "Content-Type": "application/json" });
-              res.end(JSON.stringify({ success: false, message: "API proxy error" }));
+              res.end(JSON.stringify({ success: false, message: "Unable to reach the backend API. Confirm the backend server is running on port 5000." }));
             }
           });
         },
