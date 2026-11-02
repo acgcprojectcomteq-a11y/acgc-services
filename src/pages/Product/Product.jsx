@@ -387,10 +387,16 @@ function ProductFormModal({
   });
 
   const updatePricingMethod = (method) => setNewProduct((product) => {
-    if (/finished\s*door/i.test(`${product.product_type || ""} ${product.product_name || product.name || ""}`)) {
-      return { ...product, pricing_method: "per_piece" };
-    }
-    if (method !== "blade") return { ...product, pricing_method: method };
+    const isFinishedDoor = /finished\s*door/i.test(`${product.product_type || ""} ${product.product_name || product.name || ""}`);
+    const finishedDoorPricing = {
+      ...(product.finished_door_pricing || {}),
+      enabled: isFinishedDoor && method === "per_piece",
+      measurement_dimension: product.finished_door_pricing?.measurement_dimension || "height",
+      standard_size_cm: product.finished_door_pricing?.standard_size_cm || 190,
+      standard_price_per_piece: product.finished_door_pricing?.standard_price_per_piece ?? product.base_price ?? "",
+      additional_price_per_cm: product.finished_door_pricing?.additional_price_per_cm ?? "",
+    };
+    if (method !== "blade") return { ...product, pricing_method: method, finished_door_pricing: finishedDoorPricing };
 
     const bladeGlassTypes = Array.isArray(product.blade_glass_types) && product.blade_glass_types.length
       ? product.blade_glass_types
@@ -403,6 +409,7 @@ function ProductFormModal({
     return {
       ...product,
       pricing_method: method,
+      finished_door_pricing: finishedDoorPricing,
       blade_glass_types: bladeGlassTypes,
       sell_blades_only: sellBladesOnly,
       default_blade_glass_type: defaultGlass,
@@ -592,6 +599,7 @@ function ProductFormModal({
       : pricingMethodValue === "per_piece" ? "1 piece"
       : `${Number(newProduct.estimated_area || 0).toFixed(2)} sq ft`;
   const pricingMethodCards = [
+    { key: "per_piece", title: "Per piece", badge: "piece", description: "One set price for each product piece" },
     { key: "sqft", title: "Per area", badge: "sq ft", description: "Width × height, charged by area" },
     { key: "blade", title: "Per blade", badge: "blade", description: "Glass rate, with optional frame" },
   ];
@@ -633,7 +641,7 @@ function ProductFormModal({
       : pricingMethodValue === "per_meter"
         ? Number(newProduct.width) > 0 && Number(newProduct.unit_price) > 0
         : pricingMethodValue === "per_piece"
-          ? isFinishedDoorProduct
+          ? isFinishedDoorProduct && newProduct.finished_door_pricing?.enabled
             ? String(newProduct.finished_door_pricing?.standard_price_per_piece ?? "").trim() !== "" && Number(newProduct.finished_door_pricing?.standard_price_per_piece) >= 0
             : Number(newProduct.base_price) > 0
       : pricingMethodValue === "fixed"
@@ -728,7 +736,24 @@ function ProductFormModal({
                 options={productTypeOptions}
                 catalogItems={productTypeCatalogItems}
                 placeholder="Select product type"
-              onChange={(value) => setNewProduct((product) => ({ ...product, product_type: value, product_name: "", pricing_method: /finished\s*door/i.test(value) ? "per_piece" : "", variant: "", finished_door_pricing: /finished\s*door/i.test(value) ? { enabled: true, measurement_dimension: "height", standard_size_cm: 190, standard_price_per_piece: product.base_price || "", additional_price_per_cm: "" } : product.finished_door_pricing }))}
+                onChange={(value) => setNewProduct((product) => {
+                  const isFinishedDoor = /finished\s*door/i.test(value);
+                  return {
+                    ...product,
+                    product_type: value,
+                    product_name: "",
+                    pricing_method: isFinishedDoor ? "per_piece" : "",
+                    variant: "",
+                    finished_door_pricing: {
+                      ...(product.finished_door_pricing || {}),
+                      enabled: isFinishedDoor,
+                      measurement_dimension: product.finished_door_pricing?.measurement_dimension || "height",
+                      standard_size_cm: product.finished_door_pricing?.standard_size_cm || 190,
+                      standard_price_per_piece: product.finished_door_pricing?.standard_price_per_piece ?? product.base_price ?? "",
+                      additional_price_per_cm: product.finished_door_pricing?.additional_price_per_cm ?? "",
+                    },
+                  };
+                })}
                 onAdd={canAddProducts ? (name) => saveCatalogOption("types", name) : undefined}
                 onEdit={canEditProducts ? (item, name) => editCatalogOption("types", item, name) : undefined}
                 onDelete={canDeleteProducts ? (item) => deleteCatalogOption("types", item) : undefined}
@@ -770,7 +795,7 @@ function ProductFormModal({
                           standard_size_cm: product.finished_door_pricing?.standard_size_cm || 190,
                           standard_price_per_piece: product.finished_door_pricing?.standard_price_per_piece ?? product.base_price ?? "",
                           additional_price_per_cm: product.finished_door_pricing?.additional_price_per_cm ?? "",
-                        } : product.finished_door_pricing,
+                        } : { ...(product.finished_door_pricing || {}), enabled: false },
                         ...(jalousieBlade ? {
                           width: "",
                           height: "",
@@ -823,7 +848,7 @@ function ProductFormModal({
 
           <section>
             {sectionHeading(pricingMethodValue === "blade" ? "Pricing & Blade Options" : "Price & Size")}
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3">
               {pricingMethodCards.map((method) => {
                 const selected = pricingMethodValue === method.key;
                 return (
@@ -845,7 +870,7 @@ function ProductFormModal({
             </div>
 
             <div className={`mt-3 rounded-xl border p-4 ${darkMode ? "border-slate-700 bg-slate-800/60" : "border-slate-200 bg-white"}`}>
-              {isFinishedDoorProduct && (
+              {isFinishedDoorProduct && pricingMethodValue === "per_piece" && newProduct.finished_door_pricing?.enabled && (
                 <div className={`mb-4 rounded-xl border p-4 ${darkMode ? "border-blue-400/30 bg-blue-400/5" : "border-blue-200 bg-blue-50/60"}`}>
                   <div className="mb-3">
                     <h3 className={`text-sm font-bold ${darkMode ? "text-slate-100" : "text-slate-900"}`}>Finished Door Standard Size Pricing</h3>
@@ -875,7 +900,15 @@ function ProductFormModal({
               {!pricingMethodValue && (
                 <div className={`flex min-h-16 items-center gap-3 rounded-lg border border-dashed px-4 py-3 ${darkMode ? "border-slate-600 bg-slate-900/60 text-slate-300" : "border-slate-300 bg-slate-50 text-slate-600"}`}>
                   <span className={`flex size-8 shrink-0 items-center justify-center rounded-full text-sm font-bold ${darkMode ? "bg-slate-800 text-red-300" : "bg-white text-red-800"}`} aria-hidden="true">1</span>
-                  <span className="min-w-0"><span className="block text-sm font-semibold">Choose how this product is priced</span><span className={`mt-0.5 block text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Select Per area or Per blade to configure rates and calculate a default estimate.</span></span>
+                  <span className="min-w-0"><span className="block text-sm font-semibold">Choose how this product is priced</span><span className={`mt-0.5 block text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Select Per piece, Per area, or Per blade to configure pricing.</span></span>
+                </div>
+              )}
+              {pricingMethodValue === "per_piece" && !(isFinishedDoorProduct && newProduct.finished_door_pricing?.enabled) && (
+                <div className="mb-4">
+                  <label className={labelClass}>Price Per Piece (PHP) *
+                    <input type="number" min="0.01" step="0.01" value={newProduct.base_price ?? ""} onChange={(event) => updateField("base_price", event.target.value)} placeholder="0.00" className={`${fieldClass} mt-1`} />
+                  </label>
+                  <p className={`mt-2 text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>This price is charged for each piece. The order total uses the selected quantity.</p>
                 </div>
               )}
               {pricingMethodValue === "sqft" && (
@@ -2036,7 +2069,7 @@ function Products() {
             ? [{ name: "Standard", price_per_blade: Number(product.price_per_blade || product.unit_price) }]
             : [];
         const isFinishedDoor = /finished\s*door/i.test([safeProduct.product_type, safeProduct.product_name, safeProduct.name].filter(Boolean).join(" "));
-        const editPricingMethod = isFinishedDoor ? "per_piece" : product.pricing_method === "per_piece" ? "fixed" : product.pricing_method || PRICING_METHOD[safeProduct.product_name || safeProduct.name] || "";
+        const editPricingMethod = product.pricing_method || (isFinishedDoor ? "per_piece" : PRICING_METHOD[safeProduct.product_name || safeProduct.name] || "");
         const editJalousieBlade = editPricingMethod === "blade" && /jalousie/i.test(safeProduct.product_name || safeProduct.name || "");
         const editFrameTypes = Array.isArray(product.blade_frame_types) ? product.blade_frame_types.map((frame) => ({ ...frame })) : [];
         const editSellWithFrame = Boolean(product.sell_with_frame) && (!editJalousieBlade || editFrameTypes.some((frame) => String(frame.name || "").trim()));
@@ -2082,7 +2115,7 @@ function Products() {
           standard_size: editJalousieBlade ? "" : product.standard_size || "",
           finished_door_pricing: isFinishedDoor ? {
             ...(product.finished_door_pricing || {}),
-            enabled: true,
+            enabled: editPricingMethod === "per_piece",
             measurement_dimension: product.finished_door_pricing?.measurement_dimension || "height",
             standard_size_cm: Number(product.finished_door_pricing?.standard_size_cm) || 190,
             standard_price_per_piece: Number(product.finished_door_pricing?.standard_price_per_piece) || Number(product.base_price) || Number(product.unit_price) || "",
