@@ -78,15 +78,23 @@ function CatalogPicker({ label, value, options, catalogItems = [], onChange, onA
 
     const rect = trigger.getBoundingClientRect();
     const dialog = trigger.closest(".mobile-fullscreen-dialog");
+    const dialogRect = dialog?.getBoundingClientRect();
     const footer = dialog?.querySelector("footer");
+    const topLimit = Math.max(8, (dialogRect?.top ?? 0) + 8);
     const footerTop = footer?.getBoundingClientRect().top ?? window.innerHeight;
-    const spaceBelow = Math.max(0, Math.min(window.innerHeight - 8, footerTop - 8) - rect.bottom - 8);
-    const naturalHeight = Math.min(320, menuRef.current?.scrollHeight || options.length * 60 + 68);
-    const maxHeight = Math.max(80, Math.min(naturalHeight, spaceBelow));
+    const bottomLimit = Math.min(window.innerHeight - 8, footerTop - 8);
+    const spaceBelow = Math.max(0, bottomLimit - rect.bottom - 8);
+    const spaceAbove = Math.max(0, rect.top - topLimit - 8);
+    // Read the un-clamped scroll area's content height so repositioning never
+    // uses a height that was already reduced by an earlier scroll event.
+    const contentHeight = menuRef.current?.querySelector('[role="listbox"]')?.scrollHeight;
+    const naturalHeight = Math.min(320, contentHeight || options.length * 60 + 68);
+    const openAbove = spaceBelow < naturalHeight && spaceAbove > spaceBelow;
+    const maxHeight = Math.max(80, Math.min(naturalHeight, openAbove ? spaceAbove : spaceBelow));
 
     setMenuPosition({
       position: "fixed",
-      top: rect.bottom + 8,
+      top: openAbove ? Math.max(topLimit, rect.top - maxHeight - 8) : Math.min(rect.bottom + 8, bottomLimit - maxHeight),
       left: Math.max(8, Math.min(rect.left, window.innerWidth - rect.width - 8)),
       width: rect.width,
       maxHeight,
