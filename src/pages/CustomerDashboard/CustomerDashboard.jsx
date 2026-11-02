@@ -309,21 +309,21 @@ const buildDeliveryAddress = (address = {}) => normalizeAddress(
   [address.street_address, address.city, address.province, address.zip_code].filter(Boolean).join(", ")
 );
 
-const renderRatingStars = (rating = 0, size = 18) => {
+const renderRatingStars = (rating = 0, size = 18, darkMode = false) => {
   const normalizedRating = Number(rating) || 0;
   const fullStars = Math.floor(normalizedRating);
   const hasHalfStar = normalizedRating - fullStars >= 0.5;
 
   return Array.from({ length: 5 }, (_, index) => {
     if (index < fullStars) {
-      return <Star key={index} size={size} fill="currentColor" className="text-amber-500" />;
+      return <Star key={index} size={size} fill="#ffc21a" className="text-amber-500" />;
     }
 
     if (index === fullStars && hasHalfStar) {
-      return <StarHalf key={index} size={size} fill="currentColor" className="text-amber-500" />;
+      return <StarHalf key={index} size={size} fill="#ffc21a" className="text-amber-500" />;
     }
 
-    return <Star key={index} size={size} className="text-slate-300" />;
+    return <Star key={index} size={size} className={darkMode ? "text-slate-600" : "text-slate-300"} />;
   });
 };
 
@@ -6011,7 +6011,7 @@ function CustomerDashboard() {
                         {canAccessCustomerRatings && (
                           <div className={`flex items-center gap-2 ${darkMode ? "text-amber-300" : "text-amber-600"}`}>
                             <div className="flex shrink-0 items-center gap-0.5">
-                              {renderRatingStars(averageRating, 14)}
+                              {renderRatingStars(averageRating, 14, darkMode)}
                             </div>
                             <span className={`text-xs font-semibold ${darkMode ? "text-slate-300" : "text-slate-600"}`}>
                               {averageRating > 0 ? `${averageRating.toFixed(1)} (${reviewsCount})` : "New"}
@@ -6040,7 +6040,7 @@ function CustomerDashboard() {
                     {featuredRatingStats.average.toFixed(1)}
                   </p>
                   <div className="mt-3 flex justify-center gap-1 text-amber-500">
-                    {renderRatingStars(featuredRatingStats.average, 22)}
+                    {renderRatingStars(featuredRatingStats.average, 22, darkMode)}
                   </div>
                   <p className={`mt-3 text-sm font-semibold ${darkMode ? "text-slate-300" : "text-slate-600"}`}>
                     Average Rating ({featuredRatingStats.total} review{featuredRatingStats.total === 1 ? "" : "s"})
@@ -6175,7 +6175,7 @@ function CustomerDashboard() {
 
                           {canAccessCustomerRatings && (
                             <div className="customer-product-rating mt-[10px] flex min-w-0 items-center gap-1.5">
-                              <span className="flex shrink-0 items-center gap-[1px] tracking-[1px]">{renderRatingStars(productReviewStats[product._id || product.id]?.averageRating || 0, 14)}</span>
+                              <span className="flex shrink-0 items-center gap-[1px] tracking-[1px]">{renderRatingStars(productReviewStats[product._id || product.id]?.averageRating || 0, 14, darkMode)}</span>
                               <span className="truncate text-xs font-semibold text-[var(--product-muted)]">
                                 {productReviewStats[product._id || product.id]?.averageRating > 0
                                   ? `${productReviewStats[product._id || product.id].averageRating.toFixed(1)} / ${productReviewStats[product._id || product.id].ratingsCount} reviews`
@@ -6806,7 +6806,7 @@ function CustomerDashboard() {
                               ) : totalRatedReviews > 0 ? (
                                 <>
                                   <p className={`text-3xl font-bold ${darkMode ? "text-rose-300" : "text-red-600"}`}><span>{productReviewAverageRating}</span><span className="text-base font-medium"> / 5</span></p>
-                                  <div className="mt-1 flex items-center gap-0.5 text-amber-500" aria-label={`${productReviewAverageRating} out of 5 stars`}>{renderRatingStars(averageProductReviewRating, 20)}</div>
+                                  <div className="mt-1 flex items-center gap-0.5 text-amber-500" aria-label={`${productReviewAverageRating} out of 5 stars`}>{renderRatingStars(averageProductReviewRating, 20, darkMode)}</div>
                                   <p className={`mt-2 text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>{totalRatedReviews} rating{totalRatedReviews === 1 ? "" : "s"}</p>
                                 </>
                               ) : (
@@ -6844,7 +6844,7 @@ function CustomerDashboard() {
                                           <p className={`mt-1 text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>{formatDateToMMMDDYYYY(review.submittedAt) || "Date unavailable"}</p>
                                         </div>
                                         <div className="inline-flex items-center gap-1 text-xs font-semibold text-amber-600">
-                                          <span className="inline-flex items-center">{renderRatingStars(review.rating, 14)}</span>
+                                          <span className="inline-flex items-center">{renderRatingStars(review.rating, 14, darkMode)}</span>
                                           <span>{Number(review.rating) > 0 ? `${Number(review.rating).toFixed(1)} / 5` : "No rating"}</span>
                                         </div>
                                       </div>
@@ -9104,7 +9104,7 @@ function CustomerDashboard() {
               <div className="flex-1 space-y-4 overflow-y-auto p-5">
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-1" aria-label={`${Number(reviewDetailsOrder.review?.rating || 0)} out of 5 stars`}>
-                    {renderRatingStars(reviewDetailsOrder.review?.rating, 20)}
+                    {renderRatingStars(reviewDetailsOrder.review?.rating, 20, darkMode)}
                     <span className={`ml-1 text-sm font-semibold ${darkMode ? "text-slate-300" : "text-slate-600"}`}>
                       {Number(reviewDetailsOrder.review?.rating || 0)}/5
                     </span>

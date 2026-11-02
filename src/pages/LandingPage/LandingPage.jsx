@@ -1031,8 +1031,8 @@ function LandingPage() {
     const fullStars = Math.floor(normalizedRating);
     const hasHalfStar = normalizedRating - fullStars >= 0.5;
     return Array.from({ length: 5 }, (_, index) => {
-      if (index < fullStars) return <Star key={index} size={size} fill="currentColor" className="text-amber-500" />;
-      if (index === fullStars && hasHalfStar) return <StarHalf key={index} size={size} fill="currentColor" className="text-amber-500" />;
+      if (index < fullStars) return <Star key={index} size={size} fill="#ffc21a" className="text-amber-500" />;
+      if (index === fullStars && hasHalfStar) return <StarHalf key={index} size={size} fill="#ffc21a" className="text-amber-500" />;
       return <Star key={index} size={size} className="text-slate-300" />;
     });
   };

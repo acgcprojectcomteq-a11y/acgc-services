@@ -39,9 +39,9 @@ function RatingStars({ rating }) {
   const fullStars = Math.floor(value);
   const halfStar = value - fullStars >= 0.5;
   return Array.from({ length: 5 }, (_, index) => {
-    if (index < fullStars) return <Star key={index} size={15} fill="currentColor" />;
-    if (index === fullStars && halfStar) return <StarHalf key={index} size={15} fill="currentColor" />;
-    return <Star key={index} size={15} />;
+    if (index < fullStars) return <Star key={index} size={17} strokeWidth={2.5} fill="currentColor" className="text-amber-500 drop-shadow-[0_1px_1px_rgba(180,83,9,0.35)]" />;
+    if (index === fullStars && halfStar) return <StarHalf key={index} size={17} strokeWidth={2.5} fill="currentColor" className="text-amber-500 drop-shadow-[0_1px_1px_rgba(180,83,9,0.35)]" />;
+    return <Star key={index} size={17} strokeWidth={2.5} className="text-slate-400" />;
   });
 }
 

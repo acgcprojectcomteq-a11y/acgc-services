@@ -158,7 +158,9 @@ function TransactionDetailsModal({ order, onClose, onViewContract, scrollToWarra
         : "bg-emerald-100 text-emerald-700";
   const contractNo = order.contract_number || order.contractId || order.tracking || order._id || "N/A";
   const createdDate = order.createdAt || order.updatedAt || order.contract_date || new Date();
-  const inspectionDate = formatDateToMMMDDYYYY(order.inspection_date) || "TBD";
+  const inspectionDate = formatDateToMMMDDYYYY(
+    order.inspection_date || order.site_inspection_date || order.inspectionDate || order.inspection_completed_at,
+  ) || "Not scheduled";
   const inspectionTime = formatScheduleTime(order.inspection_time);
   const estimatedInstallationDate = formatDateToMMMDDYYYY(order.estimated_installation_date) || "TBD";
   const estimatedInstallationTime = formatScheduleTime(order.estimated_installation_time);
