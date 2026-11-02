@@ -165,7 +165,11 @@ export default function ProgressEditModal({ project, onClose, onSave, canUploadP
     return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 10);
   });
   const [installationTime, setInstallationTime] = useState(project.estimated_installation_time || project.rawOrder?.estimated_installation_time || "");
-  const [installationScheduleExpanded, setInstallationScheduleExpanded] = useState(true);
+  const [installationScheduleExpanded, setInstallationScheduleExpanded] = useState(() => {
+    const hasDate = Boolean(project.estimated_installation_date || project.rawOrder?.estimated_installation_date);
+    const hasTime = Boolean(project.estimated_installation_time || project.rawOrder?.estimated_installation_time);
+    return Boolean(project.project_delay?.is_delayed) || !hasDate || !hasTime;
+  });
   const [businessHours, setBusinessHours] = useState({ open: "08:00", close: "18:00" });
   const inspectionDate = project.inspection_date || project.rawOrder?.inspection_date;
   const [stages, setStages] = useState(initialStages);

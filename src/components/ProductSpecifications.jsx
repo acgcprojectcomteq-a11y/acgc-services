@@ -8,6 +8,13 @@ const PRICING_METHOD_LABELS = {
   fixed: "Fixed price",
 };
 
+const MEASUREMENT_UNIT_LABELS = {
+  in: "Inches (in)",
+  ft: "Feet (ft)",
+  cm: "Centimeters (cm)",
+  m: "Meters (m)",
+};
+
 const formatMeasurement = (value) => {
   const number = Number(value);
   return Number.isFinite(number) ? number.toLocaleString("en-PH", { maximumFractionDigits: 2 }) : "";
@@ -53,13 +60,14 @@ export const getProductSpecifications = (product = {}) => {
   const hasWidth = Number.isFinite(width) && width > 0;
   const hasHeight = Number.isFinite(height) && height > 0;
   const unit = product.measurement_unit || product.measurementUnit || "in";
+  const unitLabel = MEASUREMENT_UNIT_LABELS[String(unit).trim().toLowerCase()] || unit;
   if (hasWidth && hasHeight) {
-    add("Dimensions", `${formatMeasurement(width)} × ${formatMeasurement(height)} ${unit}`);
+    add("Dimensions", `Width: ${formatMeasurement(width)} × Height: ${formatMeasurement(height)}`);
   } else {
-    if (hasWidth) add("Width", `${formatMeasurement(width)} ${unit}`);
-    if (hasHeight) add("Height", `${formatMeasurement(height)} ${unit}`);
+    if (hasWidth) add("Width", formatMeasurement(width));
+    if (hasHeight) add("Height", formatMeasurement(height));
   }
-
+  if (hasWidth || hasHeight) add("Size unit", unitLabel);
   const finishedDoorPricing = product.finished_door_pricing || {};
   if (finishedDoorPricing.enabled && Number(finishedDoorPricing.standard_size_cm) > 0) {
     const dimension = String(finishedDoorPricing.measurement_dimension || "height").toLowerCase();
@@ -81,17 +89,17 @@ export const getProductSpecifications = (product = {}) => {
   return specs;
 };
 
-export default function ProductSpecifications({ product, darkMode = false, className = "" }) {
+export default function ProductSpecifications({ product, darkMode = false, className = "", compact = false }) {
   const specs = getProductSpecifications(product);
   if (!specs.length) return null;
 
   return (
-    <section className={`rounded-xl border p-4 ${darkMode ? "border-slate-700 bg-slate-800/70" : "border-slate-200 bg-slate-50"} ${className}`} aria-label="Product specifications">
+    <section className={`rounded-xl border p-4 ${darkMode ? "border-slate-700 bg-slate-800/70" : "border-slate-200 bg-white"} ${className}`} aria-label="Product specifications">
       <h3 className={`text-sm font-bold ${darkMode ? "text-slate-100" : "text-slate-900"}`}>Specifications</h3>
-      <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3">
+      <dl className={`mt-3 grid gap-x-4 gap-y-3 ${compact ? "grid-cols-2" : "grid-cols-2 sm:grid-cols-3"}`}>
         {specs.map(({ label, value }) => (
           <div key={label} className="min-w-0">
-            <dt className={`text-[10px] font-semibold uppercase tracking-[0.12em] ${darkMode ? "text-slate-400" : "text-slate-500"}`}>{label}</dt>
+            <dt className={`text-xs font-bold uppercase tracking-[0.08em] ${darkMode ? "text-red-300" : "text-red-700"}`}>{label}</dt>
             <dd className={`mt-1 break-words text-sm font-semibold ${darkMode ? "text-slate-100" : "text-slate-800"}`}>{value}</dd>
           </div>
         ))}

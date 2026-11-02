@@ -110,8 +110,8 @@ export const getCustomerPaymentProof = (order) => {
     ? latestRecord.submitted_amount
     : latestRecord?.verified_amount ?? order.payment_proof_amount ?? order.payment_amount ?? order.amount_paid ?? order.paid_amount ?? order.downpayment_amount ?? 0);
   const hasProofSubmission = Boolean(
-    hasLedgerSubmission ||
-    (paymentRecords.length === 0 && (
+    (hasLedgerSubmission && latestRecord.status === "pending" && unresolvedRecordIds.has(String(latestRecord._id || latestRecord.id || ""))) ||
+    (paymentRecords.length === 0 && !isPaymentProofConfirmed(order) && (
     order.payment_proof_file_name ||
     order.payment_proof_file_url ||
     order.payment_proof ||

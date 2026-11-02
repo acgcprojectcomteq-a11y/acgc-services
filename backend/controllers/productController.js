@@ -119,7 +119,20 @@ const validateProductPayload = (payload, existingProduct = null) => {
     }
   }
 
-  if ((pricingMethod === "fixed" || pricingMethod === "per_piece") && !(isFinishedDoor && doorPricing.enabled) && toNonNegativeNumber(merged.base_price || merged.unit_price) <= 0) {
+  if (pricingMethod === "per_piece") {
+    const pieceOptions = Array.isArray(merged.piece_options) ? merged.piece_options : [];
+    if (pieceOptions.some((option) => !trimText(option?.name) || !Number.isFinite(Number(option?.price_per_piece)) || Number(option.price_per_piece) <= 0)) {
+      return "Each option needs a name and a price per piece greater than zero.";
+    }
+    const names = pieceOptions.map((option) => trimText(option.name).toLowerCase());
+    if (new Set(names).size !== names.length) return "Option names must be unique.";
+  }
+
+  const hasValidPieceOptionPricing = pricingMethod === "per_piece"
+    && Array.isArray(merged.piece_options)
+    && merged.piece_options.length > 0
+    && merged.piece_options.every((option) => trimText(option?.name) && toNonNegativeNumber(option?.price_per_piece) > 0);
+  if ((pricingMethod === "fixed" || pricingMethod === "per_piece") && !(isFinishedDoor && doorPricing.enabled) && !hasValidPieceOptionPricing && toNonNegativeNumber(merged.base_price || merged.unit_price) <= 0) {
     return "Base price is required for fixed price products.";
   }
 
@@ -177,7 +190,7 @@ export const listProducts = async (req, res) => {
 
     const productQuery = Product.find(filter).sort({ is_featured: -1, createdAt: -1 });
     if (adminOnly !== "true") {
-      productQuery.select("name sku category description unit_price unit measurement_unit stock_quantity is_featured image_url images product_type product_name pricing_method variant base_price price_per_sqft price_per_blade customization customization_fee extra_charges size_limits standard_size finished_door_pricing width height blade_count blade_glass_types sell_blades_only sell_with_frame blade_frame_types allow_custom_frame_size custom_frame_size_unit custom_frame_price minimum_blades maximum_blades customer_can_choose_blade_count default_blade_glass_type default_sale_mode default_frame_type show_price_per_blade estimated_area estimated_price estimated_price_override is_active");
+      productQuery.select("name sku category description unit_price unit measurement_unit stock_quantity is_featured image_url images product_type product_name pricing_method variant base_price price_per_sqft price_per_blade customization customization_fee extra_charges size_limits standard_size finished_door_pricing width height blade_count blade_glass_types piece_options sell_blades_only sell_with_frame blade_frame_types allow_custom_frame_size custom_frame_size_unit custom_frame_price minimum_blades maximum_blades customer_can_choose_blade_count default_blade_glass_type default_sale_mode default_frame_type show_price_per_blade estimated_area estimated_price estimated_price_override is_active");
     }
     const products = await productQuery.lean();
     res.json({ success: true, products });
@@ -230,6 +243,7 @@ export const createProduct = async (req, res) => {
       height,
       blade_count,
       blade_glass_types,
+      piece_options,
       sell_blades_only,
       sell_with_frame,
       blade_frame_types,
@@ -296,6 +310,7 @@ export const createProduct = async (req, res) => {
       height: isJalousieBlade ? 0 : Number(height) || 0,
       blade_count: Number(blade_count) || 0,
       blade_glass_types: Array.isArray(blade_glass_types) ? blade_glass_types : [],
+      piece_options: Array.isArray(piece_options) ? piece_options : [],
       sell_blades_only: sell_blades_only !== false,
       sell_with_frame: normalizedSellWithFrame,
       blade_frame_types: Array.isArray(blade_frame_types) ? blade_frame_types : [],
@@ -380,6 +395,7 @@ export const updateProduct = async (req, res) => {
       height: isJalousieBlade ? 0 : req.body.height != null ? Number(req.body.height) : product.height,
       blade_count: req.body.blade_count != null ? Number(req.body.blade_count) : product.blade_count,
       blade_glass_types: req.body.blade_glass_types != null ? req.body.blade_glass_types : product.blade_glass_types,
+      piece_options: req.body.piece_options != null ? req.body.piece_options : product.piece_options,
       sell_blades_only: req.body.sell_blades_only != null ? Boolean(req.body.sell_blades_only) : product.sell_blades_only,
       sell_with_frame: normalizedSellWithFrame,
       blade_frame_types: req.body.blade_frame_types != null ? req.body.blade_frame_types : product.blade_frame_types,

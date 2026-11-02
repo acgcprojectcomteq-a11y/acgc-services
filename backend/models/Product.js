@@ -22,6 +22,11 @@ const BladeGlassTypeSchema = new mongoose.Schema({
   price_per_blade: { type: Number, min: 0, required: true },
 }, { _id: false });
 
+const PieceOptionSchema = new mongoose.Schema({
+  name: { type: String, trim: true, required: true },
+  price_per_piece: { type: Number, min: 0, required: true },
+}, { _id: false });
+
 const BladeFrameTypeSchema = new mongoose.Schema({
   name: { type: String, trim: true, required: true },
   blade_count: { type: Number, min: 1, required: true },
@@ -139,6 +144,10 @@ const ProductSchema = new mongoose.Schema(
     },
     blade_glass_types: {
       type: [BladeGlassTypeSchema],
+      default: [],
+    },
+    piece_options: {
+      type: [PieceOptionSchema],
       default: [],
     },
     sell_blades_only: {

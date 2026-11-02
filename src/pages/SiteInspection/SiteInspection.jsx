@@ -737,6 +737,11 @@ export const validateInspectionMeasurementRows = (items = []) => {
         }
       }
     }
+    const pieceOptions = Array.isArray(item.piece_options) ? item.piece_options : [];
+    if (["per_piece", "piece", "per_set", "set"].includes(String(item.pricing_method || "").toLowerCase()) && pieceOptions.length
+      && !pieceOptions.some((option) => option.name === item.piece_option && Number(option.price_per_piece) > 0)) {
+      rowErrors.piece_option = "Select an option.";
+    }
     return rowErrors;
   });
   const firstIncompleteRow = itemErrors.findIndex((row) => Object.keys(row).length > 0);
@@ -875,6 +880,7 @@ export const resolveInspectionProductPrice = (product = null, fallbackItem = {})
   const height = heightValue || Number(fallbackItem?.height ?? 0) || 1;
   const fallbackUnitPrice = unitPrice || basePrice || estimatedPrice || pricePerSqft || pricePerBlade || 0;
   const bladeGlassTypes = product?.blade_glass_types ?? fallbackItem?.blade_glass_types ?? [];
+  const pieceOptions = product?.piece_options ?? fallbackItem?.piece_options ?? [];
   const bladeFrameTypes = product?.blade_frame_types ?? fallbackItem?.blade_frame_types ?? [];
   const hasSameSelectedProduct = Boolean(product && normalizeProductId(fallbackItem.product_id) === normalizeProductId(product._id || product.id));
   const sellBladesOnly = product ? product.sell_blades_only !== false : fallbackItem.sell_blades_only !== false;
@@ -882,9 +888,15 @@ export const resolveInspectionProductPrice = (product = null, fallbackItem = {})
   const defaultSaleMode = product?.default_sale_mode || fallbackItem.default_sale_mode || (sellBladesOnly ? "blades_only" : "frame");
   const defaultFrame = bladeFrameTypes.find((frame) => frame.name === (product?.default_frame_type || fallbackItem.default_frame_type)) || bladeFrameTypes[0];
   const saleMode = hasSameSelectedProduct ? fallbackItem.sale_mode || defaultSaleMode : defaultSaleMode;
+  const pieceOption = hasSameSelectedProduct ? fallbackItem.piece_option || pieceOptions[0]?.name || "" : pieceOptions[0]?.name || "";
+  const selectedPieceOption = pieceOptions.find((option) => option.name === pieceOption) || pieceOptions[0];
   const selectedFrame = bladeFrameTypes.find((frame) => frame.name === (hasSameSelectedProduct ? fallbackItem.frame_type : defaultFrame?.name)) || defaultFrame;
   const bladeSelectionDefaults = {
     blade_glass_types: bladeGlassTypes,
+    piece_options: pieceOptions,
+    piece_option: hasSameSelectedProduct
+      ? fallbackItem.piece_option || pieceOptions[0]?.name || ""
+      : pieceOptions[0]?.name || "",
     sell_blades_only: sellBladesOnly,
     sell_with_frame: sellWithFrame,
     blade_frame_types: bladeFrameTypes,
@@ -968,7 +980,7 @@ export const resolveInspectionProductPrice = (product = null, fallbackItem = {})
       return {
         ...pricingDetails,
         pricing_method: "per_piece",
-        unit_price: unitPrice || basePrice || estimatedPrice || fallbackUnitPrice,
+        unit_price: Number(selectedPieceOption?.price_per_piece) || unitPrice || basePrice || estimatedPrice || fallbackUnitPrice,
         price_per_sqft: pricePerSqft,
         price_per_blade: pricePerBlade,
         base_price: basePrice,
@@ -1619,6 +1631,8 @@ function SiteInspection() {
       price_per_sqft: selectedProduct ? Number(selectedProduct.price_per_sqft) || 0 : Number(item.price_per_sqft) || 0,
       price_per_blade: selectedProduct ? Number(selectedProduct.price_per_blade) || 0 : Number(item.price_per_blade) || 0,
       blade_glass_types: selectedProduct?.blade_glass_types || item.blade_glass_types || [],
+      piece_options: selectedProduct?.piece_options || item.piece_options || [],
+      piece_option: item.piece_option || selectedProduct?.piece_options?.[0]?.name || "",
       sell_blades_only: selectedProduct ? selectedProduct.sell_blades_only !== false : item.sell_blades_only !== false,
       sell_with_frame: selectedProduct ? Boolean(selectedProduct.sell_with_frame) : Boolean(item.sell_with_frame),
       blade_frame_types: selectedProduct?.blade_frame_types || item.blade_frame_types || [],
@@ -2024,6 +2038,30 @@ function SiteInspection() {
     return amount * details.quantity;
   };
 
+  const renderPieceMeasurementOptions = (item, onFieldChange, rowIndex) => {
+    const product = getInspectionProductForItem(item) || item;
+    const method = String(product?.pricing_method || item.pricing_method || "").toLowerCase();
+    const pieceOptions = Array.isArray(product?.piece_options) && product.piece_options.length
+      ? product.piece_options
+      : Array.isArray(item.piece_options) ? item.piece_options : [];
+    if (!["per_piece", "piece", "per_set", "set"].includes(method) || !pieceOptions.length) return null;
+    const fieldClass = darkMode
+      ? "min-w-0 w-full rounded-lg border border-slate-600 bg-[#122d42] px-2.5 py-2 text-xs text-slate-100 outline-none focus:border-red-500"
+      : "min-w-0 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs text-slate-900 outline-none focus:border-red-500";
+    const labelClass = `mb-1 block text-[10px] font-bold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`;
+    return (
+      <div className={`w-full rounded-lg border p-2 ${darkMode ? "border-slate-700 bg-slate-900/70" : "border-slate-200 bg-slate-50"}`}>
+        <label className="block">
+          <span className={labelClass}>Per piece option</span>
+          <CustomerDropdown darkMode={darkMode} aria-label={`Per piece option for measurement ${rowIndex + 1}`} value={item.piece_option || pieceOptions[0]?.name || ""} onChange={(event) => onFieldChange(item.id, "piece_option", event.target.value)} className={fieldClass}>
+            <option value="">Select an option</option>
+            {pieceOptions.map((option) => <option key={option.name} value={option.name}>{option.name} · {hidePaymentAmounts ? "••••••" : `₱${Number(option.price_per_piece || 0).toLocaleString()}`}/piece</option>)}
+          </CustomerDropdown>
+        </label>
+      </div>
+    );
+  };
+
   const renderBladeMeasurementOptions = (item, onFieldChange, rowIndex) => {
     const details = getBladeMeasurementDetails(item);
     if (!details) return null;
@@ -2395,7 +2433,12 @@ function SiteInspection() {
         }
         return `Base ₱${base.toLocaleString()}`;
       case "per_piece":
-        return `₱${unitPrice.toLocaleString()} / pc`;
+        {
+          const pieceOptions = Array.isArray(product.piece_options) ? product.piece_options : item.piece_options || [];
+          const option = pieceOptions.find((entry) => entry.name === item.piece_option) || pieceOptions[0];
+          const pieceRate = Number(option?.price_per_piece) || unitPrice;
+          return option ? `${option.name}: ₱${pieceRate.toLocaleString()} / pc` : `₱${pieceRate.toLocaleString()} / pc`;
+        }
       case "per_meter":
         return `₱${unitPrice.toLocaleString()} / meter`;
       default:
@@ -2436,9 +2479,11 @@ function SiteInspection() {
           price_per_sqft: Number(item.price_per_sqft) || 0,
           price_per_blade: Number(item.price_per_blade) || 0,
           blade_glass_types: Array.isArray(item.blade_glass_types) ? item.blade_glass_types : [],
+          piece_options: Array.isArray(item.piece_options) ? item.piece_options : [],
           blade_frame_types: Array.isArray(item.blade_frame_types) ? item.blade_frame_types : [],
           base_price: Number(item.base_price) || 0,
           blade_glass_type: item.blade_glass_type || "",
+          piece_option: item.piece_option || "",
           sale_mode: item.sale_mode || "",
           frame_type: item.frame_type || "",
           frame_price: Number(item.frame_price) || 0,
@@ -3088,6 +3133,8 @@ function SiteInspection() {
         pricing_method: item.pricing_method || "",
         price_per_blade: Number(item.price_per_blade) || 0,
         blade_glass_type: item.blade_glass_type || "",
+        piece_option: item.piece_option || "",
+        piece_options: Array.isArray(item.piece_options) ? item.piece_options : [],
         blade_glass_types: Array.isArray(item.blade_glass_types) ? item.blade_glass_types : [],
         sale_mode: item.sale_mode || "",
         frame_type: item.frame_type || "",
@@ -5186,6 +5233,7 @@ function SiteInspection() {
                                   <option key={String(product._id || product.id)} value={String(product._id || product.id)}>{product.name}</option>
                                 ))}
                               </CustomerDropdown>
+                              {renderPieceMeasurementOptions(item, handleItemFieldChange, index)}
                               {renderBladeMeasurementOptions(item, handleItemFieldChange, index)}
                             </div>
                             {renderDoorMeasurementControls(item, handleItemFieldChange)}
@@ -5325,6 +5373,7 @@ function SiteInspection() {
                                 ))}
                               </CustomerDropdown>
                               {renderDoorMeasurementControls(item, handleItemFieldChange)}
+                              {renderPieceMeasurementOptions(item, handleItemFieldChange, index)}
                               {renderBladeMeasurementOptions(item, handleItemFieldChange, index)}
                               {renderOptionalChargeOptions(item, handleItemFieldChange)}
                               {renderItemAdditionalCharges(item, index, handleItemFieldChange)}
@@ -6358,6 +6407,7 @@ function SiteInspection() {
                                   <option key={String(product._id || product.id)} value={String(product._id || product.id)}>{product.name}</option>
                                 ))}
                               </CustomerDropdown>
+                              {renderPieceMeasurementOptions(item, handleEditItemFieldChange, index)}
                               {renderBladeMeasurementOptions(item, handleEditItemFieldChange, index)}
                             </div>
 
@@ -6504,6 +6554,7 @@ function SiteInspection() {
                                 ))}
                               </CustomerDropdown>
                               {renderDoorMeasurementControls(item, handleEditItemFieldChange)}
+                              {renderPieceMeasurementOptions(item, handleEditItemFieldChange, index)}
                               {renderBladeMeasurementOptions(item, handleEditItemFieldChange, index)}
                               {renderOptionalChargeOptions(item, handleEditItemFieldChange)}
                               {renderItemAdditionalCharges(item, index, handleEditItemFieldChange)}

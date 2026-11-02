@@ -280,8 +280,23 @@ export default function RepairManagement({ darkMode, hideOverview = false }) {
   };
   const run = async (repair, operation) => {
     setBusy(String(repair._id));
-    try { await operation(); await load(); setAction(""); setActive(null); setStartConfirm(null); toast.success("Repair workflow updated."); }
-    catch (error) { toast.error(error?.data?.message || error.message || "Unable to update repair."); }
+    try {
+      const result = await operation();
+      await load();
+      setAction(""); setActive(null); setStartConfirm(null);
+      toast.success(result?.alreadyIssued ? "This quotation was already issued and is awaiting the customer's decision." : "Repair workflow updated.");
+    }
+    catch (error) {
+      const message = error?.data?.message || error.message || "Unable to update repair.";
+      if (error?.status === 409 || error?.response?.status === 409) {
+        // A concurrent customer/admin action may have advanced the ticket since this dialog opened.
+        // Refresh the list and dismiss the stale form so the user sees the current workflow state.
+        try { await load(); } catch { /* Keep the original conflict message visible. */ }
+        setAction("");
+        setActive(null);
+      }
+      toast.error(message);
+    }
     finally { setBusy(""); }
   };
   const submitQuotation = async () => {
@@ -295,7 +310,7 @@ export default function RepairManagement({ darkMode, hideOverview = false }) {
     try {
       await run(active, async () => {
         const upload = inspectionEvidenceFiles.length ? await uploadFiles(inspectionEvidenceFiles, undefined, { purpose: "repair-evidence" }) : { files: [] };
-        await issueRepairQuotation(active._id, { ...quote, parts, laborCost: Number(quote.laborCost), evidenceUrls: (upload.files || []).map((file) => file.url) });
+        return issueRepairQuotation(active._id, { ...quote, parts, laborCost: Number(quote.laborCost), evidenceUrls: (upload.files || []).map((file) => file.url) });
       });
     } finally { quotationSubmitLock.current = false; }
   };

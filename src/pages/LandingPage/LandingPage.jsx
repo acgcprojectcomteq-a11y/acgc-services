@@ -230,6 +230,7 @@ function LandingPage() {
 
     return {
       blade_glass_type: product?.default_blade_glass_type || glassTypes[0]?.name || "",
+      piece_option: product?.piece_options?.[0]?.name || "",
       sale_mode: saleMode,
       frame_type: defaultFrame?.name || "",
       custom_frame_size: saleMode === "frame" && frameTypes.length === 0 && Boolean(product?.allow_custom_frame_size),
@@ -451,6 +452,7 @@ function LandingPage() {
       customized: dimensions.customized,
       notes: options.notes || "",
       blade_glass_type: options.blade_glass_type || product.default_blade_glass_type || "",
+      piece_option: options.piece_option || product.piece_options?.[0]?.name || "",
       sale_mode: options.sale_mode || product.default_sale_mode || "blades_only",
       frame_type: options.frame_type || product.default_frame_type || "",
       frame_blade_count: Number(options.frame_blade_count) || 0,
@@ -684,9 +686,14 @@ function LandingPage() {
     return "Contact us";
   };
 
-  const getProductEstimateRate = (product) => {
+  const getProductEstimateRate = (product, selections = productEstimatorForm) => {
     const pricingMethod = String(product?.pricing_method || "").toLowerCase();
     const legacyUnit = String(product?.unit || "").toLowerCase();
+    if (["per_piece", "piece", "per_set", "set"].includes(pricingMethod || legacyUnit)) {
+      const selectedPieceOption = (product?.piece_options || []).find((option) => option.name === selections.piece_option)
+        || product?.piece_options?.[0];
+      return Number(selectedPieceOption?.price_per_piece || product?.base_price || product?.unit_price) || undefined;
+    }
     if (pricingMethod === "sqft" || (!pricingMethod && ["per_sqft", "sqft"].includes(legacyUnit))) {
       return Number(product?.price_per_sqft) || undefined;
     }
@@ -746,7 +753,7 @@ function LandingPage() {
     quantity: productEstimatorQuantity,
     blade_count: isBladeProduct(selectedProduct) ? effectiveBladeCount : selectedProduct.blade_count || 0,
     base_price: selectedProduct.base_price || undefined,
-    overrideRate: getProductEstimateRate(selectedProduct),
+    overrideRate: getProductEstimateRate(selectedProduct, productEstimatorForm),
     customization: selectedProduct.customization || false,
     customization_fee: selectedProduct.customization_fee || 0,
   }) : null;
@@ -769,6 +776,8 @@ function LandingPage() {
             measurement_unit: productEstimatorForm.unit,
             quantity: productEstimatorQuantity,
             customized: true,
+            piece_option: productEstimatorForm.piece_option,
+            piece_options: selectedProduct.piece_options || [],
           }),
         }
     : null;
@@ -840,6 +849,7 @@ function LandingPage() {
       customized: actionType === "estimate" || hasCustomDimensions,
       variant: actionProduct.variant || actionProduct.color || "",
       blade_glass_type: actionConfiguration.blade_glass_type || "",
+      piece_option: actionConfiguration.piece_option || actionProduct.piece_options?.[0]?.name || "",
       sale_mode: actionConfiguration.sale_mode || "blades_only",
       frame_type: actionConfiguration.frame_type || "",
       custom_frame_size: Boolean(actionConfiguration.custom_frame_size),
@@ -865,6 +875,7 @@ function LandingPage() {
         pricing_method: actionProduct.pricing_method || actionProduct.unit || "",
         price_per_sqft: Number(actionProduct.price_per_sqft) || 0,
         price_per_blade: Number(actionProduct.price_per_blade) || 0,
+        piece_options: actionProduct.piece_options || [],
         unit_price: Number(actionProduct.unit_price) || 0,
         base_price: Number(actionProduct.base_price) || 0,
       },
@@ -1692,29 +1703,7 @@ function LandingPage() {
               <h3 className="text-base font-bold text-slate-900">Product Details</h3>
               <p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-600">{selectedProduct.description || "No description available."}</p>
             </div>
-            <div className="grid gap-2 sm:grid-cols-3">
-              <div className="min-w-0 rounded-[14px] border border-slate-200 bg-white p-3">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Type</p>
-                <p className="mt-1 truncate text-sm font-bold text-slate-900">{selectedProduct.product_type || selectedProduct.type || "N/A"}</p>
-              </div>
-              <div className="min-w-0 rounded-[14px] border border-slate-200 bg-white p-3">
-                <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-end gap-1 text-center">
-                  <div className="min-w-0">
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">Width</p>
-                    <p className="mt-1 truncate text-sm font-bold text-slate-900">{selectedProductDefaultDimensions?.width || "N/A"}</p>
-                  </div>
-                  <span className="pb-0.5 text-sm font-bold text-slate-700" aria-hidden="true">x</span>
-                  <div className="min-w-0">
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">Height</p>
-                    <p className="mt-1 truncate text-sm font-bold text-slate-900">{selectedProductDefaultDimensions?.height || "N/A"}</p>
-                  </div>
-                </div>
-              </div>
-              <div className="min-w-0 rounded-[14px] border border-slate-200 bg-white p-3">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Unit rate</p>
-                <p className="mt-1 truncate text-sm font-bold text-slate-900">{getProductUnitRate(selectedProduct)}</p>
-              </div>
-            </div>
+
           </>}
           {!hasStructuredProductModal && !isProductModalReadOnly && <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -1729,21 +1718,8 @@ function LandingPage() {
               <p className="mt-1 text-xs text-slate-500">Price may vary based on specifications.</p>
             </div>
           </div>}
-          {!hasStructuredProductModal && !isProductModalReadOnly && <div className="grid gap-2 sm:grid-cols-3">
-            <div className="min-w-0 rounded-xl border border-slate-200 bg-white p-3">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Type</p>
-              <p className="mt-1 truncate text-sm font-bold text-slate-900">{selectedProduct.product_type || selectedProduct.type || "N/A"}</p>
-            </div>
-            {!isBladeProduct(selectedProduct) && <div className="min-w-0 rounded-xl border border-slate-200 bg-white p-3">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Dimensions</p>
-              <p className="mt-1 truncate text-sm font-bold text-slate-900">{selectedProduct.dimensions || selectedProduct.standard_size || (selectedProduct.width > 0 || selectedProduct.height > 0 ? `${selectedProduct.width || 0} x ${selectedProduct.height || 0}` : "N/A")}</p>
-            </div>}
-            <div className="min-w-0 rounded-xl border border-slate-200 bg-white p-3">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Unit rate</p>
-              <p className="mt-1 truncate text-sm font-bold text-slate-900">{getProductUnitRate(selectedProduct)}</p>
-            </div>
-          </div>}
-          <ProductSpecifications product={selectedProduct} className="mt-4" />
+
+          {(!isBladeProduct(selectedProduct) || isProductModalReadOnly) && <ProductSpecifications product={selectedProduct} className="mt-4" />}
         </div>
 
         <aside className="min-w-0 space-y-3">
@@ -1753,16 +1729,7 @@ function LandingPage() {
               <p className={`mt-0.5 font-extrabold leading-tight text-red-700 ${isAreaProduct(selectedProduct) ? "text-[30px]" : "text-[28px]"}`}>{getProductPrice(selectedProduct)}</p>
               <p className="mt-0.5 text-xs text-slate-500">Price may vary based on specifications</p>
             </div>
-            {isBladeProduct(selectedProduct) && <div className="overflow-hidden rounded-[14px] border border-slate-200 bg-white">
-              <div className="px-4 py-3 text-slate-900">
-                <p className="text-[10.5px] font-bold uppercase tracking-[0.08em] text-slate-500">Type</p>
-                <p className="mt-0.5 text-[15px] font-bold">{selectedProduct.product_type || selectedProduct.type || "N/A"}</p>
-              </div>
-              <div className="border-t border-slate-200 px-4 py-3 text-slate-900">
-                <p className="text-[10.5px] font-bold uppercase tracking-[0.08em] text-slate-500">Unit rate</p>
-                <p className="mt-0.5 text-[15px] font-bold">{getProductUnitRate(selectedProduct)}</p>
-              </div>
-            </div>}
+            {isBladeProduct(selectedProduct) && <ProductSpecifications product={selectedProduct} compact />}
             {isAreaProduct(selectedProduct) && productEstimatorContent && <div className="min-w-0">{productEstimatorContent}</div>}
           </div> : isProductModalReadOnly ? <>
           <div className="flex flex-wrap items-center gap-2 pr-10">

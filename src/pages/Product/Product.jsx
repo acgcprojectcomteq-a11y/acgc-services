@@ -505,6 +505,7 @@ function ProductFormModal({
     price_per_blade: Number(newProduct.price_per_blade) || 0,
     blade_count: Number(newProduct.blade_count) || 0,
     blade_glass_types: newProduct.blade_glass_types || [],
+    piece_options: newProduct.piece_options || [],
     sell_blades_only: newProduct.sell_blades_only !== false,
     sell_with_frame: Boolean(newProduct.sell_with_frame),
     blade_frame_types: newProduct.blade_frame_types || [],
@@ -547,6 +548,8 @@ function ProductFormModal({
     quantity: 1,
     customized: true,
     blade_glass_type: defaultGlassType,
+    piece_option: (newProduct.piece_options || [])[0]?.name || "",
+    piece_options: newProduct.piece_options || [],
     sale_mode: isJalousiePerBladeProduct
       && newProduct.default_sale_mode === "frame"
       && !defaultFrameType
@@ -565,6 +568,7 @@ function ProductFormModal({
     width: String(estimateItem.width || 0),
     height: String(estimateItem.height || 0),
     blade_glass_type: estimateItem.blade_glass_type,
+    piece_option: estimateItem.piece_option,
     sale_mode: estimateItem.sale_mode,
     frame_type: estimateItem.frame_type,
     custom_frame_size: estimateItem.custom_frame_size,
@@ -599,9 +603,9 @@ function ProductFormModal({
       : pricingMethodValue === "per_piece" ? "1 piece"
       : `${Number(newProduct.estimated_area || 0).toFixed(2)} sq ft`;
   const pricingMethodCards = [
-    { key: "per_piece", title: "Per piece", badge: "piece", description: "One set price for each product piece" },
-    { key: "sqft", title: "Per area", badge: "sq ft", description: "Width × height, charged by area" },
-    { key: "blade", title: "Per blade", badge: "blade", description: "Glass rate, with optional frame" },
+    { key: "per_piece", title: "Per Piece", badge: "Piece", description: "One set price for each product piece" },
+    { key: "sqft", title: "Per Area", badge: "Sq Ft", description: "Width × Height, charged by area" },
+    { key: "blade", title: "Per Blade", badge: "Blade", description: "Glass rate, with optional frame" },
   ];
   const currency = (value) => `PHP ${Number(value || 0).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const configuredGlassTypes = newProduct.blade_glass_types || [];
@@ -857,13 +861,13 @@ function ProductFormModal({
                     type="button"
                     aria-pressed={selected}
                     onClick={() => updatePricingMethod(method.key)}
-                    className={`min-w-0 rounded-xl border px-3 py-3 text-left transition ${selected ? darkMode ? "border-red-400 bg-red-950/40 ring-1 ring-red-400" : "border-red-800 bg-rose-100 ring-1 ring-red-800" : darkMode ? "border-slate-700 bg-slate-800 hover:border-slate-500" : "border-slate-200 bg-white hover:border-slate-300"}`}
+                    className={`min-w-0 rounded-xl border px-4 py-3.5 text-left transition ${selected ? darkMode ? "border-red-400 bg-red-950/40 ring-1 ring-red-400" : "border-red-800 bg-rose-100 ring-1 ring-red-800" : darkMode ? "border-slate-700 bg-slate-800 hover:border-slate-500" : "border-slate-200 bg-white hover:border-slate-300"}`}
                   >
                     <span className="flex items-center justify-between gap-2">
-                      <span className={`text-sm font-bold ${darkMode ? "text-slate-100" : "text-slate-900"}`}>{method.title}</span>
-                      <span className={`rounded-full px-2 py-0.5 text-[10px] ${darkMode ? "bg-slate-700 text-slate-200" : "bg-white text-slate-600"}`}>{method.badge}</span>
+                      <span className={`text-base font-bold leading-5 ${darkMode ? "text-slate-100" : "text-slate-900"}`}>{method.title}</span>
+                      <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${darkMode ? selected ? "bg-red-900/70 text-red-100" : "bg-slate-700 text-slate-200" : selected ? "bg-white text-red-900" : "bg-slate-100 text-slate-700"}`}>{method.badge}</span>
                     </span>
-                    <span className={`mt-1 block text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>{method.description}</span>
+                    <span className={`mt-1.5 block text-sm leading-5 ${darkMode ? selected ? "text-red-100" : "text-slate-300" : selected ? "text-red-950" : "text-slate-700"}`}>{method.description}</span>
                   </button>
                 );
               })}
@@ -900,7 +904,7 @@ function ProductFormModal({
               {!pricingMethodValue && (
                 <div className={`flex min-h-16 items-center gap-3 rounded-lg border border-dashed px-4 py-3 ${darkMode ? "border-slate-600 bg-slate-900/60 text-slate-300" : "border-slate-300 bg-slate-50 text-slate-600"}`}>
                   <span className={`flex size-8 shrink-0 items-center justify-center rounded-full text-sm font-bold ${darkMode ? "bg-slate-800 text-red-300" : "bg-white text-red-800"}`} aria-hidden="true">1</span>
-                  <span className="min-w-0"><span className="block text-sm font-semibold">Choose how this product is priced</span><span className={`mt-0.5 block text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Select Per piece, Per area, or Per blade to configure pricing.</span></span>
+                  <span className="min-w-0"><span className="block text-sm font-semibold">Choose how this product is priced</span><span className={`mt-0.5 block text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Select Per Piece, Per Area, or Per Blade to configure pricing.</span></span>
                 </div>
               )}
               {pricingMethodValue === "per_piece" && !(isFinishedDoorProduct && newProduct.finished_door_pricing?.enabled) && (
@@ -1117,8 +1121,25 @@ function ProductFormModal({
                 </div>
               )}
 
+              {pricingMethodValue === "per_piece" && (
+                <div>
+                  {sectionHeading("Product Attributes and Pricing")}
+                  <p className={`-mt-2 mb-3 text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Add general options for this product and set a price per piece for each. Customers and inspectors can choose an option before estimating.</p>
+                  <div className={`space-y-2 rounded-xl border p-3 ${darkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-white"}`}>
+                    {(newProduct.piece_options || []).map((option, index) => (
+                      <div key={`piece-option-${index}`} className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(140px,0.55fr)_auto]">
+                        <input aria-label={`Per piece option ${index + 1}`} value={option.name || ""} onChange={(event) => setNewProduct((product) => ({ ...product, piece_options: product.piece_options.map((item, itemIndex) => itemIndex === index ? { ...item, name: event.target.value } : item) }))} placeholder="Option name (e.g. Standard, Premium)" className={fieldClass} />
+                        <input aria-label={`Price per piece for option ${index + 1}`} type="number" min="0" step="0.01" value={option.price_per_piece ?? ""} onChange={(event) => setNewProduct((product) => ({ ...product, piece_options: product.piece_options.map((item, itemIndex) => itemIndex === index ? { ...item, price_per_piece: event.target.value } : item) }))} placeholder="PHP per piece" className={fieldClass} />
+                        <button type="button" aria-label={`Remove per piece option ${index + 1}`} onClick={() => setNewProduct((product) => ({ ...product, piece_options: product.piece_options.filter((_, itemIndex) => itemIndex !== index) }))} className={`inline-flex h-12 w-12 items-center justify-center rounded-xl border ${darkMode ? "border-slate-700 text-red-300 hover:bg-slate-800" : "border-slate-200 text-red-700 hover:bg-rose-50"}`}><Trash2 size={16} /></button>
+                      </div>
+                    ))}
+                    <button type="button" onClick={() => updateField("piece_options", [...(newProduct.piece_options || []), { name: "", price_per_piece: "" }])} className={`inline-flex items-center gap-2 rounded-lg border border-dashed px-3 py-2 text-sm font-semibold ${darkMode ? "border-slate-600 text-red-300 hover:bg-slate-800" : "border-red-300 text-red-800 hover:bg-rose-50"}`}><Plus size={15} />Add option</button>
+                  </div>
+                </div>
+              )}
+
               {pricingMethodValue === "fixed" && (
-                <p className={`text-sm ${darkMode ? "text-amber-300" : "text-amber-800"}`}>This product uses a legacy fixed price. Choose Per area or Per blade to change its pricing method.</p>
+                <p className={`text-sm ${darkMode ? "text-amber-300" : "text-amber-800"}`}>This product uses a legacy fixed price. Choose Per Area or Per Blade to change its pricing method.</p>
               )}
             </div>
 
@@ -1796,6 +1817,7 @@ function Products() {
     price_per_sqft: "",
     price_per_blade: "",
     blade_glass_types: [],
+    piece_options: [],
     sell_blades_only: true,
     sell_with_frame: false,
     blade_frame_types: [],
@@ -1888,6 +1910,7 @@ function Products() {
       price_per_blade: bladePrice,
       blade_count: bladeCount,
       blade_glass_types: newProduct.blade_glass_types || [],
+      piece_options: newProduct.piece_options || [],
       sell_blades_only: newProduct.sell_blades_only !== false,
       sell_with_frame: Boolean(newProduct.sell_with_frame),
       blade_frame_types: newProduct.blade_frame_types || [],
@@ -1909,6 +1932,8 @@ function Products() {
       measurement_unit: newProduct.unit,
       customized: true,
       blade_glass_type: newProduct.default_blade_glass_type || newProduct.blade_glass_types?.[0]?.name || "",
+      piece_option: newProduct.piece_options?.[0]?.name || "",
+      piece_options: newProduct.piece_options || [],
       sale_mode: newProduct.default_sale_mode || "blades_only",
       frame_type: newProduct.default_frame_type || newProduct.blade_frame_types?.[0]?.name || "",
       custom_frame_size: newProduct.default_sale_mode === "frame" && !defaultFrame && Boolean(newProduct.allow_custom_frame_size),
@@ -1934,6 +1959,7 @@ function Products() {
     newProduct.blade_count,
     newProduct.price_per_blade,
     newProduct.blade_glass_types,
+    newProduct.piece_options,
     newProduct.sell_blades_only,
     newProduct.sell_with_frame,
     newProduct.blade_frame_types,
@@ -2117,6 +2143,7 @@ function Products() {
           price_per_sqft: product.price_per_sqft ?? "",
           price_per_blade: product.price_per_blade ?? "",
           blade_glass_types: bladeGlassTypes,
+          piece_options: Array.isArray(product.piece_options) ? product.piece_options.map((option) => ({ ...option })) : [],
           sell_blades_only: editSellBladesOnly,
           sell_with_frame: editSellWithFrame,
           blade_frame_types: editFrameTypes,
@@ -2297,8 +2324,18 @@ function Products() {
       return;
     }
 
-    if (pricingMethod === "per_piece" && !finishedDoorEnabled && Number(newProduct.base_price) <= 0) {
+    const configuredPieceOptions = newProduct.piece_options || [];
+    if (pricingMethod === "per_piece" && !finishedDoorEnabled && Number(newProduct.base_price) <= 0 && !configuredPieceOptions.length) {
       setModalError("Price per piece must be greater than 0.");
+      return;
+    }
+
+    if (pricingMethod === "per_piece" && configuredPieceOptions.some((option) => !String(option.name || "").trim() || !Number.isFinite(Number(option.price_per_piece)) || Number(option.price_per_piece) <= 0)) {
+      setModalError("Each option needs a name and a price per piece greater than zero.");
+      return;
+    }
+    if (pricingMethod === "per_piece" && new Set(configuredPieceOptions.map((option) => String(option.name || "").trim().toLowerCase())).size !== configuredPieceOptions.length) {
+      setModalError("Option names must be unique.");
       return;
     }
 
@@ -2408,7 +2445,7 @@ function Products() {
         sku: "",
         unit_price: pricingMethod === "per_meter"
           ? Number(newProduct.unit_price) || 0
-          : Number(newProduct.estimated_price_override) || Number(newProduct.estimated_price) || Number(newProduct.finished_door_pricing?.standard_price_per_piece) || Number(newProduct.base_price) || Number(newProduct.price_per_sqft) || Number(newProduct.price_per_blade) || 0,
+          : Number(newProduct.estimated_price_override) || (pricingMethod === "per_piece" ? Number(newProduct.piece_options?.[0]?.price_per_piece) : 0) || Number(newProduct.estimated_price) || Number(newProduct.finished_door_pricing?.standard_price_per_piece) || Number(newProduct.base_price) || Number(newProduct.price_per_sqft) || Number(newProduct.price_per_blade) || 0,
         unit: pricingMethod === "sqft" ? "per_sqft" : pricingMethod === "blade" ? "per_blade" : pricingMethod === "per_meter" ? "per_meter" : "per_piece",
         measurement_unit: newProduct.unit || "in",
         image_url: finalImages.main || "",
@@ -2451,6 +2488,7 @@ function Products() {
         height: isJalousiePerBladeProduct ? 0 : numberIfEntered(newProduct.height),
         blade_count: numberIfEntered(newProduct.blade_count),
         blade_glass_types: (newProduct.blade_glass_types || []).map((glass) => ({ name: String(glass.name || "").trim(), price_per_blade: Number(glass.price_per_blade) || 0 })),
+        piece_options: (newProduct.piece_options || []).map((option) => ({ name: String(option.name || "").trim(), price_per_piece: Number(option.price_per_piece) || 0 })),
         sell_blades_only: Boolean(newProduct.sell_blades_only),
         sell_with_frame: Boolean(newProduct.sell_with_frame),
         blade_frame_types: (newProduct.blade_frame_types || []).map((frame) => ({ name: String(frame.name || "").trim(), blade_count: Number(frame.blade_count) || 0, price: Number(frame.price) || 0 })),

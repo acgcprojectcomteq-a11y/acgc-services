@@ -403,7 +403,27 @@ export const issueRepairQuotation = async (req, res) => {
   const repair = await getRepair(req.params.repairId);
   if (!repair) return res.status(404).json({ success: false, message: "Repair request not found." });
   if (!(["pending_review", "quotation_pending_approval", "quotation_declined"].includes(repair.status))) return res.status(409).json({ success: false, message: "This repair can no longer be quoted." });
-  if (repair.status === "quotation_pending_approval") return res.status(409).json({ success: false, message: "A quotation is already awaiting the customer\u0027s decision." });
+  if (repair.status === "quotation_pending_approval") {
+    // A client may retry after the first request committed but its response was lost.
+    // Treat an identical retry as success without issuing a second quote or email.
+    const requestedParts = Array.isArray(req.body?.parts) ? req.body.parts.slice(0, 50)
+      .map((part) => ({ description: text(part?.description, 180), cost: Number(part?.cost) }))
+      .filter((part) => part.description) : [];
+    const storedParts = repair.quotation?.parts || [];
+    const sameParts = requestedParts.length === storedParts.length
+      && requestedParts.every((part, index) => part.description === storedParts[index]?.description
+        && Number.isFinite(part.cost) && Math.round(part.cost * 100) / 100 === Number(storedParts[index]?.cost));
+    const requestedLabor = Number(req.body?.laborCost ?? 0);
+    const sameQuote = sameParts
+      && Number.isFinite(requestedLabor)
+      && Math.round(requestedLabor * 100) / 100 === Number(repair.quotation?.laborCost || 0)
+      && text(req.body?.quotationNotes, 2000) === (repair.quotation?.notes || "")
+      && text(req.body?.inspectionNotes) === (repair.inspection?.notes || "")
+      && (req.body?.voidWarranty !== true || (repair.warranty?.issueExcluded === true
+        && text(req.body?.decisionReason, 1200) === (repair.warranty?.decisionReason || "")));
+    if (sameQuote) return res.json({ success: true, alreadyIssued: true, repair: publicAdmin(repair) });
+    return res.status(409).json({ success: false, message: "A quotation is already awaiting the customer's decision. The existing quotation was kept unchanged." });
+  }
   const override = req.body?.voidWarranty === true;
   if (repair.workflowType === "warranty" && !override) return res.status(409).json({ success: false, message: "Approve a covered claim or void its warranty before issuing a paid quotation." });
   const notes = text(req.body?.inspectionNotes);

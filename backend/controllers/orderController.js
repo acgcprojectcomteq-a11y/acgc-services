@@ -672,11 +672,13 @@ const sanitizeOrderItems = (items = []) => {
       price_per_sqft: Number(item.price_per_sqft) || 0,
       price_per_blade: Number(item.price_per_blade) || 0,
       blade_glass_type: item.blade_glass_type || "",
+      piece_option: item.piece_option || "",
       sale_mode: item.sale_mode || "",
       frame_type: item.frame_type || "",
       frame_price: Number(item.frame_price) || 0,
       custom_frame_size: Boolean(item.custom_frame_size),
       blade_glass_types: Array.isArray(item.blade_glass_types) ? item.blade_glass_types : [],
+      piece_options: Array.isArray(item.piece_options) ? item.piece_options : [],
       sell_blades_only: item.sell_blades_only !== false,
       sell_with_frame: Boolean(item.sell_with_frame),
       blade_frame_types: Array.isArray(item.blade_frame_types) ? item.blade_frame_types : [],
@@ -803,7 +805,7 @@ const repriceInspectionItems = async (items) => {
   }
   const products = productIds.length
     ? await Product.find({ _id: { $in: productIds } })
-        .select("pricing_method unit unit_price base_price price_per_sqft price_per_blade blade_count blade_glass_types sell_blades_only sell_with_frame blade_frame_types allow_custom_frame_size custom_frame_price minimum_blades maximum_blades customer_can_choose_blade_count default_blade_glass_type default_sale_mode default_frame_type show_price_per_blade customization customization_fee extra_charges size_limits estimated_price estimated_price_override width height measurement_unit product_type product_name name finished_door_pricing")
+        .select("pricing_method unit unit_price base_price price_per_sqft price_per_blade blade_count blade_glass_types piece_options sell_blades_only sell_with_frame blade_frame_types allow_custom_frame_size custom_frame_price minimum_blades maximum_blades customer_can_choose_blade_count default_blade_glass_type default_sale_mode default_frame_type show_price_per_blade customization customization_fee extra_charges size_limits estimated_price estimated_price_override width height measurement_unit product_type product_name name finished_door_pricing")
         .lean()
     : [];
   const productsById = new Map(products.map((product) => [String(product._id), product]));
@@ -845,6 +847,13 @@ const repriceInspectionItems = async (items) => {
     }
     if ((pricingMethod === "blade" || pricingMethod === "per_blade") && (!item.blade_glass_type || Number(item.blade_count) < 1)) {
       const error = new Error(`Measurement ${index + 1}: select a glass type and valid blade count.`);
+      error.statusCode = 400;
+      throw error;
+    }
+    const pieceOptions = Array.isArray(product.piece_options) ? product.piece_options : [];
+    if (["per_piece", "piece", "per_set", "set"].includes(pricingMethod) && pieceOptions.length
+      && item.piece_option && !pieceOptions.some((option) => option.name === item.piece_option && Number(option.price_per_piece) > 0)) {
+      const error = new Error(`Measurement ${index + 1}: select a valid per-piece option.`);
       error.statusCode = 400;
       throw error;
     }
@@ -923,7 +932,7 @@ export const listOrders = async (req, res) => {
     const orders = await Order.find(filter)
       .sort({ createdAt: -1 })
       .populate("customer", "first_name last_name email phone street_address city province zip_code customer_cancellation_count online_order_cooldown_until")
-      .populate("items.product_id", "image_url image images name product_name category product_type unit pricing_method unit_price base_price price_per_sqft price_per_blade blade_count blade_glass_types sell_blades_only sell_with_frame blade_frame_types allow_custom_frame_size custom_frame_price minimum_blades maximum_blades customer_can_choose_blade_count default_blade_glass_type default_sale_mode default_frame_type show_price_per_blade customization customization_fee extra_charges size_limits estimated_price estimated_price_override estimated_area width height measurement_unit standard_size finished_door_pricing")
+      .populate("items.product_id", "image_url image images name product_name category product_type unit pricing_method unit_price base_price price_per_sqft price_per_blade blade_count blade_glass_types piece_options sell_blades_only sell_with_frame blade_frame_types allow_custom_frame_size custom_frame_price minimum_blades maximum_blades customer_can_choose_blade_count default_blade_glass_type default_sale_mode default_frame_type show_price_per_blade customization customization_fee extra_charges size_limits estimated_price estimated_price_override estimated_area width height measurement_unit standard_size finished_door_pricing")
       .lean();
 
     orders.forEach(attachOrderScheduleOverdue);
@@ -1013,7 +1022,7 @@ export const createOrder = async (req, res) => {
 
     const products = productIds.length
       ? await Product.find({ _id: { $in: productIds }, is_active: { $ne: false } })
-          .select("name product_name product_type finished_door_pricing pricing_method unit unit_price base_price price_per_sqft price_per_blade blade_count blade_glass_types sell_blades_only sell_with_frame blade_frame_types allow_custom_frame_size custom_frame_price minimum_blades maximum_blades customer_can_choose_blade_count default_blade_glass_type default_sale_mode default_frame_type show_price_per_blade customization customization_fee extra_charges estimated_price estimated_price_override width height measurement_unit")
+          .select("name product_name product_type finished_door_pricing pricing_method unit unit_price base_price price_per_sqft price_per_blade blade_count blade_glass_types piece_options sell_blades_only sell_with_frame blade_frame_types allow_custom_frame_size custom_frame_price minimum_blades maximum_blades customer_can_choose_blade_count default_blade_glass_type default_sale_mode default_frame_type show_price_per_blade customization customization_fee extra_charges estimated_price estimated_price_override width height measurement_unit")
           .lean()
       : [];
     const productsById = new Map(products.map((product) => [String(product._id), product]));

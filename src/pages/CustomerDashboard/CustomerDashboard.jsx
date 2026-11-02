@@ -491,6 +491,7 @@ function CustomerDashboard() {
     quantity: 1,
     notes: "",
     blade_glass_type: "",
+    piece_option: "",
     sale_mode: "blades_only",
     frame_type: "",
     custom_frame_size: false,
@@ -626,6 +627,7 @@ function CustomerDashboard() {
     // calculation here and avoid marking a cleared "1" input as a change.
     quantity: Math.max(1, Number(form.quantity) || 1),
     blade_glass_type: form.blade_glass_type,
+    piece_option: form.piece_option,
     sale_mode: form.sale_mode,
     frame_type: form.frame_type,
     frame_blade_count: form.frame_blade_count,
@@ -2261,6 +2263,7 @@ function CustomerDashboard() {
       area: Number(options.area) || 0,
       notes: options.notes || "",
       blade_glass_type: options.blade_glass_type || product?.blade_glass_type || product?.default_blade_glass_type || "",
+      piece_option: options.piece_option || product?.piece_option || product?.piece_options?.[0]?.name || "",
       sale_mode: options.sale_mode || product?.sale_mode || product?.default_sale_mode || "blades_only",
       frame_type: options.frame_type || product?.frame_type || product?.default_frame_type || "",
       custom_frame_size: Boolean(options.custom_frame_size ?? product?.custom_frame_size),
@@ -2293,6 +2296,7 @@ function CustomerDashboard() {
       : Number(product?.minimum_blades) || Number(product?.blade_count) || 1;
     return {
       blade_glass_type: product?.default_blade_glass_type || glassTypes[0]?.name || "",
+      piece_option: product?.piece_options?.[0]?.name || "",
       sale_mode: defaultSaleMode === "frame" && !product?.sell_with_frame ? "blades_only" : defaultSaleMode,
       frame_type: defaultFrame?.name || "",
       custom_frame_size: defaultSaleMode === "frame" && frameTypes.length === 0 && Boolean(product?.allow_custom_frame_size),
@@ -2340,6 +2344,7 @@ function CustomerDashboard() {
       customized: Boolean(selection.customized),
       is_estimate: pendingAction.actionType === "estimate",
       blade_glass_type: selection.blade_glass_type || bladeDefaults.blade_glass_type,
+      piece_option: selection.piece_option || bladeDefaults.piece_option,
       sale_mode: selection.sale_mode || bladeDefaults.sale_mode,
       frame_type: selection.frame_type || bladeDefaults.frame_type,
       custom_frame_size: Boolean(selection.custom_frame_size),
@@ -2430,6 +2435,9 @@ function CustomerDashboard() {
             height: String(current.height ?? selection.height ?? product.height ?? ""),
             quantity: Math.max(1, Number(current.quantity) || 1),
             blade_glass_type: isGlassAvailable ? current.blade_glass_type : selection.blade_glass_type || bladeDefaults.blade_glass_type,
+            piece_option: product.piece_options?.some((option) => option.name === current.piece_option)
+              ? current.piece_option
+              : selection.piece_option || bladeDefaults.piece_option,
             sale_mode: current.sale_mode === "frame" && !product.sell_with_frame ? bladeDefaults.sale_mode : current.sale_mode,
             frame_type: isFrameAvailable ? current.frame_type : selection.frame_type || bladeDefaults.frame_type,
             blade_count: current.blade_count || selection.blade_count || bladeDefaults.blade_count,
@@ -2483,6 +2491,7 @@ function CustomerDashboard() {
         notes: estimateForm.notes,
         customized: estimateForm.customized,
         blade_glass_type: estimateForm.blade_glass_type,
+        piece_option: estimateForm.piece_option,
         sale_mode: estimateForm.sale_mode,
         frame_type: estimateForm.frame_type,
         custom_frame_size: estimateForm.custom_frame_size,
@@ -2636,7 +2645,7 @@ function CustomerDashboard() {
     handleAddToCart(product, extraCharges, options).finally(clearPendingCartAdd);
   }, [cartLoaded, handleAddToCart, loading, location.hash, location.pathname, location.search, location.state, navigate, user?.role]);
 
-  const handleAddEstimateToCart = async ({ product, width, height, quantity, notes, measurementUnit, blade_glass_type, sale_mode, frame_type, custom_frame_size, blade_count, extra_charges }) => {
+  const handleAddEstimateToCart = async ({ product, width, height, quantity, notes, measurementUnit, blade_glass_type, piece_option, sale_mode, frame_type, custom_frame_size, blade_count, extra_charges }) => {
     if (!canRequestOrders) {
       setCartActionError("Order requests are disabled for your account.");
       return false;
@@ -2668,7 +2677,7 @@ function CustomerDashboard() {
       quantity: parsedQuantity,
       blade_count: product.blade_count || 0,
       base_price: product.base_price || undefined,
-      overrideRate: getProductEstimateRate(product),
+      overrideRate: getProductEstimateRate(product, { piece_option }),
       customization: product.customization || false,
       customization_fee: product.customization_fee || 0,
     });
@@ -2681,6 +2690,7 @@ function CustomerDashboard() {
       quantity: parsedQuantity,
       customized: true,
       blade_glass_type,
+      piece_option,
       sale_mode,
       frame_type,
       custom_frame_size,
@@ -2704,6 +2714,7 @@ function CustomerDashboard() {
             estimated_price,
             is_estimate: true,
             blade_glass_type,
+            piece_option,
             sale_mode,
             frame_type,
             custom_frame_size,
@@ -3036,6 +3047,7 @@ function CustomerDashboard() {
         const parsedQuantity = Number(estimateForm.quantity) || 1;
         const bladeSelections = {
           blade_glass_type: estimateForm.blade_glass_type,
+          piece_option: estimateForm.piece_option,
           sale_mode: estimateForm.sale_mode,
           frame_type: estimateForm.frame_type,
           custom_frame_size: estimateForm.custom_frame_size,
@@ -3053,7 +3065,7 @@ function CustomerDashboard() {
           quantity: parsedQuantity,
           blade_count: cartDecisionProduct.blade_count || 0,
           base_price: cartDecisionProduct.base_price || undefined,
-          overrideRate: getProductEstimateRate(cartDecisionProduct),
+          overrideRate: getProductEstimateRate(cartDecisionProduct, bladeSelections),
           customization: cartDecisionProduct.customization || false,
           customization_fee: cartDecisionProduct.customization_fee || 0,
         });
@@ -3314,7 +3326,10 @@ function CustomerDashboard() {
       showPermissionNotice("Order requests are disabled for your account.");
       return;
     }
-    setOrderNowProduct(product);
+    const orderNowProductWithSelection = selectedProduct?._id === product?._id
+      ? { ...product, piece_option: productEstimatorForm.piece_option || product.piece_options?.[0]?.name || "" }
+      : { ...product, piece_option: product.piece_options?.[0]?.name || "" };
+    setOrderNowProduct(orderNowProductWithSelection);
     setOrderNowQuantity(1);
     setOrderNowExtraCharges(
       selectedProduct?._id === product?._id
@@ -4248,13 +4263,16 @@ function CustomerDashboard() {
     return price > 0 ? formatCurrency(price) : "Contact us";
   };
 
-  const getProductEstimateRate = (product) => {
+  const getProductEstimateRate = (product, selections = {}) => {
     const pricingMethod = String(product?.pricing_method || "").toLowerCase();
     const legacyUnit = String(product?.unit || "").toLowerCase();
     if (pricingMethod === "per_meter" || (!pricingMethod && legacyUnit === "per_meter")) {
       return Number(product?.unit_price) || undefined;
     }
     if (pricingMethod === "per_piece" || (!pricingMethod && ["per_piece", "per_set"].includes(legacyUnit))) {
+      const selectedOption = (product?.piece_options || []).find((option) => option.name === selections.piece_option)
+        || product?.piece_options?.[0];
+      if (Number(selectedOption?.price_per_piece) > 0) return Number(selectedOption.price_per_piece);
       return Number(product?.base_price || product?.unit_price) || undefined;
     }
     if (pricingMethod === "sqft" || (!pricingMethod && legacyUnit === "per_sqft")) {
@@ -5009,7 +5027,7 @@ function CustomerDashboard() {
     quantity: estimateQuantity,
     blade_count: cartDecisionProduct.blade_count || 0,
     base_price: cartDecisionProduct.base_price || undefined,
-    overrideRate: getProductEstimateRate(cartDecisionProduct),
+    overrideRate: getProductEstimateRate(cartDecisionProduct, estimateForm),
     customization: cartDecisionProduct.customization || false,
     customization_fee: cartDecisionProduct.customization_fee || 0,
   }) : { estimated_area: 0, estimated_price: 0, rate: 0, areaDisplay: '—', rateNote: '' };
@@ -5023,6 +5041,8 @@ function CustomerDashboard() {
           quantity: estimateQuantity,
           customized: true,
           blade_glass_type: estimateForm.blade_glass_type,
+          piece_option: estimateForm.piece_option,
+          piece_options: cartDecisionProduct.piece_options || [],
           sale_mode: estimateForm.sale_mode,
           frame_type: estimateForm.frame_type,
           custom_frame_size: estimateForm.custom_frame_size,
@@ -5043,8 +5063,10 @@ function CustomerDashboard() {
   const isMeterEstimator = selectedProduct?.pricing_method === "per_meter" || selectedProduct?.unit === "per_meter";
   const isPieceEstimator = ["per_piece", "per_set", "piece", "set"].includes(String(selectedProduct?.pricing_method || selectedProduct?.unit || "").toLowerCase());
   const productBladeGlassTypes = Array.isArray(selectedProduct?.blade_glass_types) ? selectedProduct.blade_glass_types : [];
+  const productPieceOptions = Array.isArray(selectedProduct?.piece_options) ? selectedProduct.piece_options : [];
   const productBladeFrameTypes = Array.isArray(selectedProduct?.blade_frame_types) ? selectedProduct.blade_frame_types : [];
   const selectedBladeGlass = productBladeGlassTypes.find((glass) => glass.name === productEstimatorForm.blade_glass_type);
+  const selectedPieceOption = productPieceOptions.find((option) => option.name === productEstimatorForm.piece_option) || productPieceOptions[0];
   const selectedBladeFrame = productBladeFrameTypes.find((frame) => frame.name === productEstimatorForm.frame_type);
   const estimatorBladeCount = productEstimatorForm.sale_mode === "frame"
     ? Number(selectedBladeFrame?.blade_count) || Number(productEstimatorForm.blade_count) || 0
@@ -5060,7 +5082,7 @@ function CustomerDashboard() {
     quantity: 1,
     blade_count: estimatorBladeCount || selectedProduct.blade_count || 0,
     base_price: selectedProduct.base_price || undefined,
-    overrideRate: getProductEstimateRate(selectedProduct),
+      overrideRate: getProductEstimateRate(selectedProduct, productEstimatorForm),
     customization: selectedProduct.customization || false,
     customization_fee: selectedProduct.customization_fee || 0,
   }) : null;
@@ -5074,6 +5096,8 @@ function CustomerDashboard() {
           quantity: 1,
           customized: true,
           blade_glass_type: productEstimatorForm.blade_glass_type,
+          piece_option: productEstimatorForm.piece_option,
+          piece_options: productPieceOptions,
           sale_mode: productEstimatorForm.sale_mode,
           frame_type: productEstimatorForm.frame_type,
           custom_frame_size: productEstimatorForm.custom_frame_size,
@@ -5082,7 +5106,9 @@ function CustomerDashboard() {
         }),
         rate: isBladeEstimator
           ? Number(selectedBladeGlass?.price_per_blade) || 0
-          : isMeterEstimator || isPieceEstimator ? Number(selectedProduct.unit_price || selectedProduct.base_price) || 0 : rawProductEstimatorResult?.rate || 0,
+          : isPieceEstimator && Number(selectedPieceOption?.price_per_piece) > 0
+            ? Number(selectedPieceOption.price_per_piece)
+            : isMeterEstimator || isPieceEstimator ? Number(selectedProduct.unit_price || selectedProduct.base_price) || 0 : rawProductEstimatorResult?.rate || 0,
         areaDisplay: isBladeEstimator
           ? `${estimatorBladeCount} blade(s)`
           : isMeterEstimator ? `${productEstimatorWidth} ${productEstimatorForm.unit}` : isPieceEstimator ? "1 piece" : rawProductEstimatorResult?.areaDisplay,
@@ -5106,7 +5132,7 @@ function CustomerDashboard() {
     : isMeterEstimator
       ? productEstimatorWidth > 0 && Number(productEstimatorResult?.estimated_price) > 0
       : isPieceEstimator
-        ? Number(productEstimatorResult?.estimated_price) > 0
+        ? (!productPieceOptions.length || Number(selectedPieceOption?.price_per_piece) > 0) && Number(productEstimatorResult?.estimated_price) > 0
       : productEstimatorWidth > 0 && productEstimatorHeight > 0 && Number(productEstimatorResult?.estimated_price) > 0);
   const productEstimatorBladeCountError = productEstimatorState?.bladeCountError || "";
   const productEstimatorInputsInvalid = Boolean(productEstimatorDimensionError || productEstimatorQuantityError || productEstimatorBladeCountError);
@@ -6402,31 +6428,9 @@ function CustomerDashboard() {
                               {selectedProduct.description || "No description available."}
                             </p>
                           </div>
-                          <div className="grid gap-2 sm:grid-cols-3">
-                            <div className={`min-w-0 rounded-xl border p-3 ${darkMode ? "border-slate-700 bg-slate-800" : "border-slate-300 bg-white"}`}>
-                              <p className={`text-[10px] font-semibold uppercase tracking-[0.14em] ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Type</p>
-                              <p className={`mt-1 truncate text-sm font-bold ${darkMode ? "text-white" : "text-slate-900"}`}>{selectedProduct.type || selectedProduct.product_type || "N/A"}</p>
-                            </div>
-                            {!isBladePricingProduct(selectedProduct) && <div className={`min-w-0 rounded-xl border p-3 ${darkMode ? "border-slate-700 bg-slate-800" : "border-slate-300 bg-white"}`}>
-                              <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-end gap-2 text-center">
-                                <div className="min-w-0 text-center">
-                                  <p className={`text-[10px] font-semibold uppercase tracking-[0.14em] ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Width</p>
-                                  <p className={`mt-1 truncate text-sm font-bold ${darkMode ? "text-white" : "text-slate-900"}`}>{getProductDefaultDimensions(selectedProduct).width > 0 ? getProductDefaultDimensions(selectedProduct).width : "N/A"}</p>
-                                </div>
-                                <span className={`pb-0.5 text-base font-bold ${darkMode ? "text-slate-300" : "text-slate-700"}`} aria-hidden="true">×</span>
-                                <div className="min-w-0 text-center">
-                                  <p className={`text-[10px] font-semibold uppercase tracking-[0.14em] ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Height</p>
-                                  <p className={`mt-1 truncate text-sm font-bold ${darkMode ? "text-white" : "text-slate-900"}`}>{getProductDefaultDimensions(selectedProduct).height > 0 ? getProductDefaultDimensions(selectedProduct).height : "N/A"}</p>
-                                </div>
-                              </div>
-                            </div>}
-                            <div className={`min-w-0 rounded-xl border p-3 ${darkMode ? "border-slate-700 bg-slate-800" : "border-slate-300 bg-white"}`}>
-                              <p className={`text-[10px] font-semibold uppercase tracking-[0.14em] ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Unit Rate</p>
-                              <p className={`mt-1 truncate text-sm font-bold ${darkMode ? "text-white" : "text-slate-900"}`}>{getProductUnitRate(selectedProduct)}</p>
-                            </div>
-                          </div>
+
                         </>}
-                        <ProductSpecifications product={selectedProduct} darkMode={darkMode} />
+                        {(!isBladePricingProduct(selectedProduct) || isProductModalReadOnly) && <ProductSpecifications product={selectedProduct} darkMode={darkMode} />}
 
                       </div>
 
@@ -6440,16 +6444,7 @@ function CustomerDashboard() {
                               <p className={`mt-0.5 text-[28px] font-extrabold leading-tight ${darkMode ? "text-[#ff9f96]" : "text-red-700"}`}>{getProductPrice(selectedProduct)}</p>
                               <p className={`mt-0.5 text-xs ${darkMode ? "text-[#a9b3c7]" : "text-slate-500"}`}>Price may vary based on specifications</p>
                             </div>
-                            <div className={`overflow-hidden rounded-xl border ${darkMode ? "border-[#3d4862] bg-[#2a3246]" : "border-slate-200 bg-white"}`}>
-                              <div className={`px-4 py-3 ${darkMode ? "text-[#e8ebf2]" : "text-slate-900"}`}>
-                                <p className={`text-[10.5px] font-bold uppercase tracking-[0.08em] ${darkMode ? "text-[#a9b3c7]" : "text-slate-500"}`}>Type</p>
-                                <p className="mt-0.5 text-[15px] font-bold">{selectedProduct.type || selectedProduct.product_type || "N/A"}</p>
-                              </div>
-                              <div className={`border-t px-4 py-3 ${darkMode ? "border-[#3d4862] text-[#e8ebf2]" : "border-slate-200 text-slate-900"}`}>
-                                <p className={`text-[10.5px] font-bold uppercase tracking-[0.08em] ${darkMode ? "text-[#a9b3c7]" : "text-slate-500"}`}>Unit Rate</p>
-                                <p className="mt-0.5 text-[15px] font-bold">{getProductUnitRate(selectedProduct)}</p>
-                              </div>
-                            </div>
+                            <ProductSpecifications product={selectedProduct} darkMode={darkMode} compact />
                           </div>
                         ) : null}
                         </>}
@@ -6545,6 +6540,15 @@ function CustomerDashboard() {
                               </CustomerDropdown>
                             </label>
                           </div>}
+                          {isPieceEstimator && productPieceOptions.length > 0 && (
+                            <label className="mt-4 block">
+                              <span className={`mb-1 block text-[10px] font-bold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Option</span>
+                              <CustomerDropdown ariaLabel="Per piece option" darkMode={darkMode} value={productEstimatorForm.piece_option || selectedPieceOption?.name || ""} onChange={(event) => setProductEstimatorForm((current) => ({ ...current, piece_option: event.target.value }))} className="h-10 rounded-lg px-3">
+                                <option value="">Choose an option</option>
+                                {productPieceOptions.map((option) => <option key={option.name} value={option.name}>{option.name} · {formatCurrency(option.price_per_piece)} / piece</option>)}
+                              </CustomerDropdown>
+                            </label>
+                          )}
                           {isBladeEstimator && (
                             <div className={`mt-4 space-y-3 rounded-lg border p-3 ${darkMode ? "border-slate-700 bg-slate-800" : "border-slate-200 bg-slate-50"}`}>
                               <label className="block">
@@ -6752,6 +6756,7 @@ function CustomerDashboard() {
                                 quantity: 1,
                                 notes: "",
                                 blade_glass_type: productEstimatorForm.blade_glass_type,
+                                piece_option: productEstimatorForm.piece_option,
                                 sale_mode: productEstimatorForm.sale_mode,
                                 frame_type: productEstimatorForm.frame_type,
                                 custom_frame_size: productEstimatorForm.custom_frame_size,
