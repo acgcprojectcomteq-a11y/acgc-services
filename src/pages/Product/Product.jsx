@@ -698,7 +698,7 @@ function ProductFormModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="product-form-title"
-        className={`mobile-fullscreen-dialog flex max-h-[90dvh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border shadow-[0_24px_80px_rgba(15,23,42,0.28)] ${darkMode ? "border-slate-700 bg-slate-900 text-slate-100" : "border-rose-100 bg-white"}`}
+        className={`mobile-fullscreen-dialog flex max-h-[94dvh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border shadow-[0_24px_80px_rgba(15,23,42,0.28)] ${darkMode ? "border-slate-700 bg-slate-900 text-slate-100" : "border-rose-100 bg-white"}`}
       >
         <header className={`flex shrink-0 items-start justify-between gap-4 border-b px-5 py-4 sm:px-7 ${darkMode ? "border-slate-700 bg-slate-800" : "border-rose-100 bg-[#fff8f7]"}`}>
           <div>
@@ -905,10 +905,34 @@ function ProductFormModal({
               )}
               {pricingMethodValue === "per_piece" && !(isFinishedDoorProduct && newProduct.finished_door_pricing?.enabled) && (
                 <div className="mb-4">
-                  <label className={labelClass}>Price Per Piece (PHP) *
+                  <label className={labelClass}>Price Per Piece  ₱(PHP) *
                     <input type="number" min="0.01" step="0.01" value={newProduct.base_price ?? ""} onChange={(event) => updateField("base_price", event.target.value)} placeholder="0.00" className={`${fieldClass} mt-1`} />
                   </label>
                   <p className={`mt-2 text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>This price is charged for each piece. The order total uses the selected quantity.</p>
+                </div>
+              )}
+              {pricingMethodValue === "per_piece" && (
+                <div className={`mb-4 border-t pt-4 ${darkMode ? "border-slate-700" : "border-slate-200"}`}>
+                  <div className="mb-3">
+                    <h3 className={`text-sm font-bold ${darkMode ? "text-slate-100" : "text-slate-900"}`}>Product Size (optional specs)</h3>
+                    <p className={`mt-1 text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>These dimensions are shown to customers and do not change the fixed price per piece.</p>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div>
+                      <label htmlFor="product-piece-measurement-unit" className={labelClass}>Size unit</label>
+                      <CustomerDropdown darkMode={darkMode} id="product-piece-measurement-unit" value={newProduct.unit || "in"} onChange={(event) => updateField("unit", event.target.value)} className={fieldClass}>
+                        {MEASUREMENT_UNITS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                      </CustomerDropdown>
+                    </div>
+                    <div>
+                      <label htmlFor="product-piece-width" className={labelClass}>Width ({newProduct.unit || "in"})</label>
+                      <input id="product-piece-width" type="number" min="0" step="0.01" value={newProduct.width ?? ""} onChange={(event) => updateField("width", event.target.value)} placeholder="Optional" className={fieldClass} />
+                    </div>
+                    <div>
+                      <label htmlFor="product-piece-height" className={labelClass}>Height ({newProduct.unit || "in"})</label>
+                      <input id="product-piece-height" type="number" min="0" step="0.01" value={newProduct.height ?? ""} onChange={(event) => updateField("height", event.target.value)} placeholder="Optional" className={fieldClass} />
+                    </div>
+                  </div>
                 </div>
               )}
               {pricingMethodValue === "sqft" && (
@@ -1099,7 +1123,7 @@ function ProductFormModal({
             </div>
 
             <div className="mt-3">
-              <label className={labelClass}>Product Price (₱)</label>
+              <label className={labelClass}>Manual Overide Product Price ₱(PHP)</label>
               <input type="number" min="0" step="0.01" value={newProduct.estimated_price_override || ""} onChange={(event) => updateField("estimated_price_override", event.target.value)} placeholder={pricingMethodValue === "blade" ? "Lowest price per blade" : "Auto-calculated"} className={fieldClass} />
               <p className={`mt-1 text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>
                 {pricingMethodValue === "blade"
@@ -1117,7 +1141,7 @@ function ProductFormModal({
                 <div className={`space-y-3 border-t p-4 ${darkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-white"}`}>
                   <p className={`text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Required charges are included. Optional charges stay unchecked until the customer selects them.</p>
                   {extraCharges.map((charge, index) => (
-                    <div key={`extra-charge-${index}`} className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(110px,0.8fr)_minmax(90px,0.6fr)_minmax(135px,0.8fr)_auto]">
+                    <div key={`extra-charge-${index}`} className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(160px,0.8fr)_minmax(110px,0.6fr)_minmax(175px,0.8fr)_auto]">
                       <input aria-label={`Extra charge ${index + 1} name`} value={charge.name || ""} onChange={(event) => setNewProduct((product) => ({ ...product, extra_charges: product.extra_charges.map((item, itemIndex) => itemIndex === index ? { ...item, name: event.target.value } : item) }))} placeholder="Charge name" className={fieldClass} />
                       <CustomerDropdown darkMode={darkMode} aria-label={`Extra charge ${index + 1} calculation`} value={charge.type || "fixed"} onChange={(event) => setNewProduct((product) => ({ ...product, extra_charges: product.extra_charges.map((item, itemIndex) => itemIndex === index ? { ...item, type: event.target.value } : item) }))} className={fieldClass}>
                         <option value="fixed">Fixed / item</option>
@@ -1144,7 +1168,7 @@ function ProductFormModal({
                 <ChevronDown size={16} className={`transition ${sizeLimitsOpen ? "rotate-180" : ""}`} />
               </button>
               {sizeLimitsOpen && (
-                <div className={`grid grid-cols-2 gap-3 border-t p-4 sm:grid-cols-5 ${darkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-white"}`}>
+                <div className={`grid grid-cols-2 gap-3 border-t p-4 lg:grid-cols-5 ${darkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-white"}`}>
                   {[["min_width", "Min width"], ["max_width", "Max width"], ["min_height", "Min height"], ["max_height", "Max height"]].map(([key, label]) => (
                     <div key={key}>
                       <label className={labelClass}>{label}</label>

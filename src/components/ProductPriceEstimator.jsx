@@ -1,7 +1,7 @@
 import { ClipboardList, Ruler } from "lucide-react";
 import CustomerDropdown from "@/components/CustomerDropdown";
 import { calculateEstimate, toSquareFeet } from "@/lib/estimator";
-import { getBladePriceOverrideRate, getDefaultExtraChargeSelections, getProductLineBreakdown, getProductLineTotal, getProductOverrideBaseSubtotal } from "@/lib/productPricing";
+import { getBladePriceOverrideRate, getDefaultExtraChargeSelections, getProductLineBreakdown, getProductLineTotal, getProductOverrideBaseSubtotal, getProductSizeLimitWarnings } from "@/lib/productPricing";
 import { getProductEstimatorQuantityError, MAX_PRODUCT_ESTIMATOR_QUANTITY } from "@/lib/productEstimatorQuantity";
 
 const currency = (value) =>
@@ -228,6 +228,7 @@ export const getProductEstimatorState = (product, form = {}) => {
 
 function ProductPriceEstimator({ product, form, onFormChange, darkMode = false, formatCurrency = currency, compact = false, defaultMeasurements = null, footer = null, bladeModalLayout = false, structuredModalLayout = false }) {
   const state = getProductEstimatorState(product, form);
+  const sizeLimitWarnings = getProductSizeLimitWarnings(product, state.item);
   const hasExactPriceOverride = Number(product?.estimated_price_override) > 0;
   const priceBreakdown = getProductLineBreakdown(product, state.item);
   const {
@@ -319,6 +320,16 @@ function ProductPriceEstimator({ product, form, onFormChange, darkMode = false, 
           </label>
         </div>
       ))}
+
+      {sizeLimitWarnings.length > 0 && (
+        <div role="status" className={`col-span-full mx-3 mt-3 rounded-lg border px-3 py-2.5 text-xs ${useSoftDark ? "border-amber-300/30 bg-amber-300/10 text-amber-100" : darkMode ? "border-amber-800 bg-amber-950/40 text-amber-200" : "border-amber-200 bg-amber-50 text-amber-900"}`}>
+          <p className="font-bold">Size limit warning</p>
+          <ul className="mt-1 list-inside list-disc space-y-0.5">
+            {sizeLimitWarnings.map((warning) => <li key={warning}>{warning}</li>)}
+          </ul>
+          <p className="mt-1">These are recommendations only; you can continue with your estimate.</p>
+        </div>
+      )}
 
       <div className={isBladeEstimator ? bladeModalLayout ? "grid min-[760px]:grid-cols-[1.35fr_1fr] min-[760px]:items-stretch" : "mt-4 grid gap-4 sm:grid-cols-2 sm:items-stretch" : "contents"}>
       <div className={isBladeEstimator ? bladeModalLayout ? "min-w-0 space-y-4 p-[18px]" : "min-w-0 space-y-3" : useAreaModalLayout ? "min-w-0 space-y-4 p-[18px] min-[760px]:col-start-1 min-[760px]:row-start-2" : "contents"}>

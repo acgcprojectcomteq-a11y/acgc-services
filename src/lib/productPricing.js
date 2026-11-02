@@ -341,7 +341,7 @@ export const getProductSizeLimitWarnings = (product = {}, item = {}) => {
   const limitUnit = limits.unit || product.measurement_unit || "in";
   const itemWidth = Number(item.width ?? item.dimensions?.width);
   const itemHeight = Number(item.height ?? item.dimensions?.height);
-  if (!(itemWidth > 0) || !(itemHeight > 0)) return [];
+  if (!(itemWidth > 0) && !(itemHeight > 0)) return [];
 
   const toInchesFactor = { in: 1, ft: 12, cm: 1 / 2.54, m: 100 / 2.54 };
   const itemFactor = toInchesFactor[itemUnit] || 1;

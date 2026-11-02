@@ -4,6 +4,7 @@ import { ArrowLeft, ArrowRight, Search, Star, StarHalf, X } from "lucide-react";
 import { getProducts } from "../../api/products";
 import { getProductReviews } from "../../api/orders";
 import ProductPriceEstimator, { getDefaultProductEstimatorForm, isBladePricingProduct } from "@/components/ProductPriceEstimator";
+import ProductSpecifications from "@/components/ProductSpecifications";
 import logo from "../../assets/images/ACGCLOGO1.png";
 import { resolveBackendImageUrl } from "../../lib/resolveBackendImageUrl";
 import { useCustomerPermissions } from "../../hooks/useCustomerPermissions";
@@ -186,6 +187,7 @@ function BrowseProducts() {
                   <p className="text-sm font-bold uppercase tracking-[0.16em] text-slate-500">{selectedProduct.category || selectedProduct.product_type || "General"}</p>
                   <p className="mt-2 text-sm leading-6 text-slate-600">{selectedProduct.description || "Premium aluminum and glass product crafted for reliability and style."}</p>
                 </div>
+                <ProductSpecifications product={selectedProduct} className="mt-4" />
               </div>
               <aside className="space-y-4">
                 <div className="rounded-xl border border-red-100 bg-red-50 p-4">

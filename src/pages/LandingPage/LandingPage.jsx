@@ -33,6 +33,7 @@ import OrderProgressTimeline from "@/components/OrderProgressTimeline";
 import FilterDropdown from "@/components/FilterDropdown";
 import AboutBusinessContent from "@/components/AboutBusinessContent";
 import ProductPriceEstimator from "@/components/ProductPriceEstimator";
+import ProductSpecifications, { getProductDimensionsLabel } from "@/components/ProductSpecifications";
 import CustomerDropdown from "@/components/CustomerDropdown";
 import { getProductEstimatorState } from "@/components/ProductPriceEstimator";
 import { getProductEstimatorQuantityError } from "@/lib/productEstimatorQuantity";
@@ -389,9 +390,6 @@ function LandingPage() {
       customized: false,
     };
   };
-
-  const formatProductDimensionLabel = (value) => String(value ?? "")
-    .replace(/\u00c3(?:\u0097|\u2014)|\u00c3\u0192\u00e2\u20ac\u201d/g, "\u00D7");
 
   const getDefaultCartOptions = (product) => ({
     ...getProductDefaultDimensions(product),
@@ -778,11 +776,7 @@ function LandingPage() {
     ? featuredProductStats[selectedProduct._id || selectedProduct.id] || { averageRating: 0, ratingsCount: 0 }
     : { averageRating: 0, ratingsCount: 0 };
   const selectedProductDimensions = selectedProduct && !isBladeProduct(selectedProduct)
-    ? selectedProduct.dimensions || selectedProduct.standard_size || (
-        selectedProduct.width > 0 || selectedProduct.height > 0
-          ? `${selectedProduct.width || 0}" x ${selectedProduct.height || 0}"`
-          : "N/A"
-      )
+    ? getProductDimensionsLabel(selectedProduct) || "N/A"
     : "N/A";
   const isProductModalReadOnly = !customerPermissions.can_request_orders && !customerPermissions.can_estimate_pricing;
   const hasStructuredProductModal = !isProductModalReadOnly && (isBladeProduct(selectedProduct) || isAreaProduct(selectedProduct));
@@ -1749,6 +1743,7 @@ function LandingPage() {
               <p className="mt-1 truncate text-sm font-bold text-slate-900">{getProductUnitRate(selectedProduct)}</p>
             </div>
           </div>}
+          <ProductSpecifications product={selectedProduct} className="mt-4" />
         </div>
 
         <aside className="min-w-0 space-y-3">

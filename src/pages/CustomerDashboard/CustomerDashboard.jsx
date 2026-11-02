@@ -86,6 +86,7 @@ import FilterDropdown from "@/components/FilterDropdown";
 import CustomerDropdown from "@/components/CustomerDropdown";
 import OtpCodeInput from "@/components/OtpCodeInput";
 import ProductPriceEstimator, { getProductEstimatorState } from "@/components/ProductPriceEstimator";
+import ProductSpecifications, { getProductDimensionsLabel } from "@/components/ProductSpecifications";
 import { getProductEstimatorQuantityError, MAX_PRODUCT_ESTIMATOR_QUANTITY } from "@/lib/productEstimatorQuantity";
 import { formatOrderItemMeasurements } from "@/components/OrderProgressTimeline";
 import OrderTimelineModal from "@/components/OrderTimelineModal";
@@ -2162,9 +2163,6 @@ function CustomerDashboard() {
       unit: unitMatch ? unitMap[unitMatch[1]?.toLowerCase()] || unitMatch[1]?.toLowerCase() || "in" : "in",
     };
   };
-
-  const formatProductDimensionLabel = (value) => String(value ?? "")
-    .replace(/\u00c3(?:\u0097|\u2014)|\u00c3\u0192\u00e2\u20ac\u201d/g, "×");
 
   const getProductDefaultDimensions = (product, quantity = 1) => {
     const parsed = parseProductDimensionText(product?.dimensions || product?.standard_size || product?.size);
@@ -5247,11 +5245,7 @@ function CustomerDashboard() {
   const selectedProductImages = getProductImages(selectedProduct);
   const activeProductImage = selectedProductImages[Math.min(selectedProductImageIndex, selectedProductImages.length - 1)];
   const selectedProductDimensions = selectedProduct
-    ? formatProductDimensionLabel(selectedProduct.dimensions || selectedProduct.standard_size || (
-      selectedProduct.width > 0 || selectedProduct.height > 0
-        ? `${selectedProduct.width || 0}" x ${selectedProduct.height || 0}"`
-        : "N/A"
-    ))
+    ? getProductDimensionsLabel(selectedProduct) || "N/A"
     : "N/A";
   const profileDisplayName = `${user?.first_name || ""} ${user?.last_name || ""}`.trim() || "Customer";
   const profileEmail = user?.email || "";
@@ -6432,7 +6426,7 @@ function CustomerDashboard() {
                             </div>
                           </div>
                         </>}
-
+                        <ProductSpecifications product={selectedProduct} darkMode={darkMode} />
 
                       </div>
 
