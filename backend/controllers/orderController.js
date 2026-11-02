@@ -5,6 +5,8 @@ import path from "path";
 import { randomUUID } from "node:crypto";
 import mongoose from "mongoose";
 import Order from "../models/Order.js";
+import ExtraChargeReceipt from "../models/ExtraChargeReceipt.js";
+import ExtraCharge from "../models/ExtraCharge.js";
 import SystemSetting from "../models/SystemSetting.js";
 import ScheduleReservation from "../models/ScheduleReservation.js";
 import CustomerNotification from "../models/CustomerNotification.js";
@@ -1498,12 +1500,38 @@ export const getAdminOrders = async (req, res) => {
     ]);
 
     orders.forEach(attachOrderScheduleOverdue);
-    const responseOrders = req.user.role === "skilled_worker"
+    let responseOrders = req.user.role === "skilled_worker"
       ? orders.map((order) => {
         const contractSafeOrder = sanitizeStaffContractAccess(order, req.staffAccess, req.staffAccessModule);
         return req.staffAccess?.hide_payment_amounts === true ? redactStaffPaymentAmounts(contractSafeOrder) : contractSafeOrder;
       })
       : orders;
+
+    if (req.user.role !== "skilled_worker" && (view || module) === "transactions" && orders.length) {
+      const orderIds = orders.map((order) => order._id);
+      const [receipts, charges] = await Promise.all([
+        ExtraChargeReceipt.find({ order: { $in: orderIds } }).sort({ issued_at: -1 }).lean(),
+        ExtraCharge.find({ order: { $in: orderIds }, receipt: { $ne: null } }).select("receipt payments approved_by_name approved_at").lean(),
+      ]);
+      const chargeByReceipt = new Map(charges.map((charge) => [String(charge.receipt), charge]));
+      const receiptsByOrder = new Map();
+      for (const receipt of receipts) {
+        const orderKey = String(receipt.order);
+        const group = receiptsByOrder.get(orderKey) || [];
+        const charge = chargeByReceipt.get(String(receipt._id));
+        group.push({
+          ...receipt,
+          payments: charge?.payments || [],
+          approved_by_name: charge?.approved_by_name || "",
+          approved_at: charge?.approved_at || null,
+        });
+        receiptsByOrder.set(orderKey, group);
+      }
+      responseOrders = orders.map((order) => ({
+        ...order,
+        extra_charge_receipts: receiptsByOrder.get(String(order._id)) || [],
+      }));
+    }
 
     res.json({
       success: true,

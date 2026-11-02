@@ -1,82 +1,22 @@
-import jsPDF from "jspdf";
-import companyLogo from "@/assets/images/ACGCLOGO1.png";
+import acgcLogo from "@/assets/images/ACGCLOGO1.png";
 
-const peso = (value) => `PHP ${Number(value || 0).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const money = (value) => `PHP ${Number(value || 0).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
+const dateLabel = (value) => value ? new Date(value).toLocaleDateString("en-PH", { year: "numeric", month: "long", day: "numeric" }) : "Not available";
 
-const loadLogo = () => new Promise((resolve) => {
-  const image = new Image();
-  image.onload = () => {
-    try {
-      const canvas = document.createElement("canvas");
-      canvas.width = image.naturalWidth;
-      canvas.height = image.naturalHeight;
-      canvas.getContext("2d").drawImage(image, 0, 0);
-      resolve(canvas.toDataURL("image/png"));
-    } catch { resolve(null); }
-  };
-  image.onerror = () => resolve(null);
-  image.src = companyLogo;
-});
+export const buildExtraChargeReceiptHtml = (receipt) => {
+  const items = (receipt.items || []).map((item) => `<tr><td class="qty">${escapeHtml(item.quantity ?? 1)}</td><td>${escapeHtml(item.description || "Charge item")}</td><td class="amount">${money(item.unit_price)}</td><td class="amount">${money(item.total)}</td></tr>`);
+  const payments = (receipt.payments || []).filter((payment) => payment.status === "verified");
+  const paid = payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+  const paymentStatus = receipt.payment_status || (paid >= Number(receipt.total) ? "Paid" : paid > 0 ? "Partially paid" : "Unpaid");
+  const methods = [...new Set(payments.map((payment) => payment.method).filter(Boolean))].join(", ") || "No verified payment recorded";
+  const receiptNumber = receipt.receipt_number || "Extra Charge Receipt";
 
-export const downloadExtraChargeReceipt = async (receipt) => {
-  const doc = new jsPDF({ unit: "mm", format: "a4" });
-  const logo = await loadLogo();
-  if (logo) doc.addImage(logo, "PNG", 14, 12, 34, 20);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(17);
-  doc.text("EXTRA CHARGE RECEIPT", 200, 20, { align: "right" });
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
-  doc.text("ACGC Aluminum Services", 14, 36);
-  doc.text(`Receipt No.: ${receipt.receipt_number}`, 200, 27, { align: "right" });
-  doc.text(`Receipt Date: ${new Date(receipt.issued_at).toLocaleDateString("en-PH")}`, 200, 33, { align: "right" });
-  doc.setDrawColor(210);
-  doc.line(14, 39, 196, 39);
-  doc.setFont("helvetica", "bold");
-  doc.text("Customer and project", 14, 48);
-  doc.setFont("helvetica", "normal");
-  doc.text(`Customer: ${receipt.customer_name || "—"}`, 14, 55);
-  doc.text(`Contact: ${receipt.customer_contact || "—"}`, 14, 61);
-  doc.text(`Project reference: ${receipt.project_reference || "—"}`, 14, 67);
-  doc.text(`Affected item: ${receipt.affected_item || "—"}`, 14, 73);
-  doc.text(`Description: ${receipt.description || "—"}`, 14, 81, { maxWidth: 180 });
-  doc.text(`Reason: ${receipt.reason || "—"}`, 14, 89, { maxWidth: 180 });
-  let y = 101;
-  doc.setFont("helvetica", "bold");
-  doc.text("Charge item", 14, y);
-  doc.text("Qty", 135, y, { align: "right" });
-  doc.text("Unit price", 165, y, { align: "right" });
-  doc.text("Amount", 196, y, { align: "right" });
-  doc.setFont("helvetica", "normal");
-  y += 7;
-  for (const item of receipt.items || []) {
-    if (y > 250) { doc.addPage(); y = 20; }
-    doc.text(String(item.description || "Charge item").slice(0, 65), 14, y);
-    doc.text(String(item.quantity ?? 1), 135, y, { align: "right" });
-    doc.text(peso(item.unit_price), 165, y, { align: "right" });
-    doc.text(peso(item.total), 196, y, { align: "right" });
-    y += 7;
-  }
-  y += 5;
-  doc.line(115, y, 196, y);
-  y += 8;
-  doc.text(`Previous outstanding balance: ${peso(receipt.previous_outstanding)}`, 196, y, { align: "right" });
-  y += 7;
-  doc.text(`Total extra charges: ${peso(receipt.total)}`, 196, y, { align: "right" });
-  y += 8;
-  doc.setFont("helvetica", "bold");
-  doc.text(`Updated outstanding at issue: ${peso(receipt.updated_outstanding_at_issue)}`, 196, y, { align: "right" });
-  y += 9;
-  doc.setFont("helvetica", "normal");
-  doc.text(`Payment status: ${receipt.payment_status || "Unpaid"}`, 14, y);
-  y += 7;
-  for (const payment of (receipt.payments || []).filter((entry) => entry.status === "verified")) {
-    if (y > 270) { doc.addPage(); y = 20; }
-    doc.text(`Verified payment: ${peso(payment.amount)} · ${payment.method || "Payment"} · ${new Date(payment.verified_at || payment.recorded_at || Date.now()).toLocaleDateString("en-PH")}`, 14, y);
-    y += 6;
-  }
-  doc.text(`Issued by: ${receipt.issued_by_name || "Authorized staff"}`, 14, y + 2);
-  doc.setFontSize(8);
-  doc.text("This receipt records an approved extra charge. Receipt issuance is not proof of payment.", 14, 282, { maxWidth: 180 });
-  doc.save(`${receipt.receipt_number || "Extra-Charge-Receipt"}.pdf`);
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Extra Charge Receipt ${escapeHtml(receiptNumber)}</title><style>
+    @page{size:A4;margin:16mm}*{box-sizing:border-box}body{margin:0;background:#f1f5f4;color:#172b2a;font:13px/1.5 Arial,Helvetica,sans-serif}.sheet{position:relative;width:100%;max-width:210mm;min-height:297mm;margin:0 auto;padding:48px 52px;background:#fff;border:1px solid #e4ece9;box-shadow:0 12px 40px #18332b12}.topline{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;padding-bottom:24px;border-bottom:2px solid #5c9382}.brand{display:flex;align-items:center;gap:13px}.logo{width:58px;height:58px;object-fit:contain}.company{margin:0;color:#244b41;font-size:21px;font-weight:800;letter-spacing:-.4px}.tagline{margin:3px 0 0;color:#70817c;font-size:11px}.receipt-title{margin:30px 0 22px;color:#5b9382;font-size:30px;font-weight:800;letter-spacing:4px;text-align:right}.meta{min-width:190px;text-align:right}.meta-label{color:#788984;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px}.meta-value{margin:2px 0 10px;font-size:13px;font-weight:700}.paid-tag{display:inline-block;padding:5px 10px;border-radius:999px;background:#e8f4ef;color:#36735f;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px}.parties{display:grid;grid-template-columns:1fr 1fr;gap:28px;margin:28px 0}.section-label{margin:0 0 7px;color:#5b9382;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:1.2px}.party-name{margin:0 0 3px;font-size:14px;font-weight:700}.subtle{color:#667873;font-size:11px}.job-box{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:0 0 25px;padding:15px 17px;border:1px solid #e4ece9;border-radius:8px;background:#f8fbfa}.job-box p{margin:0;overflow-wrap:anywhere}.job-label{display:block;margin-bottom:3px;color:#758680;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.8px}table{width:100%;border-collapse:collapse}thead{background:#5b9382;color:white}th{padding:11px 12px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.6px}th.amount{text-align:right;color:white}td.amount{text-align:right;color:#15803d}td{padding:12px;border-bottom:1px solid #e7eeeb}td.qty{width:52px;color:#667873;text-align:center}.totals{width:min(100%,360px);margin:18px 0 0 auto}.total-row{display:flex;justify-content:space-between;gap:16px;padding:6px 0;color:#53635e}.total-row.grand{margin-top:5px;padding:12px 0;border-top:2px solid #5b9382;color:#244b41;font-size:16px;font-weight:800}.total-row strong,.total-row.grand span:last-child{color:#15803d}.payment{display:flex;justify-content:space-between;gap:20px;margin-top:22px;padding:13px 15px;border-radius:7px;background:#f2f7f5}.notes{margin-top:32px;padding-top:16px;border-top:1px solid #e4ece9}.notes p{margin:4px 0 0;color:#596d66}.footer{position:absolute;right:52px;bottom:32px;left:52px;display:flex;justify-content:space-between;padding-top:12px;border-top:1px solid #e4ece9;color:#82918b;font-size:9px}@media(max-width:640px){body{background:white}.sheet{min-height:100vh;margin:0;padding:26px 20px;border:0;box-shadow:none}.topline{gap:10px}.company{font-size:16px}.logo{width:44px;height:44px}.meta{min-width:130px}.receipt-title{font-size:24px;margin:23px 0 15px}.parties{gap:16px}.footer{right:20px;left:20px}}@media print{body{background:#fff}.sheet{max-width:none;min-height:255mm;margin:0;padding:0;border:0;box-shadow:none}.footer{right:0;bottom:0;left:0}}
+    </style></head><body><main class="sheet"><div class="topline"><div class="brand"><img class="logo" src="${escapeHtml(acgcLogo)}" alt="ACGC logo"><div><h1 class="company">ACGC Glass &amp; Aluminum Services</h1><p class="tagline">Professional glass and aluminum services</p></div></div><div class="meta"><div class="meta-label">Receipt No.</div><div class="meta-value">${escapeHtml(receiptNumber)}</div><div class="meta-label">Receipt date</div><div class="meta-value">${escapeHtml(dateLabel(receipt.issued_at))}</div><span class="paid-tag">${escapeHtml(paymentStatus)}</span></div></div>
+    <h2 class="receipt-title">RECEIPT</h2><section class="parties"><div><p class="section-label">Billed to</p><p class="party-name">${escapeHtml(receipt.customer_name || "Customer")}</p><div class="subtle">${escapeHtml(receipt.customer_contact || "Customer account")}</div></div><div><p class="section-label">Service provider</p><p class="party-name">ACGC Glass &amp; Aluminum Services</p><div class="subtle">Installation and additional work</div></div></section>
+    <section class="job-box"><p><span class="job-label">Project reference</span>${escapeHtml(receipt.project_reference || "Not available")}</p><p><span class="job-label">Affected item</span>${escapeHtml(receipt.affected_item || "Project installation")}</p><p><span class="job-label">Extra work</span>${escapeHtml(receipt.description || "Additional installation work")}</p><p><span class="job-label">Reason</span>${escapeHtml(receipt.reason || "Not provided")}</p><p><span class="job-label">Approved by${receipt.approved_at ? ` · ${escapeHtml(dateLabel(receipt.approved_at))}` : ""}</span>${escapeHtml(receipt.approved_by_name || "Approval record unavailable")}</p><p><span class="job-label">Issued by</span>${escapeHtml(receipt.issued_by_name || "Issuance record unavailable")}</p></section>
+    <table><thead><tr><th>Qty</th><th>Description</th><th class="amount">Unit price</th><th class="amount">Amount</th></tr></thead><tbody>${items.join("")}</tbody></table><section class="totals"><div class="total-row"><span>Previous outstanding balance</span><strong>${money(receipt.previous_outstanding)}</strong></div><div class="total-row"><span>Total extra charges</span><strong>${money(receipt.total)}</strong></div><div class="total-row grand"><span>Updated amount due</span><span>${money(receipt.updated_outstanding_at_issue)}</span></div></section>
+    <div class="payment"><span><strong>Payment status</strong><br><span class="subtle">${escapeHtml(paymentStatus)}</span></span><span style="text-align:right"><strong>Payment method</strong><br><span class="subtle">${escapeHtml(methods)} · ${money(paid)} verified</span></span></div><section class="notes"><p class="section-label">Receipt notes</p><p>Receipt issuance records the approved extra charge. It does not confirm payment. Only verified payments are reflected above.</p></section><footer class="footer"><span>Thank you for choosing ACGC Glass &amp; Aluminum Services.</span><span>${escapeHtml(receiptNumber)}</span></footer></main></body></html>`;
 };

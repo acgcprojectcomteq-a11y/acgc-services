@@ -193,6 +193,8 @@ export const submitExtraCharge = async (req, res) => {
   charge.approval_history.push({ action: "submitted", by: req.user.id, by_name: staffName(req.user) });
   try { await charge.save(); }
   catch (error) { if (error?.name === "VersionError") return bad(res, "This charge changed while you were reviewing it. Refresh and try again.", 409); throw error; }
+  const order = await Order.findById(req.params.orderId).select("customer tracking").lean();
+  await notifyCustomer(order, "extra_charge_update", "Extra charge submitted for review", `An additional charge was submitted for review: ${charge.description}. The amount is ${amount(charge.total).toFixed(2)}.`, `extra-charge:${charge._id}:submitted`);
   res.json({ success: true, charge });
 };
 
@@ -216,6 +218,9 @@ export const reviewExtraCharge = async (req, res) => {
   if (decision === "approve") {
     const order = await Order.findById(req.params.orderId).select("customer tracking").lean();
     await notifyCustomer(order, "extra_charge_update", "Extra charge approved", `${charge.description}: ${amount(charge.total).toFixed(2)}. Reason: ${charge.reason}`, `extra-charge:${charge._id}:approved`);
+  } else {
+    const order = await Order.findById(req.params.orderId).select("customer tracking").lean();
+    await notifyCustomer(order, "extra_charge_update", "Extra charge not approved", `${charge.description} was not approved. Reason: ${charge.decline_reason}`, `extra-charge:${charge._id}:declined`);
   }
   res.json({ success: true, charge });
 };
@@ -237,9 +242,11 @@ export const issueExtraChargeReceipt = async (req, res) => {
     return sum + Math.max(Number(extraCharge.total || 0) - paid, 0);
   }, 0);
   const previousOutstanding = amount(originalOutstanding + otherChargeOutstanding);
+  const verifiedChargePayments = amount(charge.payments.filter((payment) => payment.status === "verified").reduce((sum, payment) => sum + payment.amount, 0));
+  if (verifiedChargePayments < amount(charge.total)) return bad(res, "The full extra charge must be paid and verified before its receipt can be generated.", 409);
   let receipt;
   try {
-    receipt = await ExtraChargeReceipt.create({ receipt_number: `EC-${new Date().getFullYear()}-${new mongoose.Types.ObjectId().toString().slice(-8).toUpperCase()}`, order: order._id, extra_charge: charge._id, customer_name: order.customer_name, customer_contact: order.customer_phone || order.customer_email, project_reference: order.tracking, item_index: charge.item_index, affected_item: charge.item_index === null || charge.item_index === undefined ? "Project installation" : order.items[charge.item_index]?.name || `Item ${Number(charge.item_index) + 1}`, items: charge.items.map((item) => item.toObject()), description: charge.description, reason: charge.reason, total: charge.total, previous_outstanding: previousOutstanding, updated_outstanding_at_issue: amount(previousOutstanding + charge.total), issued_by: req.user.id, issued_by_name: staffName(req.user) });
+    receipt = await ExtraChargeReceipt.create({ receipt_number: `EC-${new Date().getFullYear()}-${new mongoose.Types.ObjectId().toString().slice(-8).toUpperCase()}`, order: order._id, extra_charge: charge._id, customer_name: order.customer_name, customer_contact: order.customer_phone || order.customer_email, project_reference: order.tracking, item_index: charge.item_index, affected_item: charge.item_index === null || charge.item_index === undefined ? "Project installation" : order.items[charge.item_index]?.name || `Item ${Number(charge.item_index) + 1}`, items: charge.items.map((item) => item.toObject()), description: charge.description, reason: charge.reason, total: charge.total, previous_outstanding: previousOutstanding, updated_outstanding_at_issue: amount(previousOutstanding + Math.max(charge.total - verifiedChargePayments, 0)), issued_by: req.user.id, issued_by_name: staffName(req.user) });
   } catch (error) {
     if (error?.code === 11000) return bad(res, "A receipt has already been issued for this charge.", 409);
     throw error;
@@ -252,16 +259,17 @@ export const issueExtraChargeReceipt = async (req, res) => {
     if (error?.name === "VersionError") { await ExtraChargeReceipt.deleteOne({ _id: receipt._id }); return bad(res, "This charge changed while its receipt was being issued. Refresh and try again.", 409); }
     throw error;
   }
-  await notifyCustomer(order, "extra_charge_update", "Extra charge receipt issued", `Receipt ${receipt.receipt_number} was issued for ${amount(receipt.total).toFixed(2)}. Payment is still ${receipt.total > 0 ? "unpaid until verified payments are recorded" : "unpaid"}.`, `extra-charge:${charge._id}:receipt`);
+  await notifyCustomer(order, "extra_charge_update", "Extra charge receipt issued", `Receipt ${receipt.receipt_number} was issued after the extra charge payment was fully verified.`, `extra-charge:${charge._id}:receipt`);
   res.status(201).json({ success: true, receipt, charge, original_payment_summary: amounts });
 };
 
 export const recordExtraChargePayment = async (req, res) => {
   if (!validId(req.params.orderId) || !validId(req.params.chargeId)) return bad(res, "Invalid charge reference.");
   const charge = await ExtraCharge.findOne({ _id: req.params.chargeId, order: req.params.orderId });
-  if (!charge || !charge.receipt) return bad(res, "An issued extra charge receipt is required before payment recording.", 409);
+  if (!charge || !["Approved", "Receipt Generated"].includes(charge.status)) return bad(res, "The extra charge must be approved before recording payment.", 409);
   const { request_id, amount: rawAmount, method = "Cash", reference = "", action = "record" } = req.body || {};
   const paymentAmount = amount(rawAmount);
+  if (!["Cash", "Online Payment", "Other"].includes(method)) return bad(res, "Choose Cash, Online Payment, or Other as the payment method.");
   if (!request_id || String(request_id).length > 120 || !Number.isFinite(paymentAmount) || paymentAmount <= 0) return bad(res, "A unique request ID and positive payment amount are required.");
   if (charge.payments.some((payment) => payment.request_id === request_id)) return res.json({ success: true, duplicate: true, charge });
   const verified = amount(charge.payments.filter((payment) => payment.status === "verified").reduce((sum, payment) => sum + payment.amount, 0));
@@ -277,6 +285,8 @@ export const recordExtraChargePayment = async (req, res) => {
     }
     throw error;
   }
+  const order = await Order.findById(req.params.orderId).select("customer tracking").lean();
+  await notifyCustomer(order, "extra_charge_update", "Extra charge payment received", `A payment of ${paymentAmount.toFixed(2)} (${method}) was recorded for ${charge.description} and is awaiting verification.`, `extra-charge:${charge._id}:payment-recorded:${request_id}`);
   res.status(201).json({ success: true, charge });
 };
 
@@ -294,5 +304,9 @@ export const verifyExtraChargePayment = async (req, res) => {
   payment.verified_at = new Date();
   try { await charge.save(); }
   catch (error) { if (error?.name === "VersionError") return bad(res, "The charge changed while verifying payment. Refresh and retry.", 409); throw error; }
+  const verifiedAfter = amount(charge.payments.filter((entry) => entry.status === "verified").reduce((sum, entry) => sum + entry.amount, 0));
+  const remaining = Math.max(amount(charge.total - verifiedAfter), 0);
+  const order = await Order.findById(req.params.orderId).select("customer tracking").lean();
+  await notifyCustomer(order, "extra_charge_update", "Extra charge payment verified", `${amount(payment.amount).toFixed(2)} payment for ${charge.description} was verified. Remaining balance: ${remaining.toFixed(2)}.`, `extra-charge:${charge._id}:payment-verified:${payment._id}`);
   res.json({ success: true, charge });
 };
