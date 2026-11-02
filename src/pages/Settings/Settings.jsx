@@ -443,6 +443,7 @@ function Settings() {
   const counts = useMemo(() => ({
     all: allDisplayUsers.length,
     customer: allDisplayUsers.filter((account) => account.role === "customer").length,
+    super_admin: allDisplayUsers.filter((account) => account.role === "admin" || account.role === "super_admin").length,
     staff: allDisplayUsers.filter((account) => account.role === "skilled_worker").length,
     helper: allDisplayUsers.filter((account) => account.role === "skilled_worker" && account.staff_access?.staff_type === "helper" && !hasAssignedCustomSubrole(account.staff_access)).length,
     skilled_worker: allDisplayUsers.filter((account) => account.role === "skilled_worker" && account.staff_access?.staff_type === "skilled_worker" && !hasAssignedCustomSubrole(account.staff_access)).length,
@@ -450,7 +451,7 @@ function Settings() {
   }), [allDisplayUsers]);
 
   const customSubroleNames = useMemo(() => {
-    const reservedNames = new Set(["all users", "customers", "staff", "helper", "skilled worker"]);
+    const reservedNames = new Set(["all users", "customers", "staff", "helper", "skilled worker", "super admin"]);
     return [...new Set(allDisplayUsers
       .filter((account) => account.role === "skilled_worker")
       .flatMap((account) => Array.isArray(account.staff_access?.custom_subroles) ? account.staff_access.custom_subroles : [])
@@ -463,7 +464,7 @@ function Settings() {
   const userCategoryTabs = [
     { key: "all", label: "All Users", count: counts.all },
     { key: "customer", label: "Customers", count: counts.customer },
-    { key: "staff", label: "Staff", count: counts.staff },
+    { key: "super_admin", label: "Super Admin", count: counts.super_admin },
     { key: "helper", label: "Helper", count: counts.helper },
     { key: "skilled_worker", label: "Skilled Worker", count: counts.skilled_worker },
     ...customSubroleNames.map((subrole) => ({
@@ -478,6 +479,7 @@ function Settings() {
     return allDisplayUsers.filter((account) => {
       const selectedSubrole = activeTab.startsWith("subrole:") ? decodeURIComponent(activeTab.slice("subrole:".length)).toLowerCase() : null;
       const matchesRole = activeTab === "all"
+        || activeTab === "super_admin" && (account.role === "admin" || account.role === "super_admin")
         || activeTab === "staff" && account.role === "skilled_worker"
         || (activeTab === "skilled_worker" || activeTab === "helper") && account.role === "skilled_worker" && account.staff_access?.staff_type === activeTab && !hasAssignedCustomSubrole(account.staff_access)
         || selectedSubrole !== null && account.role === "skilled_worker" && hasAssignedCustomSubrole(account.staff_access) && account.staff_access?.subrole?.trim().toLowerCase() === selectedSubrole

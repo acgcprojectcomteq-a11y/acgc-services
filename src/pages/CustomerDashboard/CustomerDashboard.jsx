@@ -456,6 +456,8 @@ function CustomerDashboard() {
     counts: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 },
   });
   const [orders, setOrders] = useState([]);
+  const notifiedContractVersionsRef = useRef(null);
+  const hasLoadedCustomerOrdersRef = useRef(false);
   const [repairRequests, setRepairRequests] = useState([]);
   const [customerPaymentContactPhone, setCustomerPaymentContactPhone] = useState("");
   const onlineOrderCooldownMessage = onlineOrderCooldownActive
@@ -2092,6 +2094,7 @@ function CustomerDashboard() {
         if (!active) return;
         setCustomerPaymentContactPhone(paymentContact?.phone || "");
         const latestOrders = response.orders || [];
+        hasLoadedCustomerOrdersRef.current = true;
         setOrders(latestOrders);
         setSelectedOrderForModal((current) => {
           if (!current) return current;
@@ -2133,6 +2136,29 @@ function CustomerDashboard() {
       unsubscribeRealtime();
     };
   }, [orderOwnerId]);
+
+  useEffect(() => {
+    if (!hasLoadedCustomerOrdersRef.current) return;
+    const currentContractVersions = new Map();
+    orders.forEach((order) => {
+      const status = normalizeOrderStatusKey(order?.status);
+      const contractStatus = normalizeOrderStatusKey(order?.contract_status);
+      if (status !== "contract_sent" && contractStatus !== "sent") return;
+
+      const orderId = String(order?._id || order?.id || order?.tracking || "");
+      if (!orderId) return;
+      const version = String(order.contractVersion || order.currentContractVersion || order.contractId || order.contract_number || order.contractSentAt || order.contract_sent_at || "current");
+      const signature = `${orderId}:${version}`;
+      currentContractVersions.set(orderId, signature);
+
+      const previousSignature = notifiedContractVersionsRef.current?.get(orderId);
+      if (notifiedContractVersionsRef.current && previousSignature !== signature) {
+        toast.success("A contract has been sent for your review and acceptance.");
+      }
+    });
+
+    notifiedContractVersionsRef.current = currentContractVersions;
+  }, [orders]);
 
   useEffect(() => {
     if (!orderOwnerId) {
@@ -5176,7 +5202,7 @@ function CustomerDashboard() {
   const isBladeEstimator = selectedProduct?.pricing_method === "blade";
   const isMeterEstimator = selectedProduct?.pricing_method === "per_meter" || selectedProduct?.unit === "per_meter";
   const isPieceEstimator = ["per_piece", "per_set", "piece", "set"].includes(String(selectedProduct?.pricing_method || selectedProduct?.unit || "").toLowerCase());
-  const isAreaEstimator = selectedEstimatorState?.isAreaEstimator === true;
+  const isAreaEstimator = productEstimatorState?.isAreaEstimator === true;
   const productBladeGlassTypes = Array.isArray(selectedProduct?.blade_glass_types) ? selectedProduct.blade_glass_types : [];
   const productPieceOptions = Array.isArray(selectedProduct?.piece_options) ? selectedProduct.piece_options : [];
   const productAreaOptions = Array.isArray(selectedProduct?.area_options) ? selectedProduct.area_options : [];

@@ -265,13 +265,13 @@ const countRushOrdersOnDate = async (value, excludedOrderId = null) => {
   if (!range) return 0;
   const orders = await Order.find({
     inspection_date: { $gte: range.start, $lt: range.end },
-    status: { $not: /^(cancelled|canceled)$/i },
     ...(excludedOrderId ? { _id: { $ne: excludedOrderId } } : {}),
-  }).select("is_rush_order items.extra_charges").lean();
-  return orders.reduce((total, order) => total + Math.max(
-    countSelectedRushItems(order.items),
-    order.is_rush_order === true ? 1 : 0,
-  ), 0);
+  }).select("status is_rush_order items.extra_charges").lean();
+  return orders.reduce((total, order) => {
+    if (/^(cancelled|canceled)$/i.test(String(order.status || ""))) return total;
+    const isRushOrder = countSelectedRushItems(order.items) > 0;
+    return total + (isRushOrder ? 1 : 0);
+  }, 0);
 };
 
 const getOnlineOrderCooldownMessage = (cooldownUntil) => {
@@ -1229,20 +1229,24 @@ export const createOrderAsAdmin = async (req, res) => {
     const scheduleError = await validateOrderSchedules({ inspection_date, inspection_time, inspection_duration_minutes, inspection_travel_minutes, estimated_installation_date, estimated_installation_time, installation_duration_minutes });
     if (scheduleError) return res.status(409).json({ success: false, code: "SCHEDULE_UNAVAILABLE", message: scheduleError });
 
-    const requestedRushSlots = Math.max(countSelectedRushItems(items), is_rush_order === true ? 1 : 0);
-    if (requestedRushSlots > 0 && !inspection_date) {
+    const requestedRushCharges = countSelectedRushItems(items);
+    if (requestedRushCharges > 2) {
+      return res.status(400).json({ success: false, code: "RUSH_CHARGE_ORDER_LIMIT", message: "An order can include a maximum of 2 Rush charges." });
+    }
+    const requestedRushOrders = requestedRushCharges > 0 ? 1 : 0;
+    if (requestedRushOrders > 0 && !inspection_date) {
       return res.status(400).json({ success: false, message: "A scheduled inspection date is required for a Rush Order." });
     }
-    if (requestedRushSlots > 0) {
+    if (requestedRushOrders > 0) {
       const rushOrderCount = await countRushOrdersOnDate(inspection_date);
-      if (rushOrderCount + requestedRushSlots > RUSH_ORDER_DAILY_LIMIT) {
-        const requestedTotal = rushOrderCount + requestedRushSlots;
+      if (rushOrderCount + requestedRushOrders > RUSH_ORDER_DAILY_LIMIT) {
+        const requestedTotal = rushOrderCount + requestedRushOrders;
         return res.status(409).json({
           success: false,
           code: "RUSH_ORDER_DAILY_LIMIT",
           message: `This order would use ${requestedTotal} Rush Order slots on the selected date. The daily maximum is ${RUSH_ORDER_DAILY_LIMIT}.`,
           rush_order_count: rushOrderCount,
-          requested_rush_order_count: requestedRushSlots,
+          requested_rush_order_count: requestedRushOrders,
           rush_order_limit: RUSH_ORDER_DAILY_LIMIT,
         });
       }
@@ -3618,24 +3622,27 @@ export const updateOrderInspection = async (req, res) => {
       return res.status(400).json({ success: false, message: installationDateError });
     }
 
-    const nextRushOrderValue = typeof is_rush_order === "boolean" ? is_rush_order : order.is_rush_order === true;
     const nextInspectionDate = inspection_date !== undefined ? inspection_date : order.inspection_date;
     const nextItems = Array.isArray(updateData.items) ? updateData.items : order.items || [];
-    const requestedRushSlots = Math.max(countSelectedRushItems(nextItems), nextRushOrderValue ? 1 : 0);
+    const requestedRushCharges = countSelectedRushItems(nextItems);
+    if (requestedRushCharges > 2) {
+      return res.status(400).json({ success: false, code: "RUSH_CHARGE_ORDER_LIMIT", message: "An order can include a maximum of 2 Rush charges." });
+    }
+    const requestedRushOrders = requestedRushCharges > 0 ? 1 : 0;
     if (typeof is_rush_order === "boolean") updateData.is_rush_order = is_rush_order;
-    if (requestedRushSlots > 0 && !nextInspectionDate) {
+    if (requestedRushOrders > 0 && !nextInspectionDate) {
       return res.status(400).json({ success: false, message: "A scheduled inspection date is required for a Rush Order." });
     }
-    if (requestedRushSlots > 0) {
+    if (requestedRushOrders > 0) {
       const rushOrderCount = await countRushOrdersOnDate(nextInspectionDate, order._id);
-      if (rushOrderCount + requestedRushSlots > RUSH_ORDER_DAILY_LIMIT) {
-        const requestedTotal = rushOrderCount + requestedRushSlots;
+      if (rushOrderCount + requestedRushOrders > RUSH_ORDER_DAILY_LIMIT) {
+        const requestedTotal = rushOrderCount + requestedRushOrders;
         return res.status(409).json({
           success: false,
           code: "RUSH_ORDER_DAILY_LIMIT",
           message: `This order would use ${requestedTotal} Rush Order slots on the selected date. The daily maximum is ${RUSH_ORDER_DAILY_LIMIT}.`,
           rush_order_count: rushOrderCount,
-          requested_rush_order_count: requestedRushSlots,
+          requested_rush_order_count: requestedRushOrders,
           rush_order_limit: RUSH_ORDER_DAILY_LIMIT,
         });
       }
@@ -4643,6 +4650,7 @@ export const sendWalkInApprovalEmail = async (req, res) => {
       nextSteps: "Please review the attached document and contact our support team if anything needs to be corrected.",
       actionUrl: contractLoginLink,
       actionLabel: "Log in to view your contract",
+      logoImageUrl: buildFrontendUrl("/ACGCLOGO1.png"),
     });
 
     const attachments = [...(contractEmail.attachments || []), generatedContractAttachment];

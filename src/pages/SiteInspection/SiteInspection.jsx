@@ -1,5 +1,5 @@
 import CustomerDropdown from "@/components/CustomerDropdown";
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
@@ -36,7 +36,7 @@ import { buildContractSnapshot, hasContractSnapshotChanged, hasExistingContract 
 import { getCustomerPaymentProof, getPaymentSummary } from "@/pages/Transactions/paymentProofUtils";
 import { getProducts } from "@/api/products";
 import { toSquareFeet } from "@/lib/estimator";
-import { getBladePriceOverrideRate, getFinishedDoorMeasurementBreakdown, getMeasuredProductLineTotal, getProductLineBreakdown, getProductSizeLimitWarnings, isFinishedDoorPricingEnabled } from "@/lib/productPricing";
+import { getBladePriceOverrideRate, getFinishedDoorMeasurementBreakdown, getMeasuredProductLineTotal, getProductLineBreakdown, isFinishedDoorPricingEnabled } from "@/lib/productPricing";
 import UnsavedChangesDialog from "@/components/UnsavedChangesDialog";
 import FullAddressField from "@/components/FullAddressField";
 import { getStreetAddressError, isValidStreetAddress, normalizeFullAddress } from "@/lib/fullAddressValidation";
@@ -48,15 +48,14 @@ import Navbar from "../../components/layout/Navbar";
 import AdminPageHeader from "../../components/layout/AdminPageHeader";
 import FilterDropdown from "@/components/FilterDropdown";
 import ContractModal from "../../components/ContractModal";
-import { formatDateToMMDDYYYY, formatDateTimeToMMDDYYYY, formatDateToMMMDDYYYY } from "@/lib/dateUtils";
-import { getContractSignoffBadgeClassName, getPaymentStatusBadgeClassName, getPaymentStatusLabel, isAwaitingContractSignoff, statusBadgeBaseClassName } from "@/lib/statusBadgeStyles";
+import { formatDateToMMDDYYYY, formatDateToMMMDDYYYY } from "@/lib/dateUtils";
+import { getContractSignoffBadgeClassName, getPaymentStatusBadgeClassName, isAwaitingContractSignoff, statusBadgeBaseClassName } from "@/lib/statusBadgeStyles";
 import { getInstallationDateError, getMinimumInstallationDate } from "@/lib/installationSchedule";
 import { calculateRequiredDownpayment, getFinalProjectCost } from "@/lib/orderPricing";
 import { getPhilippinePhoneError, isValidPhilippinePhone, normalizePhoneInput } from "@/lib/phoneValidation";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAdminTheme } from "@/contexts/AdminThemeContext";
 import { recordActivity } from "@/lib/activityLog";
-import ProfileAvatar from "../../components/ui/ProfileAvatar";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import useNotificationHighlight from "@/hooks/useNotificationHighlight";
 
@@ -190,6 +189,7 @@ const formatCancellationCooldownDate = (value) => {
     : new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric" }).format(date);
 };
 
+/* eslint-disable react-refresh/only-export-components -- Pure helpers are exported for inspection validation tests. */
 export const formatInspectionDateForDisplay = (value) => {
   const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
   return match ? `${match[2]}-${match[3]}-${match[1]}` : "";
@@ -283,13 +283,6 @@ function MonthDayYearDateInput({ label, value, timeValue, min, onChange, onTimeC
   });
 
   useEffect(() => {
-    if (disabled) {
-      setIsCalendarOpen(false);
-      setIsTimeModalOpen(false);
-    }
-  }, [disabled]);
-
-  useEffect(() => {
     if (!isCalendarOpen) return undefined;
     const closeOnEscape = (event) => {
       if (event.key !== "Escape") return;
@@ -301,8 +294,10 @@ function MonthDayYearDateInput({ label, value, timeValue, min, onChange, onTimeC
   }, [isCalendarOpen, isTimeModalOpen]);
 
   const openCalendar = () => {
+    if (disabled) return;
     const initialDate = value ? new Date(`${value}T12:00:00`) : min ? new Date(`${min}T12:00:00`) : new Date();
     setVisibleMonth(new Date(initialDate.getFullYear(), initialDate.getMonth(), 1));
+    setIsTimeModalOpen(false);
     setIsCalendarOpen(true);
   };
   const monthLabel = visibleMonth.toLocaleDateString("en-US", { month: "long", year: "numeric" });
@@ -364,6 +359,7 @@ function MonthDayYearDateInput({ label, value, timeValue, min, onChange, onTimeC
     : getScheduleOverlap(scheduledRecords, value, draftTimeValue, excludeRecordId, durationMinutes);
   const availableTimes = timeConflict ? getAvailableScheduleTimes(scheduledRecords, value, excludeRecordId, durationMinutes, businessHours, isMultiDayInstallation) : [];
   const openTimeModal = (resetToOpening = false) => {
+    if (disabled) return;
     const match = resetToOpening ? null : String(timeValue || "").match(/^(\d{2}):(\d{2})$/);
     if (match) {
       const hour = Number(match[1]);
@@ -405,7 +401,7 @@ function MonthDayYearDateInput({ label, value, timeValue, min, onChange, onTimeC
       >
         <CalendarDays size={17} aria-hidden="true" />
       </button>
-      {isCalendarOpen && createPortal(
+      {isCalendarOpen && !disabled && createPortal(
         <div className="mobile-fullscreen-overlay fixed inset-0 z-[180] flex h-[100dvh] min-h-0 items-stretch justify-center overflow-hidden overscroll-contain bg-slate-950/60 p-0 backdrop-blur-sm sm:h-auto sm:min-h-screen sm:items-center sm:overflow-y-auto sm:p-5" onMouseDown={(event) => { if (event.target === event.currentTarget) setIsCalendarOpen(false); }}>
           <section role="dialog" aria-modal="true" aria-label={`Choose ${label.toLowerCase()}`} className={`mobile-fullscreen-dialog flex h-full max-h-full min-h-0 w-full max-w-none flex-col overflow-hidden rounded-none border shadow-2xl sm:h-auto sm:max-h-[88dvh] sm:max-w-[min(96vw,1440px)] sm:rounded-3xl ${calendarSurface}`}>
             <header className={`flex shrink-0 flex-col gap-2 border-b px-4 py-3 sm:px-6 sm:py-3.5 ${darkMode ? "border-slate-700 bg-[#0b2338]" : "border-slate-200 bg-slate-50"}`}>
@@ -514,7 +510,7 @@ function MonthDayYearDateInput({ label, value, timeValue, min, onChange, onTimeC
         </div>,
         document.body
       )}
-      {isTimeModalOpen && createPortal(
+      {isTimeModalOpen && !disabled && createPortal(
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/65 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget) setIsTimeModalOpen(false); }}>
           <section role="dialog" aria-modal="true" aria-labelledby="schedule-time-title" className={`w-full max-w-[420px] overflow-hidden rounded-2xl border shadow-2xl ${calendarSurface}`}>
             <header className={`flex items-center justify-between border-b px-5 py-4 ${darkMode ? "border-slate-700" : "border-slate-100"}`}>
@@ -929,7 +925,6 @@ export const resolveInspectionProductPrice = (product = null, fallbackItem = {})
     sale_mode: saleMode,
     frame_type: selectedFrame?.name || "",
     custom_frame_size: hasSameSelectedProduct ? Boolean(fallbackItem.custom_frame_size) : false,
-    frame_price: hasSameSelectedProduct ? Number(fallbackItem.frame_price) || 0 : 0,
     blade_count: hasSameSelectedProduct
       ? Number(fallbackItem.blade_count) || Number(selectedFrame?.blade_count) || Number(product?.minimum_blades) || 1
       : saleMode === "frame"
@@ -1082,6 +1077,7 @@ export const isSiteInspectionVisible = (order) => {
 
   return true;
 };
+/* eslint-enable react-refresh/only-export-components */
 
 function SiteInspection() {
   const isMobile = useIsMobile();
@@ -1150,7 +1146,7 @@ function SiteInspection() {
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [products, setProducts] = useState([]);
-  const [productsLoading, setProductsLoading] = useState(false);
+  const [, setProductsLoading] = useState(false);
   const [customerSearch, setCustomerSearch] = useState("");
   const [customerSuggestions, setCustomerSuggestions] = useState([]);
   const [customerSearchLoading, setCustomerSearchLoading] = useState(false);
@@ -1160,7 +1156,9 @@ function SiteInspection() {
   const [showContractGenerationProgress, setShowContractGenerationProgress] = useState(false);
   const [contractData, setContractData] = useState(null);
   const [contractInspection, setContractInspection] = useState(null);
-  const [contractNeedsRegeneration, setContractNeedsRegeneration] = useState(false);
+  const openContractButtonHandlerRef = useRef(null);
+  const fetchSiteInspectionsRef = useRef(null);
+  const [, setContractNeedsRegeneration] = useState(false);
   const [sendingCustomerEmail, setSendingCustomerEmail] = useState(false);
   const contractModalLoadRequestRef = useRef(0);
   const [manualApprovalModal, setManualApprovalModal] = useState({
@@ -1259,10 +1257,14 @@ function SiteInspection() {
     ));
   };
   const getSelectedRushChargeCount = (items = []) => (items || []).filter(hasSelectedRushCharge).length;
-  const getRushSlotsForInspection = (inspection = {}) => Math.max(
-    getSelectedRushChargeCount(inspection.items || []),
-    inspection.is_rush_order === true ? 1 : 0,
+  const getRushSlotsForInspection = (inspection = {}) => (
+    getSelectedRushChargeCount(inspection.items || []) > 0 ? 1 : 0
   );
+  const disableUnavailableRushCharges = (charges = []) => (charges || []).map((charge) => (
+    /rush/i.test(String(charge?.name || charge?.label || ""))
+      ? { ...charge, is_selected: false }
+      : charge
+  ));
   const pageSize = 10;
   const formatCurrency = (value) => hidePaymentAmounts
     ? "••••••"
@@ -1316,7 +1318,6 @@ function SiteInspection() {
     icon: <Phone size={16} aria-hidden="true" />,
     className: statusBadgeClass,
   };
-  const inputGridClass = darkMode ? "bg-[#122d42]" : "bg-slate-50";
   const footerClass = darkMode ? "border-t border-slate-700 bg-[#0b2338]" : "border-t border-slate-200 bg-slate-50";
   const secondaryButtonClass = darkMode
     ? "rounded-xl border border-slate-600 bg-slate-800 px-5 py-3 text-sm font-bold text-slate-200 transition hover:bg-slate-700"
@@ -1361,7 +1362,7 @@ function SiteInspection() {
     setCurrentPage(1);
   }, [activeTab, searchQuery, statusFilter, customerTypeFilter, priorityFilter, cancelledInspections.length, inspections.length]);
 
-  const fetchSiteInspections = async (showLoading = true) => {
+  const fetchSiteInspections = useCallback(async (showLoading = true) => {
     const fetchState = inspectionFetchStateRef.current;
     if (fetchState.inFlight) {
       fetchState.refreshQueued = true;
@@ -1373,7 +1374,7 @@ function SiteInspection() {
       const fetchAllPages = async (status) => {
         const orders = [];
         let page = 1;
-        let totalPages = 1;
+        let totalPages;
         do {
           const response = await getAdminOrders({
             ...(status ? { status } : {}),
@@ -1402,10 +1403,11 @@ function SiteInspection() {
       fetchState.inFlight = false;
       if (fetchState.refreshQueued) {
         fetchState.refreshQueued = false;
-        window.setTimeout(() => fetchSiteInspections(false), 0);
+        window.setTimeout(() => fetchSiteInspectionsRef.current?.(false), 0);
       }
     }
-  };
+  }, []);
+  fetchSiteInspectionsRef.current = fetchSiteInspections;
 
 
   const resetNewInspectionForm = () => {
@@ -1441,17 +1443,23 @@ function SiteInspection() {
     if (pending === "edit-inspection") setEditInspection(null);
   };
 
+  const requestCloseNewInspectionRef = useRef(requestCloseNewInspection);
+  const requestCloseEditInspectionRef = useRef(requestCloseEditInspection);
+  requestCloseNewInspectionRef.current = requestCloseNewInspection;
+  requestCloseEditInspectionRef.current = requestCloseEditInspection;
+  const isEditInspectionOpen = Boolean(editInspection);
+
   useEffect(() => {
-    if (!showModal && !editInspection) return undefined;
+    if (!showModal && !isEditInspectionOpen) return undefined;
     const handleEscape = (event) => {
       if (event.key !== "Escape" || exitConfirmation) return;
       event.preventDefault();
-      if (showModal) requestCloseNewInspection();
-      else requestCloseEditInspection();
+      if (showModal) requestCloseNewInspectionRef.current();
+      else requestCloseEditInspectionRef.current();
     };
     window.addEventListener("keydown", handleEscape);
     return () => window.removeEventListener("keydown", handleEscape);
-  }, [showModal, editInspection, newInspection, customerSearch, selectedCustomer, exitConfirmation]);
+  }, [showModal, isEditInspectionOpen, exitConfirmation]);
 
   const formatCustomerAddress = (customer) => {
     if (!customer) return "";
@@ -1503,23 +1511,6 @@ function SiteInspection() {
         has_account_on_website: true,
       };
     });
-  };
-
-  const clearSelectedCustomer = () => {
-    setSelectedCustomer(null);
-    setCustomerSearch("");
-    setCustomerSuggestions([]);
-    setNewInspection((prev) => ({
-      ...prev,
-      customerId: null,
-      customerName: "",
-      customerEmail: "",
-      phone: "",
-      siteAddress: "",
-      order_type: "walk_in_customer",
-      customerType: "walk-in",
-      has_account_on_website: false,
-    }));
   };
 
   const filterInspections = (list) => {
@@ -1673,10 +1664,6 @@ function SiteInspection() {
       // Keep the customer's saved optional-charge selections when loading the order for admin editing.
       extra_charges: orderExtraCharges,
       size_limits: selectedProduct?.size_limits || item.size_limits || {},
-      finished_door_pricing: selectedProduct?.finished_door_pricing || item.finished_door_pricing || { enabled: false },
-      door_measurement: selectedProduct?.finished_door_pricing?.enabled
-        ? item.door_measurement || { mode: "standard", actual_measurement_cm: Number(selectedProduct.finished_door_pricing.standard_size_cm) || 190 }
-        : item.door_measurement || null,
       variant: selectedProduct?.variant || item.variant || "",
     };
   };
@@ -1933,9 +1920,8 @@ function SiteInspection() {
     const isEditing = onFieldChange === handleEditItemFieldChange;
     const inspection = isEditing ? editInspection : newInspection;
     const rushCount = getRushOrderCountForDate(inspection?.inspection_date, isEditing ? inspection?.id : "");
-    const currentItemIndex = (inspection?.items || []).indexOf(item);
-    const selectedRushBefore = getSelectedRushChargeCount((inspection?.items || []).slice(0, Math.max(currentItemIndex, 0)));
     const selectedRushCount = getSelectedRushChargeCount(inspection?.items || []);
+    const dateRushCount = rushCount + (getRushSlotsForInspection(inspection) > 0 ? 1 : 0);
 
     return (
       <div className={`mt-2 space-y-2 rounded-lg border p-2.5 ${darkMode ? "border-slate-700 bg-slate-900/70" : "border-slate-200 bg-slate-50"}`}>
@@ -1944,16 +1930,20 @@ function SiteInspection() {
           if (charge?.is_optional !== true || charge?.is_active === false) return null;
           const selected = charge.is_selected === true;
           const isRushCharge = /rush/i.test(String(charge.name || charge.label || ""));
-          const rushSlotNumber = rushCount + selectedRushBefore + 1;
-          const projectedRushCount = rushCount + selectedRushCount + (selected ? 0 : 1);
-          const exceedsRushLimit = selected ? rushSlotNumber > 2 : projectedRushCount > 2;
+          const projectedRushCount = rushCount + 1;
+          const exceedsRushLimit = projectedRushCount > 2;
+          const rushLimitReached = isRushCharge && !selected && (selectedRushCount >= 2 || dateRushCount >= 2);
           const handleChargeSelectionChange = (checked) => {
             if (isRushCharge && checked && !selected) {
               if (!inspection?.inspection_date) {
                 toast.error("Set an inspection date before selecting the Rush charge.");
                 return;
               }
-              if (rushCount + selectedRushCount >= 2) {
+              if (selectedRushCount >= 2) {
+                toast.error("Maximum 2 Rush charges per order. Remove a Rush charge before adding another.");
+                return;
+              }
+              if (dateRushCount >= 2) {
                 toast.error("Maximum 2 Rush Orders per inspection date. Remove a Rush charge or choose another date.");
                 return;
               }
@@ -1982,8 +1972,9 @@ function SiteInspection() {
                     role="switch"
                     aria-checked={selected}
                     aria-label={`Rush extra charge for ${item.name || "product"}`}
+                    disabled={rushLimitReached}
                     onClick={() => handleChargeSelectionChange(!selected)}
-                    className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 ${selected ? "bg-blue-600" : darkMode ? "bg-slate-600" : "bg-slate-300"}`}
+                    className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 disabled:cursor-not-allowed disabled:opacity-50 ${selected ? "bg-blue-600" : darkMode ? "bg-slate-600" : "bg-slate-300"}`}
                   >
                     <span className={`inline-block size-4 rounded-full bg-white shadow-sm transition-transform ${selected ? "translate-x-[18px]" : "translate-x-0.5"}`} />
                   </button>
@@ -2024,16 +2015,21 @@ function SiteInspection() {
               {isRushCharge ? (
                 <div className="grid grid-cols-1 items-center gap-x-2 gap-y-2 sm:grid-cols-[max-content_minmax(0,1fr)]">
                   {chargeControl}
+                  {rushLimitReached && (
+                    <p role="alert" className={`text-[10px] font-semibold sm:col-span-2 ${darkMode ? "text-red-300" : "text-red-600"}`}>
+                      {dateRushCount >= 2
+                        ? "Maximum 2 Rush Orders per inspection date. This option is disabled."
+                        : "Maximum 2 Rush charges per order. This option is disabled."}
+                    </p>
+                  )}
                   <div className={`flex flex-wrap items-center gap-x-3 gap-y-1 border-l-2 pl-2.5 ${darkMode ? "border-amber-500/50" : "border-amber-300"}`}>
-                    <p className={`text-[10px] leading-4 ${darkMode ? "text-slate-300" : "text-slate-600"}`}>Admin-only priority · Maximum 2 Rush Orders per inspection date</p>
+                    <p className={`text-[10px] leading-4 ${darkMode ? "text-slate-300" : "text-slate-600"}`}>Admin-only priority · Maximum 2 Rush charges per order</p>
                     {!inspection?.inspection_date
                       ? <p className={`text-[10px] leading-4 ${darkMode ? "text-slate-300" : "text-slate-600"}`}>Select an inspection date to check availability.</p>
                       : <p role={exceedsRushLimit ? "alert" : undefined} className={`text-[10px] font-semibold leading-4 ${exceedsRushLimit ? "text-red-600" : darkMode ? "text-amber-200" : "text-amber-800"}`}>
                           {exceedsRushLimit
                             ? "Maximum 2 Rush Orders per inspection date. This Rush charge cannot be added."
-                            : selected
-                              ? `${rushSlotNumber} of 2 Rush Order slots will be used for this date.`
-                              : `${rushCount + selectedRushCount} of 2 Rush Order slots are used for this date.`}
+                            : `${dateRushCount} of 2 Rush Order slots are used for this date.`}
                         </p>}
                   </div>
                 </div>
@@ -2211,7 +2207,6 @@ function SiteInspection() {
       bladeCount,
       bladeRate,
       framePrice,
-      quantity,
       extraCharges,
     } = details;
     const inputClasses = darkMode
@@ -2221,6 +2216,11 @@ function SiteInspection() {
     const mutedClass = darkMode ? "text-slate-400" : "text-slate-500";
     const rowTotal = calculateRowSubtotal(item);
     const inspectionState = mode.startsWith("edit") ? editInspection : newInspection;
+    const otherRushCount = getRushOrderCountForDate(
+      inspectionState?.inspection_date,
+      mode.startsWith("edit") ? inspectionState?.id : "",
+    );
+    const dateRushCount = otherRushCount + (getRushSlotsForInspection(inspectionState) > 0 ? 1 : 0);
     const hasPerProductWarranty = inspectionState.items.length > 1 && inspectionState.warranty_assignment_mode === "per_product";
     const productSelectId = `${mode}-blade-product-${index}`;
     const glassSelectId = `${mode}-blade-glass-${index}`;
@@ -2233,6 +2233,16 @@ function SiteInspection() {
     const deleteButtonClasses = `inline-flex size-9 shrink-0 items-center justify-center rounded-lg border transition ${darkMode ? "border-[#5c2a24] bg-[#3a1c18] text-[#ff8080] hover:border-[#ff8080] hover:bg-[#4a211c]" : "border-[#f3c2bc] bg-[#fdecea] text-[#d64545] hover:border-[#d64545] hover:bg-[#fbded9]"}`;
 
     const updateExtraCharge = (chargeIndex, patch) => {
+      const charge = extraCharges[chargeIndex];
+      if (
+        /rush/i.test(String(charge?.name || charge?.label || ""))
+        && patch.is_selected === true
+        && charge?.is_selected === false
+        && dateRushCount >= 2
+      ) {
+        toast.error("Maximum 2 Rush Orders per inspection date. Remove a Rush charge or choose another date.");
+        return;
+      }
       const nextCharges = extraCharges.map((charge, currentIndex) => (
         currentIndex === chargeIndex ? { ...charge, ...patch } : charge
       ));
@@ -2360,14 +2370,17 @@ function SiteInspection() {
             <div className="space-y-0 px-3">
               {extraCharges.map((charge, chargeIndex) => {
                 const chargeTotal = getBladeExtraChargeTotal(charge, details);
+                const isRushCharge = /rush/i.test(String(charge.name || charge.label || ""));
+                const rushToggleDisabled = isRushCharge && charge.is_selected === false && dateRushCount >= 2;
                 return (
                   <div key={`${charge.name || charge.label}-${chargeIndex}`} className={`grid grid-cols-1 items-center gap-4 border-b py-3 last:border-b-0 min-[620px]:grid-cols-[minmax(0,1fr)_90px_minmax(100px,120px)_100px] ${darkMode ? "border-[#263040]" : "border-[#dde3ec]"}`}>
                     <div className={`flex min-w-0 items-center gap-2.5 text-sm ${darkMode ? "text-slate-200" : "text-slate-800"}`}>
-                      <button type="button" role="switch" aria-checked={charge.is_selected !== false} aria-label={charge.label || charge.name} onClick={() => updateExtraCharge(chargeIndex, { is_selected: charge.is_selected === false })} className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 ${charge.is_selected !== false ? (darkMode ? "bg-[#6ea8fe] focus-visible:ring-[#6ea8fe]/30" : "bg-[#2563eb] focus-visible:ring-[#2563eb]/25") : (darkMode ? "bg-[#344156] focus-visible:ring-[#6ea8fe]/30" : "bg-[#c6ced9] focus-visible:ring-[#2563eb]/25")}`}>
+                      <button type="button" role="switch" aria-checked={charge.is_selected !== false} aria-label={charge.label || charge.name} disabled={rushToggleDisabled} onClick={() => updateExtraCharge(chargeIndex, { is_selected: charge.is_selected === false })} className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50 ${charge.is_selected !== false ? (darkMode ? "bg-[#6ea8fe] focus-visible:ring-[#6ea8fe]/30" : "bg-[#2563eb] focus-visible:ring-[#2563eb]/25") : (darkMode ? "bg-[#344156] focus-visible:ring-[#6ea8fe]/30" : "bg-[#c6ced9] focus-visible:ring-[#2563eb]/25")}`}>
                         <span className={`inline-block size-4 rounded-full bg-white shadow-sm transition-transform ${charge.is_selected !== false ? "translate-x-[18px]" : "translate-x-0.5"}`} />
                       </button>
                       <span className="min-w-0 truncate">{charge.label || charge.name}</span>
                       {charge.is_optional === true && <span className={`rounded-full px-2 py-0.5 text-[10px] ${darkMode ? "bg-slate-700 text-slate-300" : "bg-slate-100 text-slate-500"}`}>optional</span>}
+                      {rushToggleDisabled && <span className={`text-[10px] font-semibold ${darkMode ? "text-amber-300" : "text-amber-700"}`}>Daily Rush limit reached</span>}
                     </div>
                     <span className={`text-xs min-[620px]:text-right ${mutedClass}`}>
                       {charge.type === "percentage" ? "% rate" : charge.type === "per_blade" ? "per blade" : "PHP fixed"}
@@ -2605,21 +2618,21 @@ function SiteInspection() {
     return basePayload;
   };
 
-  const fetchProducts = async () => {
+  const fetchProducts = useCallback(async () => {
     setProductsLoading(true);
     try {
-      const productResp = await getProducts();
-      setProducts(productResp.products || []);
+      const productResp = await getProducts({ adminOnly: true });
+      setProducts((productResp.products || []).filter((product) => product.is_active !== false));
     } catch (error) {
       console.error("Failed to load admin products:", error);
       setProducts([]);
     } finally {
       setProductsLoading(false);
     }
-  };
+  }, []);
 
   const handleInspectionFieldChange = (field, value) => {
-    if (field === "is_rush_order" && value === true) {
+    if (field === "is_rush_order" && value === true && getRushSlotsForInspection(newInspection) === 0) {
       const rushCount = getRushOrderCountForDate(newInspection.inspection_date);
       if (rushCount >= 2) {
         toast.error(`This date already has ${rushCount} Rush Orders. The daily maximum is 2; choose another date.`);
@@ -2676,29 +2689,6 @@ function SiteInspection() {
     }));
   };
 
-  const handleToggleEstimationMode = (id, mode) => {
-    setNewInspection((prev) => ({
-      ...prev,
-      items: prev.items.map((item) => {
-        if (item.id !== id) return item;
-        if (mode === "manual") {
-          // switch to manual mode with empty field
-          return { ...item, estimation_mode: "manual", manual_estimated_total: undefined };
-        }
-        // auto
-        return { ...item, estimation_mode: "auto", manual_estimated_total: undefined };
-      }),
-    }));
-  };
-
-  const handleManualTotalChange = (id, value) => {
-    // Store raw string value, don't convert to number yet
-    setNewInspection((prev) => ({
-      ...prev,
-      items: prev.items.map((item) => (item.id === id ? { ...item, manual_estimated_total: value } : item)),
-    }));
-  };
-
   const handleItemProductChange = (id, productId) => {
     const normalizedProductId = normalizeProductId(productId);
     const selectedProduct = products.find((product) => String(product._id || product.id) === normalizedProductId);
@@ -2707,6 +2697,10 @@ function SiteInspection() {
       items: prev.items.map((item) => {
         if (item.id !== id) return item;
         const productSnapshot = resolveInspectionProductPrice(selectedProduct, item);
+        const rushSlotsFull = getRushOrderCountForDate(prev.inspection_date) + getRushSlotsForInspection(prev) >= 2;
+        const rushCharges = rushSlotsFull && !hasSelectedRushCharge(item)
+          ? disableUnavailableRushCharges(productSnapshot.extra_charges || [])
+          : productSnapshot.extra_charges;
         const updated = {
           ...item,
           ...productSnapshot,
@@ -2719,7 +2713,7 @@ function SiteInspection() {
           price_per_blade: productSnapshot.price_per_blade,
           customization_fee: productSnapshot.customization_fee,
           estimated_price_override: productSnapshot.estimated_price_override,
-          extra_charges: productSnapshot.extra_charges,
+          extra_charges: rushCharges,
           size_limits: productSnapshot.size_limits,
           measurement_unit: productSnapshot.measurement_unit || item.measurement_unit || item.measurementUnit || "in",
           width: requiresInspectionItemDimensions(productSnapshot) ? productSnapshot.width || item.width || 1 : 0,
@@ -2764,23 +2758,6 @@ function SiteInspection() {
     }));
   };
 
-  const handleEditToggleEstimationMode = (id, mode) => {
-    setEditInspection((prev) => ({
-      ...prev,
-      items: (prev.items || []).map((item) => {
-        if (item.id !== id) return item;
-        return { ...item, estimation_mode: mode === "manual" ? "manual" : "auto", manual_estimated_total: mode === "manual" ? item.manual_estimated_total : "" };
-      }),
-    }));
-  };
-
-  const handleEditManualTotalChange = (id, value) => {
-    setEditInspection((prev) => ({
-      ...prev,
-      items: (prev.items || []).map((item) => (item.id === id ? { ...item, manual_estimated_total: value } : item)),
-    }));
-  };
-
   const handleEditItemProductChange = (id, productId) => {
     const normalizedProductId = normalizeProductId(productId);
     const selectedProduct = products.find((product) => String(product._id || product.id) === normalizedProductId);
@@ -2789,6 +2766,10 @@ function SiteInspection() {
       items: (prev.items || []).map((item) => {
         if (item.id !== id) return item;
         const productSnapshot = resolveInspectionProductPrice(selectedProduct, item);
+        const rushSlotsFull = getRushOrderCountForDate(prev.inspection_date, prev.id) + getRushSlotsForInspection(prev) >= 2;
+        const rushCharges = rushSlotsFull && !hasSelectedRushCharge(item)
+          ? disableUnavailableRushCharges(productSnapshot.extra_charges || [])
+          : productSnapshot.extra_charges;
         const updated = {
           ...item,
           ...productSnapshot,
@@ -2801,7 +2782,7 @@ function SiteInspection() {
           price_per_blade: productSnapshot.price_per_blade,
           customization_fee: productSnapshot.customization_fee,
           estimated_price_override: productSnapshot.estimated_price_override,
-          extra_charges: productSnapshot.extra_charges,
+          extra_charges: rushCharges,
           size_limits: productSnapshot.size_limits,
           measurement_unit: productSnapshot.measurement_unit || item.measurement_unit || item.measurementUnit || item.dimensions?.unit || "in",
           width: requiresInspectionItemDimensions(productSnapshot) ? productSnapshot.width || item.width || 1 : 0,
@@ -2924,7 +2905,7 @@ function SiteInspection() {
       window.removeEventListener("focus", refreshVisibleTable);
       document.removeEventListener("visibilitychange", refreshVisibleTable);
     };
-  }, []);
+  }, [fetchSiteInspections, fetchProducts]);
 
   useEffect(() => {
     if (!requestedRecordId) return undefined;
@@ -2960,7 +2941,7 @@ function SiteInspection() {
             },
             { replace: true, state: nextLocationState },
           );
-          openContractButtonHandler(latestOrder);
+          openContractButtonHandlerRef.current?.(latestOrder);
         } else {
           setViewInspection(latestOrder);
         }
@@ -2980,7 +2961,16 @@ function SiteInspection() {
     return () => {
       active = false;
     };
-  }, [requestedRecordId, location.key]);
+  }, [
+    requestedRecordId,
+    location.key,
+    location.state,
+    location.pathname,
+    location.search,
+    location.hash,
+    navigate,
+    searchParams,
+  ]);
 
   useEffect(() => {
     if (selectedCustomer) {
@@ -3023,6 +3013,10 @@ function SiteInspection() {
 
   const submitNewInspection = async () => {
     const requestedRushSlots = getRushSlotsForInspection(newInspection);
+    if (getSelectedRushChargeCount(newInspection.items || []) > 2) {
+      toast.error("An order can include a maximum of 2 Rush charges.");
+      return;
+    }
     if (requestedRushSlots > 0) {
       if (!newInspection.inspection_date) {
         toast.error("Set an inspection date before marking this as a Rush Order.");
@@ -3055,7 +3049,7 @@ function SiteInspection() {
     setSubmitting(true);
     try {
       const payload = await buildInspectionPayload(newInspection);
-      const createResp = await createInspection(payload);
+      await createInspection(payload);
       recordActivity(user, `Created site inspection for ${newInspection.customerName || "customer"}.`, "Site Inspection");
       toast.success("Site inspection created successfully.");
 
@@ -3577,7 +3571,7 @@ function SiteInspection() {
         inspection_time: inspection.inspection_time || "",
         inspection_duration_minutes: Number(inspection.inspection_duration_minutes) || 30,
         inspection_travel_minutes: Number(inspection.inspection_travel_minutes) || 0,
-        is_rush_order: inspection.is_rush_order === true || customerSelectedRush,
+        is_rush_order: customerSelectedRush,
         estimated_installation_date: normalizeDateInputValue(getEstimatedInstallationDate(inspection)),
         estimated_installation_time: inspection.estimated_installation_time || "",
         installation_duration_minutes: Number(inspection.installation_duration_minutes) || 60,
@@ -3631,11 +3625,6 @@ function SiteInspection() {
       setManualOverrideLocked(true);
       setEditInspection(nextEditInspection);
     }
-  };
-
-  const handleDelete = (orderId) => {
-    // kept for backward compatibility; open confirmation modal
-    requestCancel(orderId);
   };
 
   const handleManualApprovalFileUpload = async (files) => {
@@ -3800,6 +3789,7 @@ function SiteInspection() {
       toast.error("Showing the saved contract summary. Unable to refresh its latest details.");
     }
   };
+  openContractButtonHandlerRef.current = openContractButtonHandler;
 
   const handleCancel = async (orderId) => {
     if (!orderId) return;
@@ -3907,7 +3897,7 @@ function SiteInspection() {
   };
 
   const handleEditChange = (name, value) => {
-    if (name === "is_rush_order" && value === true) {
+    if (name === "is_rush_order" && value === true && getRushSlotsForInspection(editInspection || {}) === 0) {
       const rushCount = getRushOrderCountForDate(editInspection?.inspection_date, editInspection?.id);
       if (rushCount >= 2) {
         toast.error(`This date already has ${rushCount} other Rush Orders. The daily maximum is 2; choose another date.`);
@@ -3990,6 +3980,10 @@ function SiteInspection() {
     if (!editInspection || !editInspection.id) return;
 
     const requestedRushSlots = getRushSlotsForInspection(editInspection);
+    if (getSelectedRushChargeCount(editInspection.items || []) > 2) {
+      toast.error("An order can include a maximum of 2 Rush charges.");
+      return;
+    }
     if (requestedRushSlots > 0) {
       if (!editInspection.inspection_date) {
         toast.error("Set an inspection date before marking this as a Rush Order.");
@@ -4223,28 +4217,15 @@ function SiteInspection() {
   const visibleInspections = isMobile ? prioritizedList : paginatedList;
   const visibleRecordStart = prioritizedList.length === 0 ? 0 : (currentPageIndex - 1) * pageSize + 1;
   const visibleRecordEnd = Math.min(currentPageIndex * pageSize, prioritizedList.length);
+  const highlightedNotificationIndex = highlightedNotificationRecordId
+    ? prioritizedList.findIndex((inspection) => String(inspection._id || inspection.id) === highlightedNotificationRecordId)
+    : -1;
+  const highlightedNotificationPage = highlightedNotificationIndex >= 0
+    ? Math.floor(highlightedNotificationIndex / pageSize) + 1
+    : null;
   useEffect(() => {
-    if (!highlightedNotificationRecordId) return;
-    const targetIndex = prioritizedList.findIndex((inspection) => String(inspection._id || inspection.id) === highlightedNotificationRecordId);
-    if (targetIndex >= 0) setCurrentPage(Math.floor(targetIndex / pageSize) + 1);
-  }, [highlightedNotificationRecordId, inspections, prioritizedList.length]);
-
-  const getInspectionProductSummary = (inspection) => {
-    const items = Array.isArray(inspection?.items) ? inspection.items : [];
-
-    if (!items.length) return "Project Item";
-
-    const names = items
-      .map((item) => item?.name || item?.product_id?.name || item?.product_name || "Unnamed item")
-      .filter(Boolean);
-
-    if (items.length === 1) return names[0] || "Project Item";
-
-    const firstName = names[0] || "Project Item";
-    const extraCount = items.length - 1;
-
-    return `${firstName} + ${extraCount} more item${extraCount > 1 ? "s" : ""}`;
-  };
+    if (highlightedNotificationPage !== null) setCurrentPage(highlightedNotificationPage);
+  }, [highlightedNotificationPage]);
 
   const getInspectionStatusDisplay = (inspection) => {
     if (activeTab === "cancelled") return "Cancelled";
@@ -4968,7 +4949,7 @@ function SiteInspection() {
                         <input
                           type="text"
                           placeholder="e.g. Maria Santos"
-                          className={`${fieldClass} ${Boolean(selectedCustomer) ? "border-slate-300 bg-slate-200 text-slate-600 shadow-inner dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200" : ""}`}
+                          className={`${fieldClass} ${selectedCustomer ? "border-slate-300 bg-slate-200 text-slate-600 shadow-inner dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200" : ""}`}
                           value={customerSearch || newInspection.customerName}
                           onChange={(e) => handleClientNameInput(e.target.value)}
                         />
@@ -5734,7 +5715,6 @@ function SiteInspection() {
             const paymentRequiredAmount = paymentSummary.requiredAmount;
             const balance = paymentSummary.remainingAmount;
             const downPayment = paymentRequiredAmount;
-            const paymentReceivedQuestion = getPaymentReceivedQuestion(viewInspection.payment_terms);
             const paymentStatusLabel = getPaymentStatusLabel(viewInspection.payment_terms);
             const paymentTermsText = getPaymentTermsLabel(viewInspection.payment_terms);
             const isPerProductWarranty = inspectionItems.length > 1 && viewInspection.warranty_assignment_mode === "per_product";
@@ -5842,8 +5822,6 @@ function SiteInspection() {
                   : warrantyExpiryDate ? formatDateToMMDDYYYY(warrantyExpiryDate) || "Pending installation" : "Pending installation",
               };
             });
-            const measurementLabelClass = `text-[10px] font-bold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`;
-
             return (
               <div className="mobile-fullscreen-overlay fixed inset-0 z-50 flex items-start justify-center overflow-y-auto overscroll-contain bg-black/45 px-3 pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:items-center sm:p-5">
                 <div
@@ -6372,7 +6350,7 @@ function SiteInspection() {
                             type="button"
                             disabled={editInspection.isOnlineCustomer}
                             onClick={() => handleEditChange("has_account_on_website", true)}
-                            className={`flex items-center justify-center gap-2 px-4 py-3 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-100 ${Boolean(editInspection.has_account_on_website) ? (darkMode ? "bg-green-500/15 text-green-300" : "bg-green-50 text-green-700") : (darkMode ? "bg-[#122d42] text-slate-400" : "bg-white text-slate-500")}`}
+                            className={`flex items-center justify-center gap-2 px-4 py-3 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-100 ${editInspection.has_account_on_website ? (darkMode ? "bg-green-500/15 text-green-300" : "bg-green-50 text-green-700") : (darkMode ? "bg-[#122d42] text-slate-400" : "bg-white text-slate-500")}`}
                           >
                             <span className={`inline-flex h-5 w-5 items-center justify-center rounded-full border text-[10px] text-white ${editInspection.has_account_on_website ? "border-green-400 bg-green-600" : "border-slate-400 bg-slate-500"}`}>✓</span>
                             Yes
@@ -6381,7 +6359,7 @@ function SiteInspection() {
                             type="button"
                             disabled={editInspection.isOnlineCustomer}
                             onClick={() => handleEditChange("has_account_on_website", false)}
-                            className={`flex items-center justify-center gap-2 px-4 py-3 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-50 ${!Boolean(editInspection.has_account_on_website) ? (darkMode ? "bg-red-500/15 text-red-300" : "bg-red-50 text-red-700") : (darkMode ? "bg-[#122d42] text-slate-400" : "bg-white text-slate-500")}`}
+                            className={`flex items-center justify-center gap-2 px-4 py-3 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-50 ${!editInspection.has_account_on_website ? (darkMode ? "bg-red-500/15 text-red-300" : "bg-red-50 text-red-700") : (darkMode ? "bg-[#122d42] text-slate-400" : "bg-white text-slate-500")}`}
                           >
                             <span className={`inline-flex h-5 w-5 items-center justify-center rounded-full border text-[10px] text-white ${!editInspection.has_account_on_website ? "border-red-500 bg-red-600" : "border-slate-500 bg-slate-600"}`}>×</span>
                             No
@@ -7054,7 +7032,7 @@ function SiteInspection() {
           onDownload={handleDownloadContract}
           onPrint={handlePrintContract}
           onRegenerate={handleRegenerateContract}
-          onSendToCustomer={contractInspection?.order_type === "walk_in_customer" ? undefined : handleSendToCustomer}
+          onSendToCustomer={handleSendToCustomer}
           isSendingToCustomer={sendingCustomerEmail}
           hidePaymentAmounts={hidePaymentAmounts}
         />

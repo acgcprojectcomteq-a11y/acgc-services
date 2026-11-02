@@ -222,7 +222,9 @@ const mapProgressFromStatus = (status, progress) => {
 
 const formatClientType = (order) => {
   const rawType = (order.acceptance_method || order.order_type || "online_order").toString();
-  if (["online", "online_order", "website", "website_order"].includes(rawType.trim().toLowerCase())) return "Website";
+  const normalizedType = rawType.trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (["online", "online_order", "website", "website_order"].includes(normalizedType)) return "Website";
+  if (["walk_in", "walk_in_customer", "walk_in_signed_contract"].includes(normalizedType)) return "Walk-In";
   return rawType
     .replace(/_/g, " ")
     .replace(/\b\w/g, (c) => c.toUpperCase());
