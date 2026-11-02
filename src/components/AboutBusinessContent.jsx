@@ -1,6 +1,5 @@
 import {
   ArrowUpRight,
-  CalendarClock,
   Check,
   ClipboardList,
   Clock3,
@@ -9,17 +8,9 @@ import {
   MapPin,
   Phone,
   Ruler,
-  Users,
   Wrench,
 } from "lucide-react";
 import { useAdminContactPhone } from "@/hooks/useAdminContactPhone";
-
-const stats = [
-  { value: "14+", label: "Years of Experience", icon: Clock3 },
-  { value: "500+", label: "Happy Clients", icon: Users },
-  { value: "1,200+", label: "Projects Completed", icon: Check },
-  { value: "7 Days", label: "Avg. Turnaround", icon: CalendarClock },
-];
 
 const services = [
   "Custom Glass Windows & Doors",
@@ -68,21 +59,6 @@ function AboutBusinessContent({ darkMode = false }) {
             </article>
           ))}
         </div>
-      </section>
-
-      <section aria-label="ACGC at a glance" className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-        {stats.map(({ value, label, icon: Icon }) => (
-          <article key={label} className={`group relative overflow-hidden rounded-2xl border p-4 shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-lg sm:rounded-3xl sm:p-5 ${card}`}>
-            <span className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-red-800 via-red-600 to-orange-400 ${darkMode ? "opacity-80" : ""}`} />
-            <div className="flex items-center justify-between gap-2">
-              <p className={`text-2xl font-black tracking-tight sm:text-3xl ${accentText}`}>{value}</p>
-              <span className={`flex size-9 shrink-0 items-center justify-center rounded-xl ${accentText} ${darkMode ? "bg-red-950/70" : "bg-red-50"}`}>
-                <Icon size={17} aria-hidden="true" />
-              </span>
-            </div>
-            <p className={`mt-2 text-[11px] font-semibold leading-4 sm:text-xs ${muted}`}>{label}</p>
-          </article>
-        ))}
       </section>
 
       <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr] lg:gap-5">
