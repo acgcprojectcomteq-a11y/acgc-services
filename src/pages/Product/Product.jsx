@@ -1,5 +1,5 @@
 import CustomerDropdown from "@/components/CustomerDropdown";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   Package,
@@ -77,25 +77,23 @@ function CatalogPicker({ label, value, options, catalogItems = [], onChange, onA
     if (!trigger) return;
 
     const rect = trigger.getBoundingClientRect();
-    const spaceBelow = window.innerHeight - rect.bottom - 16;
-    const spaceAbove = rect.top - 16;
-    const openAbove = spaceBelow < 260 && spaceAbove > spaceBelow;
-    const availableSpace = openAbove ? spaceAbove : spaceBelow;
-    const maxHeight = Math.max(100, Math.min(320, availableSpace - 8));
-    const top = openAbove
-      ? Math.max(8, rect.top - maxHeight - 8)
-      : Math.min(rect.bottom + 8, window.innerHeight - maxHeight - 8);
+    const dialog = trigger.closest(".mobile-fullscreen-dialog");
+    const footer = dialog?.querySelector("footer");
+    const footerTop = footer?.getBoundingClientRect().top ?? window.innerHeight;
+    const spaceBelow = Math.max(0, Math.min(window.innerHeight - 8, footerTop - 8) - rect.bottom - 8);
+    const naturalHeight = Math.min(320, menuRef.current?.scrollHeight || options.length * 60 + 68);
+    const maxHeight = Math.max(80, Math.min(naturalHeight, spaceBelow));
 
     setMenuPosition({
       position: "fixed",
-      top,
+      top: rect.bottom + 8,
       left: Math.max(8, Math.min(rect.left, window.innerWidth - rect.width - 8)),
       width: rect.width,
       maxHeight,
     });
   };
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!isOpen) return undefined;
 
     updateMenuPosition();
@@ -121,7 +119,7 @@ function CatalogPicker({ label, value, options, catalogItems = [], onChange, onA
       document.removeEventListener("pointerdown", closeOnOutsideClick);
       document.removeEventListener("keydown", closeOnEscape);
     };
-  }, [isOpen]);
+  }, [isOpen, isAdding, options.length, editingOption, confirmingDelete, error]);
 
   const saveOption = async (event) => {
     event.preventDefault();
@@ -185,7 +183,19 @@ function CatalogPicker({ label, value, options, catalogItems = [], onChange, onA
         aria-expanded={isOpen}
         disabled={disabled}
         onClick={() => {
-          if (!isOpen) updateMenuPosition();
+          if (!isOpen) {
+            const trigger = triggerRef.current;
+            const dialog = trigger?.closest(".mobile-fullscreen-dialog");
+            const footer = dialog?.querySelector("footer");
+            const scrollArea = dialog?.querySelector("[data-catalog-picker-scroll-area]");
+            if (trigger && scrollArea) {
+              const bottomLimit = Math.min(window.innerHeight - 8, (footer?.getBoundingClientRect().top ?? window.innerHeight) - 8);
+              const desiredHeight = Math.min(320, menuRef.current?.scrollHeight || options.length * 60 + 68);
+              const overflow = trigger.getBoundingClientRect().bottom + 8 + desiredHeight - bottomLimit;
+              if (overflow > 0) scrollArea.scrollTop += overflow;
+            }
+            setMenuPosition(null);
+          }
           setIsOpen((open) => !open);
         }}
         className={`flex min-h-12 w-full items-center justify-between gap-3 rounded-xl border px-4 py-3 text-left text-sm outline-none transition focus:ring-2 disabled:cursor-not-allowed disabled:opacity-50 ${darkMode ? "border-slate-700 bg-slate-800 text-slate-100 hover:border-slate-500 focus:border-red-400 focus:ring-red-400/20" : "border-rose-200 bg-[#fffafa] text-slate-900 hover:border-rose-300 focus:border-red-700 focus:ring-red-100"}`}
@@ -195,8 +205,8 @@ function CatalogPicker({ label, value, options, catalogItems = [], onChange, onA
       </button>
 
       {isOpen && !disabled && menuPosition && createPortal(
-        <div ref={menuRef} style={menuPosition} className={`z-[100] overflow-y-auto rounded-xl border shadow-xl ${darkMode ? "border-slate-700 bg-slate-900 text-slate-100" : "border-red-700 bg-white text-slate-900"}`}>
-          <div className="max-h-56 overflow-y-auto py-1" role="listbox" aria-label={label}>
+        <div ref={menuRef} style={{ ...menuPosition, display: "flex", flexDirection: "column" }} className={`z-[100] overflow-hidden rounded-xl border shadow-xl ${darkMode ? "border-slate-700 bg-slate-900 text-slate-100" : "border-red-700 bg-white text-slate-900"}`}>
+          <div className="min-h-0 max-h-56 flex-1 overflow-y-auto py-1" role="listbox" aria-label={label}>
             {options.map((option) => {
               const entry = catalogItems.find((item) => item.name === option);
               const isEditing = entry && editingOption === entry.id;
@@ -244,7 +254,7 @@ function CatalogPicker({ label, value, options, catalogItems = [], onChange, onA
             {options.length === 0 && <p className={`px-4 py-3 text-sm ${darkMode ? "text-slate-400" : "text-slate-500"}`}>No options yet.</p>}
           </div>
 
-          <div className={`border-t p-2 ${darkMode ? "border-slate-700" : "border-rose-100"}`}>
+          <div className={`shrink-0 border-t p-2 ${darkMode ? "border-slate-700" : "border-rose-100"}`}>
             {error && <p role="alert" className={`mb-2 px-2 text-xs ${darkMode ? "text-red-300" : "text-red-700"}`}>{error}</p>}
             {isAdding ? (
               <form onSubmit={saveOption} className="space-y-2">
@@ -702,7 +712,7 @@ function ProductFormModal({
           </button>
         </header>
 
-        <div className={`min-h-0 flex-1 space-y-7 overflow-y-auto px-5 py-5 !pb-[calc(6rem+env(safe-area-inset-bottom))] sm:px-7 sm:py-6 sm:!pb-6 ${darkMode ? "bg-slate-900" : "bg-white"}`}>
+        <div data-catalog-picker-scroll-area className={`min-h-0 flex-1 space-y-7 overflow-y-auto px-5 py-5 !pb-[calc(6rem+env(safe-area-inset-bottom))] sm:px-7 sm:py-6 sm:!pb-6 ${darkMode ? "bg-slate-900" : "bg-white"}`}>
           {modalError && (
             <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">
               {modalError}
