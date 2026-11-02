@@ -99,6 +99,7 @@ export function RealtimeProvider({ children }) {
     });
     socket.on("realtime:ready", handleReady);
     socket.on("realtime:changed", handleChange);
+
     startFallback();
 
     const reconcileOnFocus = () => {

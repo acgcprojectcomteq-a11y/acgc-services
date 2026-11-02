@@ -123,22 +123,75 @@ export const getInstallationBilling = (orderId) =>
   apiFetch(`/orders/${encodeURIComponent(orderId)}/installation-billing`, { cache: "no-store" });
 export const updateInstallationStatus = (orderId, payload) =>
   apiFetch(`/orders/admin/${encodeURIComponent(orderId)}/installation-status`, { method: "PUT", body: JSON.stringify(payload) });
-export const createInstallationIssue = (orderId, payload) =>
-  apiFetch(`/orders/admin/${encodeURIComponent(orderId)}/installation-issues`, { method: "POST", body: JSON.stringify(payload) });
 export const updateInstallationIssue = (orderId, issueId, payload) =>
   apiFetch(`/orders/admin/${encodeURIComponent(orderId)}/installation-issues/${encodeURIComponent(issueId)}`, { method: "PUT", body: JSON.stringify(payload) });
-export const createExtraCharge = (orderId, payload) =>
-  apiFetch(`/orders/admin/${encodeURIComponent(orderId)}/extra-charges`, { method: "POST", body: JSON.stringify(payload) });
-export const submitExtraCharge = (orderId, chargeId) =>
-  apiFetch(`/orders/admin/${encodeURIComponent(orderId)}/extra-charges/${encodeURIComponent(chargeId)}/submit`, { method: "PUT", body: "{}" });
-export const reviewExtraCharge = (orderId, chargeId, payload) =>
-  apiFetch(`/orders/admin/${encodeURIComponent(orderId)}/extra-charges/${encodeURIComponent(chargeId)}/review`, { method: "PUT", body: JSON.stringify(payload) });
-export const issueExtraChargeReceipt = (orderId, chargeId) =>
-  apiFetch(`/orders/admin/${encodeURIComponent(orderId)}/extra-charges/${encodeURIComponent(chargeId)}/receipt`, { method: "POST", body: "{}" });
-export const recordExtraChargePayment = (orderId, chargeId, payload) =>
-  apiFetch(`/orders/admin/${encodeURIComponent(orderId)}/extra-charges/${encodeURIComponent(chargeId)}/payments`, { method: "POST", body: JSON.stringify(payload) });
-export const verifyExtraChargePayment = (orderId, chargeId, paymentId) =>
-  apiFetch(`/orders/admin/${encodeURIComponent(orderId)}/extra-charges/${encodeURIComponent(chargeId)}/payments/${encodeURIComponent(paymentId)}/verify`, { method: "PUT", body: "{}" });
+export const createExtraCharge = async (orderId, payload) => {
+  const result = await apiFetch(`/orders/admin/${encodeURIComponent(orderId)}/extra-charges`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  if (typeof window !== "undefined") {
+    const savedOrderId = String(result?.order?._id || orderId || "");
+    window.dispatchEvent(new CustomEvent("acgc:realtime", {
+      detail: {
+        area: "orders",
+        action: "post",
+        orderId: savedOrderId,
+        timestamp: new Date().toISOString(),
+      },
+    }));
+  }
+  return result;
+};
+
+export const getExtraChargeReceiptSendStatus = (orderId, receiptId) =>
+  apiFetch(`/orders/admin/${encodeURIComponent(orderId)}/extra-charge-receipts/${encodeURIComponent(receiptId)}/send-status`, { cache: "no-store" });
+
+export const createOrGetProjectPaymentReceipt = (orderId) =>
+  apiFetch(`/orders/admin/${encodeURIComponent(orderId)}/project-payment-receipts`, { method: "POST" });
+
+export const getProjectPaymentReceiptSendStatus = (orderId, receiptId) =>
+  apiFetch(`/orders/admin/${encodeURIComponent(orderId)}/project-payment-receipts/${encodeURIComponent(receiptId)}/send-status`, { cache: "no-store" });
+
+export const getCustomerProjectPaymentReceipt = (orderId, receiptId) =>
+  apiFetch(`/orders/${encodeURIComponent(orderId)}/project-payment-receipts/${encodeURIComponent(receiptId)}`, { cache: "no-store" });
+
+export const sendProjectPaymentReceiptToCustomer = async (orderId, receiptId, receiptPdf, expectedRecipientEmail = "") => {
+  const body = new FormData();
+  body.append("receipt_pdf", receiptPdf, `project-payment-receipt-${receiptId}.pdf`);
+  body.append("expected_recipient_email", expectedRecipientEmail);
+  const result = await apiFetch(`/orders/admin/${encodeURIComponent(orderId)}/project-payment-receipts/${encodeURIComponent(receiptId)}/send`, {
+    method: "POST",
+    body,
+    _retries: 1,
+  });
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("acgc:realtime", {
+      detail: { area: "orders", action: "post", orderId: String(result?.order?._id || orderId || ""), timestamp: new Date().toISOString() },
+    }));
+  }
+  return result;
+};
+
+export const sendExtraChargeReceiptToCustomer = async (orderId, receiptId, receiptPdf, expectedRecipientEmail = "") => {
+  const body = new FormData();
+  body.append("receipt_pdf", receiptPdf, `extra-charge-receipt-${receiptId}.pdf`);
+  body.append("expected_recipient_email", expectedRecipientEmail);
+  const result = await apiFetch(`/orders/admin/${encodeURIComponent(orderId)}/extra-charge-receipts/${encodeURIComponent(receiptId)}/send`, {
+    method: "POST",
+    body,
+    // The server may have submitted the email even if the HTTP response is lost.
+    // Never automatically retry this non-idempotent provider operation.
+    _retries: 1,
+  });
+  if (typeof window !== "undefined") {
+    const savedOrderId = String(result?.order?._id || orderId || "");
+    window.dispatchEvent(new CustomEvent("acgc:realtime", {
+      detail: { area: "orders", action: "post", orderId: savedOrderId, timestamp: new Date().toISOString() },
+    }));
+  }
+  return result;
+};
 
 export const respondToContract = (orderId, payload) =>
   apiFetch(`/orders/${orderId}/contract`, {

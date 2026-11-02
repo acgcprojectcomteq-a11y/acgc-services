@@ -300,11 +300,16 @@ const hasBrevoSmtpCredentials = () =>
     (process.env.BREVO_SMTP_KEY || process.env.BREVO_SMTP_PASSWORD)
   );
 
-export const sendMail = async (mailOptions) => {
+export const sendMail = async (mailOptions, { requireConfiguredProvider = false } = {}) => {
   const normalizedMailOptions = { ...mailOptions, from: resolveSenderAddress(mailOptions) };
   let lastProviderError = null;
+  const hasBrevoApiCredentials = Boolean(process.env.BREVO_API_KEY?.trim());
 
-  if (process.env.BREVO_API_KEY?.trim()) {
+  if (requireConfiguredProvider && !hasBrevoApiCredentials && !hasSmtpCredentials()) {
+    throw new Error("A real email provider is required to send this customer receipt. Configure Brevo or SMTP and retry.");
+  }
+
+  if (hasBrevoApiCredentials) {
     try {
       return await sendBrevoMail(normalizedMailOptions);
     } catch (error) {
@@ -342,7 +347,11 @@ export const sendMail = async (mailOptions) => {
     }
   }
 
-  if (!hasSmtpCredentials() && !process.env.BREVO_API_KEY?.trim() && process.env.NODE_ENV !== "production") {
+  if (requireConfiguredProvider && lastProviderError) {
+    throw lastProviderError;
+  }
+
+  if (!requireConfiguredProvider && !hasSmtpCredentials() && !hasBrevoApiCredentials && process.env.NODE_ENV !== "production") {
     try {
       console.warn("No production mail provider is configured; using a Nodemailer test account for development email.");
       const testAccount = await nodemailer.createTestAccount();
@@ -365,6 +374,10 @@ export const sendMail = async (mailOptions) => {
   if (lastProviderError) {
     console.error("All configured email providers failed:", lastProviderError);
     throw lastProviderError;
+  }
+
+  if (requireConfiguredProvider) {
+    throw new Error("The configured email provider is unavailable. Please retry after checking the provider configuration.");
   }
 
   return await sendSmtpMail(normalizedMailOptions);

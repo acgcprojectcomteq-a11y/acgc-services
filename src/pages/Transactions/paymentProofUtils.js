@@ -1,4 +1,4 @@
-import { getFinalProjectCost, getRequiredDownpayment } from "@/lib/orderPricing";
+import { getFinalProjectCost, getInstallationExtraChargeTotal, getRequiredDownpayment } from "@/lib/orderPricing";
 
 export const getSavedPaymentTermsLabel = (paymentTerms) => {
   const terms = String(paymentTerms || "").trim().toLowerCase();
@@ -163,13 +163,14 @@ export const getPaymentSummary = (order = {}) => {
     if (order.payment_proof_confirmed_at) {
       paidAmount = Number(order.payment_proof_amount) || 0;
     } else if (order.payment_status === "paid" && !order.payment_proof_submitted_at) {
-      paidAmount = totalAmount;
+      paidAmount = Math.max(totalAmount - getInstallationExtraChargeTotal(order), 0);
     } else if (order.downpayment_received) {
-      paidAmount = requiredAmount;
+      paidAmount = getRequiredDownpayment({ ...order, installation_extra_charge_total: 0 });
     } else {
       paidAmount = 0;
     }
   }
+  paidAmount += Math.max(0, Number(order.installation_extra_charge_paid_total) || 0);
   paidAmount = Math.min(Math.max(paidAmount, 0), totalAmount);
 
   let status = { key: "pending", label: "Pending" };

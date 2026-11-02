@@ -17,17 +17,26 @@ export const isProjectPriceLocked = (order = {}) => {
     || paymentStatus === "partial";
 };
 
+export const getInstallationExtraChargeTotal = (order = {}) => {
+  const recordedTotal = toNonNegativeAmount(order.installation_extra_charge_total);
+  const receiptTotal = Array.isArray(order.extra_charge_receipts)
+    ? order.extra_charge_receipts.reduce((sum, receipt) => sum + toNonNegativeAmount(receipt?.total), 0)
+    : 0;
+  return toNonNegativeAmount(Math.max(recordedTotal, Math.round(receiptTotal * 100) / 100));
+};
+
 export const getFinalProjectCost = (order = {}) => {
   const manualOverride = toNonNegativeAmount(order.manual_override);
-  if (manualOverride > 0) return manualOverride;
-
   const savedFinalCost = toNonNegativeAmount(order.final_project_cost);
-  if (savedFinalCost > 0) return savedFinalCost;
-
   const contractAmount = toNonNegativeAmount(order.contract_amount);
-  if (contractAmount > 0) return contractAmount;
-
-  return toNonNegativeAmount(order.total_amount ?? order.totalAmount ?? order.total);
+  const baseCost = manualOverride > 0
+    ? manualOverride
+    : savedFinalCost > 0
+      ? savedFinalCost
+      : contractAmount > 0
+        ? contractAmount
+        : toNonNegativeAmount(order.total_amount ?? order.totalAmount ?? order.total);
+  return toNonNegativeAmount(baseCost + getInstallationExtraChargeTotal(order));
 };
 
 export const calculateRequiredDownpayment = (projectCost, paymentTerms, configuredAmount) => {

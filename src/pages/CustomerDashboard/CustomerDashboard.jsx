@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { createPortal } from "react-dom";
 import toast from "react-hot-toast";
@@ -90,6 +90,9 @@ import ProductSpecifications, { getProductDimensionsLabel } from "@/components/P
 import { getProductEstimatorQuantityError, MAX_PRODUCT_ESTIMATOR_QUANTITY } from "@/lib/productEstimatorQuantity";
 import { formatOrderItemMeasurements } from "@/components/OrderProgressTimeline";
 import OrderTimelineModal from "@/components/OrderTimelineModal";
+import InstallationBillingPanel from "@/components/InstallationBillingPanel";
+import ExtraChargeReceiptModal from "@/components/ExtraChargeReceiptModal";
+import { addExtraChargeReceiptContext, addProjectPaymentReceiptContext } from "@/lib/extraChargeReceipt";
 import { calculateEstimate } from "@/lib/estimator";
 import { buildOrderTimelineStages, calculateStageProgressPercent } from "@/lib/orderTimeline";
 import { getProgressColor } from "@/lib/utils";
@@ -145,6 +148,33 @@ const PRODUCT_IMAGE_PLACEHOLDER =
 
 const CUSTOMER_READ_NOTIFICATIONS_KEY = "acgc-customer-read-notifications";
 const CUSTOMER_DARK_MODE_KEY = "acgc-customer-dark-mode";
+const isOrderCompletedAndReviewable = (order) => {
+  if (!order) return false;
+  const status = normalizeOrderStatusKey(order?.status);
+  if (["cancelled", "declined", "contract_declined", "rejected"].includes(status)) return false;
+
+  const isStageComplete = (stage) =>
+    stage?.completed === true || ["done", "completed"].includes(normalizeOrderStatusKey(stage?.status));
+  const orderStages = Array.isArray(order.progress_stages) ? order.progress_stages : [];
+  const orderStagesComplete = orderStages.length > 0 && orderStages.every(isStageComplete);
+  const orderFieldsComplete = status === "completed" && Number(order.progress) >= 100;
+  const batchItems = Array.isArray(order.items) ? order.items : [];
+  const batchItemsComplete = batchItems.length > 1 && batchItems.every((item) => {
+    const itemStages = Array.isArray(item?.progress_stages) ? item.progress_stages : [];
+    return itemStages.length > 0
+      ? itemStages.every(isStageComplete)
+      : Number(item?.progress) >= 100;
+  });
+
+  if (!orderFieldsComplete && !orderStagesComplete && !batchItemsComplete) return false;
+  if (orderStagesComplete || batchItemsComplete) return true;
+
+  const lastStage = orderStages[orderStages.length - 1];
+  const lastStageStatus = normalizeOrderStatusKey(lastStage?.status);
+  if (!lastStage) return true;
+  return Boolean(lastStage.completed || lastStageStatus === "done" || lastStageStatus === "completed");
+};
+
 const getOrderSubmissionMessage = (response, action) => {
   const baseMessage = `${action} successfully. Tracking ID: ${response.order.tracking}`;
   if (response.notification_email_status === "sent") return `${baseMessage} A confirmation email was sent to your account email.`;
@@ -705,6 +735,8 @@ function CustomerDashboard() {
   }, [showCustomerExitConfirm, reviewPhotoPreview, showCustomerReviewModal, showDeliveryConfirmModal, showOrderNowModal, showCartDecisionModal, showBatchOrderModal, cancelRequestModal.open, cancelRequestReason, paymentProofOpenOrderId, paymentProofForm, selectedProduct, productEstimatorForm, orderReviewForm, selectedReviewTopics, deliveryConfirmForm, deliveryConfirmNotes, orderNowQuantity, orderNowExtraCharges, estimateForm, batchOrderForm]);
   const [cancelRequestSubmitting, setCancelRequestSubmitting] = useState(false);
   const [expandedOrderId, setExpandedOrderId] = useState(null);
+  const [installationBillingByOrder, setInstallationBillingByOrder] = useState({});
+  const [selectedExtraChargeReceipt, setSelectedExtraChargeReceipt] = useState(null);
   const [highlightedOrderId, setHighlightedOrderId] = useState(null);
   const validOrderFilters = ["all", "order", "review", "completed", "reviewed", "repair", "cancel"];
   const [orderFilter, setOrderFilter] = useState(() => {
@@ -719,6 +751,44 @@ function CustomerDashboard() {
   const [contractHistoryTab, setContractHistoryTab] = useState(() => initialDashboardParams.get("contractFilter") === "rejected" ? "rejected" : "accepted");
   const [contractPage, setContractPage] = useState(() => Math.max(1, Number(initialDashboardParams.get("contractPage")) || 1));
   const [warrantyHistoryTab, setWarrantyHistoryTab] = useState(() => ["active", "expired"].includes(initialDashboardParams.get("warrantyTab")) ? initialDashboardParams.get("warrantyTab") : null);
+
+  const handleInstallationBillingLoaded = useCallback((orderId, billing) => {
+    if (!orderId) return;
+    setInstallationBillingByOrder((current) => ({ ...current, [String(orderId)]: billing }));
+  }, []);
+
+  const openExtraChargeReceipt = (receipt, billing, order) => {
+    if (!receipt) return;
+    if (receipt.receipt_type === "Project Payment Receipt") {
+      setSelectedExtraChargeReceipt(addProjectPaymentReceiptContext(receipt, { ...order, project_items: billing?.project_items }));
+      return;
+    }
+    const refId = (value) => String(value && typeof value === "object" ? value._id || value.id || "" : value || "");
+    const charge = (billing.charges || []).find((entry) => (
+      refId(entry._id) === refId(receipt.extra_charge) || refId(entry.receipt) === refId(receipt._id)
+    ));
+    const payments = charge?.payments || [];
+    const verifiedAmount = payments
+      .filter((payment) => payment.status === "verified")
+      .reduce((total, payment) => total + Number(payment.amount || 0), 0);
+    const total = Number(receipt.total || charge?.total || 0);
+    setSelectedExtraChargeReceipt({
+      ...addExtraChargeReceiptContext(receipt, { ...order, project_items: billing.project_items }, billing.charges || []),
+      payment_status: verifiedAmount >= total ? "Paid" : verifiedAmount > 0 ? "Partially Paid" : "Unpaid",
+      payments,
+    });
+  };
+
+  const openLatestExtraChargeReceipt = (billing, order) => {
+    const receipts = [...(Array.isArray(billing?.receipts) ? billing.receipts : []), ...(Array.isArray(billing?.project_receipts) ? billing.project_receipts : [])];
+    const latestReceipt = [...receipts].sort((left, right) => {
+      const leftDate = new Date(left.issued_at || left.createdAt || left.created_at || 0).getTime();
+      const rightDate = new Date(right.issued_at || right.createdAt || right.created_at || 0).getTime();
+      return rightDate - leftDate;
+    })[0];
+    if (!latestReceipt) return;
+    openExtraChargeReceipt(latestReceipt, billing, order);
+  };
 
   const commitCartItems = (updater) => {
     if (!cartLoaded) throw new Error("Your cart is still loading. Please try again.");
@@ -927,6 +997,32 @@ function CustomerDashboard() {
         : order.updatedAt || order.createdAt,
     }];
 
+    if (canAccessCustomerRatings && isOrderCompletedAndReviewable(order) && Array.isArray(order.items)) {
+      const reviewableItemIndexes = order.items.length > 1
+        ? order.items.map((_, index) => index)
+        : order.items.length === 1 ? [0] : [];
+
+      reviewableItemIndexes.forEach((itemIndex) => {
+        const item = order.items[itemIndex];
+        const hasSubmittedReview = order.items.length > 1
+          ? Boolean(item?.review?.submittedAt)
+          : Boolean(order.review?.submittedAt || item?.review?.submittedAt);
+        if (hasSubmittedReview) return;
+
+        const productName = item?.name || item?.product_name || `Product ${itemIndex + 1}`;
+        notifications.unshift({
+          ...order,
+          notificationType: "product_ready_for_review",
+          notificationId: `${orderId}-product-ready-for-review-${itemIndex}`,
+          notificationDate: order.updatedAt || order.completed_at || order.createdAt,
+          reviewItemIndex: order.items.length > 1 ? itemIndex : null,
+          reviewProductName: productName,
+          title: "Product Ready for Review",
+          message: `${productName} is complete. Share your feedback about this product.`,
+        });
+      });
+    }
+
     if (order.transaction_approved === true && order.transaction_approved_at) {
       notifications.unshift({
         ...order,
@@ -1081,6 +1177,8 @@ function CustomerDashboard() {
         message: notification.message,
         stageKey: notification.stageKey,
         stageName: notification.stageName,
+        receiptId: notification.receipt ? String(notification.receipt._id || notification.receipt) : "",
+        projectReceiptId: notification.project_receipt ? String(notification.project_receipt._id || notification.project_receipt) : "",
         itemIndex: notification.itemIndex,
         completedAt: notification.completedAt,
         installationProductName: notification.productName || (
@@ -1500,33 +1598,6 @@ function CustomerDashboard() {
     (selectedOrderStatus === "contract_sent" || selectedOrderStatus === "site_inspection" || selectedOrderContractStatus === "sent") &&
     !["accepted", "declined"].includes(selectedOrderContractStatus) &&
     !["contract_accepted", "contract_declined", "cancelled"].includes(selectedOrderStatus);
-
-  const isOrderCompletedAndReviewable = (order) => {
-    if (!order) return false;
-    const status = normalizeOrderStatusKey(order?.status);
-    if (["cancelled", "declined", "contract_declined", "rejected"].includes(status)) return false;
-
-    const isStageComplete = (stage) =>
-      stage?.completed === true || ["done", "completed"].includes(normalizeOrderStatusKey(stage?.status));
-    const orderStages = Array.isArray(order.progress_stages) ? order.progress_stages : [];
-    const orderStagesComplete = orderStages.length > 0 && orderStages.every(isStageComplete);
-    const orderFieldsComplete = status === "completed" && Number(order.progress) >= 100;
-    const batchItems = Array.isArray(order.items) ? order.items : [];
-    const batchItemsComplete = batchItems.length > 1 && batchItems.every((item) => {
-      const itemStages = Array.isArray(item?.progress_stages) ? item.progress_stages : [];
-      return itemStages.length > 0
-        ? itemStages.every(isStageComplete)
-        : Number(item?.progress) >= 100;
-    });
-
-    if (!orderFieldsComplete && !orderStagesComplete && !batchItemsComplete) return false;
-    if (orderStagesComplete || batchItemsComplete) return true;
-
-    const lastStage = orderStages[orderStages.length - 1];
-    const lastStageStatus = normalizeOrderStatusKey(lastStage?.status);
-    if (!lastStage) return true;
-    return Boolean(lastStage.completed || lastStageStatus === "done" || lastStageStatus === "completed");
-  };
 
   const isCustomerContractAccepted = (order) => {
     return hasCustomerAcceptedContract(order);
@@ -2001,9 +2072,13 @@ function CustomerDashboard() {
     if (!orderOwnerId) return;
     let active = true;
     let requestInFlight = false;
+    let refreshQueued = false;
 
     const fetchOrders = async (showLoading = true) => {
-      if (requestInFlight) return;
+      if (requestInFlight) {
+        refreshQueued = true;
+        return;
+      }
       requestInFlight = true;
       if (showLoading) setOrdersLoading(true);
 
@@ -2033,6 +2108,10 @@ function CustomerDashboard() {
       } finally {
         if (active && showLoading) setOrdersLoading(false);
         requestInFlight = false;
+        if (active && refreshQueued) {
+          refreshQueued = false;
+          void fetchOrders(false);
+        }
       }
     };
 
@@ -4918,6 +4997,25 @@ function CustomerDashboard() {
       return;
     }
 
+    if (notification?.notificationType === "product_ready_for_review") {
+      const reviewOrders = orders.filter((entry) =>
+        isOrderCompletedAndReviewable(entry) && !hasOrderReview(entry),
+      );
+      const reviewOrderIndex = reviewOrders.findIndex((entry) => getOrderIdentifier(entry) === orderIdentifier);
+      const reviewOrder = orders.find((entry) => getOrderIdentifier(entry) === orderIdentifier) || order;
+      setTrackingNumber("");
+      setOrderFilter("review");
+      setOrderPage(reviewOrderIndex >= 0 ? Math.floor(reviewOrderIndex / ORDER_PAGE_SIZE) + 1 : 1);
+      setExpandedOrderId(orderIdentifier);
+      setHighlightedOrderId(orderIdentifier);
+      setSelectedOrderForModal(null);
+      setTimelineNotificationTarget(null);
+      setActiveTab("orders");
+      setNotificationsOpen(false);
+      openCustomerReviewModal(reviewOrder, notification.reviewItemIndex);
+      return;
+    }
+
     const myOrders = orders.filter((entry) =>
       !["installation", "completed", "cancelled"].includes(normalizeOrderStatus(entry?.status)),
     );
@@ -5490,8 +5588,9 @@ function CustomerDashboard() {
                             const isRead = readNotificationIds.has(order.notificationId);
                             const status = normalizeOrderStatusKey(order?.status);
                             const contractStatus = normalizeOrderStatusKey(order?.contract_status);
+                            const isReviewReadyNotification = order.notificationType === "product_ready_for_review";
                             const isPaymentNotification = ["payment", "payment_confirmed", "payment_amount_updated", "payment_rejected", "admin_payment_recorded", "downpayment_exception_approved", "downpayment_exception_pending", "payment_discrepancy", "payment_discrepancy_resolved", "overdue_payment", "installation_payment_reminder"].includes(order.notificationType);
-                            const notificationStatusLabel = order.notificationType === "overdue_payment" ? "Payment Due" : order.notificationType === "project_delay" ? order.delayStatus : null;
+                            const notificationStatusLabel = isReviewReadyNotification ? "Ready to Review" : order.notificationType === "overdue_payment" ? "Payment Due" : order.notificationType === "project_delay" ? order.delayStatus : null;
                             const isPaymentConfirmationNotification = ["payment_confirmed", "payment_amount_updated", "admin_payment_recorded", "downpayment_exception_approved"].includes(order.notificationType);
                             const isDelayNotification = ["delay", "project_delay"].includes(order.notificationType);
                             const isInstallationNotification = ["installation_up_next", "installation_completed"].includes(order.notificationType);
@@ -5504,6 +5603,20 @@ function CustomerDashboard() {
                               (status === "site_inspection" && contractStatus === "sent") ||
                               contractStatus === "sent";
                             const notificationDetails = () => {
+                              if (isReviewReadyNotification) {
+                                return {
+                                  title: "Product Ready for Review",
+                                  message: `${order.reviewProductName || product.name || "Your product"} is complete. Share your feedback about this product.`,
+                                  color: "text-amber-600",
+                                };
+                              }
+                              if (["extra_charge_receipt_sent", "project_payment_receipt_sent"].includes(order.notificationType)) {
+                                return {
+                                  title: "Your Order Receipt",
+                                  message: "Your order receipt has been sent successfully. Your project balance is fully paid. You can now view and download your receipt.",
+                                  color: "text-emerald-600",
+                                };
+                              }
                               if (order.notificationType === "feedback_response") {
                                 return { title: order.title || "ACGC SERVICES", message: order.message, color: "text-emerald-600" };
                               }
@@ -5658,7 +5771,9 @@ function CustomerDashboard() {
                               ["contract_accepted"].includes(status) ||
                               ["accepted"].includes(contractStatus)
                             );
-                            const NotificationIcon = isPaymentConfirmationNotification
+                            const NotificationIcon = isReviewReadyNotification
+                              ? Star
+                              : isPaymentConfirmationNotification
                               ? CheckCircle
                               : isPaymentNotification
                                 ? CreditCard
@@ -5701,7 +5816,7 @@ function CustomerDashboard() {
                                       {renderAdminContactMessage(details.message)}
                                     </p>
                                     <p className={`mt-1 text-[10px] sm:text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>
-                                      {product.name || "Project"} · {order.tracking || "Order update"} · <span title={formatDateTimeToMMMDDYYYY(order.notificationDate) || undefined}>{formatTimeAgo(order.notificationDate)}</span>
+                                      {order.reviewProductName || product.name || "Project"} · {order.tracking || "Order update"} · <span title={formatDateTimeToMMMDDYYYY(order.notificationDate) || undefined}>{formatTimeAgo(order.notificationDate)}</span>
                                     </p>
                                   </div>
                                 </div>
@@ -8277,6 +8392,7 @@ function CustomerDashboard() {
                   const orderItems = Array.isArray(order.items) ? order.items : [];
                   const unresolvedPaymentRecords = new Set(getUnresolvedPaymentProofRecords(order));
                   const isOrderExpanded = expandedOrderId === orderId;
+                  const orderInstallationBilling = installationBillingByOrder[String(orderId)];
                   const orderTotal = getOrderTotalValue(order);
                   const paymentSummary = getPaymentSummary(order);
                   const downpaymentAmount = paymentSummary.paidAmount;
@@ -8332,6 +8448,9 @@ function CustomerDashboard() {
                     const panelMetricLabelClassName = `text-xs font-bold uppercase tracking-wide ${darkMode ? "text-slate-300" : "text-slate-600"}`;
                     const panelMetricNoteClassName = `text-xs font-medium leading-relaxed ${darkMode ? "text-slate-200" : "text-slate-700"}`;
                     const panelNeutralButtonClassName = `inline-flex h-[34px] shrink-0 items-center justify-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition ${darkMode ? "border-slate-600 bg-slate-800 text-slate-200 hover:bg-slate-700" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`;
+                    const receiptActionButtonClassName = `inline-flex h-[34px] shrink-0 items-center justify-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition ${darkMode ? "border-emerald-800 bg-emerald-950/50 text-emerald-200 hover:bg-emerald-900/60" : "border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"}`;
+                    const contractViewButtonClassName = `inline-flex h-[34px] shrink-0 items-center justify-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition ${darkMode ? "border-violet-800 bg-violet-950/50 text-violet-200 hover:bg-violet-900/60" : "border-violet-200 bg-violet-50 text-violet-800 hover:bg-violet-100"}`;
+                    const timelineViewButtonClassName = `inline-flex h-[34px] shrink-0 items-center justify-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition ${darkMode ? "border-sky-800 bg-sky-950/50 text-sky-200 hover:bg-sky-900/60" : "border-sky-200 bg-sky-50 text-sky-800 hover:bg-sky-100"}`;
                     const contractActionButtonClassName = `inline-flex h-[34px] shrink-0 items-center justify-center rounded-lg border px-4 text-xs font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2 ${darkMode ? "border-slate-600 bg-slate-800 text-slate-100 hover:bg-slate-700" : "border-[#d8d2c6] bg-white text-slate-900 hover:bg-[#f8f6f1]"}`;
                     const declineContractButtonClassName = `inline-flex h-[34px] shrink-0 items-center justify-center rounded-lg border border-slate-300 px-4 text-xs font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:ring-offset-2 ${darkMode ? "bg-slate-800 text-red-300 hover:bg-red-500/10" : "bg-white text-red-700 hover:bg-red-50"}`;
                     const acceptContractButtonClassName = "inline-flex h-[34px] shrink-0 items-center justify-center rounded-lg bg-emerald-700 px-4 text-xs font-semibold text-white transition-colors duration-150 hover:bg-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2";
@@ -8448,35 +8567,6 @@ function CustomerDashboard() {
 
                       {isOrderExpanded && (
                           <div className={`border-t p-3 sm:p-4 ${darkMode ? "border-slate-700 bg-slate-900/60" : "border-slate-200 bg-slate-50"}`}>
-                           <div className={`flex flex-col gap-3 pb-4 sm:flex-row sm:items-center sm:justify-between ${darkMode ? "border-b border-slate-700" : "border-b border-slate-200"}`}>
-                            <div>
-                              <h4 className={`text-base font-black ${darkMode ? "text-white" : "text-slate-900"}`}>
-                                {isBatchOrder ? "Batch order" : orderDisplayName}
-                              </h4>
-                              <p className={`mt-1 text-xs ${darkMode ? "text-slate-300" : "text-slate-600"}`}>
-                                {order.tracking || order._id || "—"} · {orderDate}
-                              </p>
-                            </div>
-                            <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end">
-                              {isOnlineContractAccepted && (
-                                <button
-                                  type="button"
-                                  onClick={() => openContractModal(order)}
-                                  className={panelNeutralButtonClassName}
-                                >
-                                  View Contract
-                                </button>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => setSelectedOrderForModal(order)}
-                                className={panelNeutralButtonClassName}
-                              >
-                                View Order Timeline
-                              </button>
-                            </div>
-                          </div>
-
                           {isContractWaitingForCustomer && (
                             <section className={`mt-4 rounded-xl border p-4 ${darkMode ? "border-amber-500/30 bg-amber-500/10" : "border-amber-200 bg-amber-50"}`}>
                               <h4 className={`text-base font-black ${darkMode ? "text-amber-100" : "text-amber-900"}`}>Contract Acceptance</h4>
@@ -8497,8 +8587,8 @@ function CustomerDashboard() {
 
                           <div className="mt-4 space-y-3">
                               {orderItems.map((item, itemIndex) => (
-                                <div key={`${orderId}-item-${itemIndex}`} className={`flex items-start justify-between gap-3 rounded-xl border p-3 sm:items-center sm:p-4 ${darkMode ? "border-slate-700 bg-slate-800" : "border-slate-200 bg-white"}`}>
-                                  <div className="flex min-w-0 items-center gap-3">
+                                <div key={`${orderId}-item-${itemIndex}`} className={`flex flex-col gap-3 rounded-xl border p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4 ${darkMode ? "border-slate-700 bg-slate-800" : "border-slate-200 bg-white"}`}>
+                                  <div className="flex min-w-0 flex-1 items-center gap-3">
                                     <div className={`h-12 w-12 shrink-0 overflow-hidden rounded-lg border ${darkMode ? "border-slate-600 bg-slate-700" : "border-slate-200 bg-slate-100"}`}>
                                       <img
                                         src={getOrderItemImage(item)}
@@ -8511,20 +8601,24 @@ function CustomerDashboard() {
                                       />
                                     </div>
                                     <div className="min-w-0">
-                                      <p className={`truncate text-sm font-semibold ${darkMode ? "text-white" : "text-slate-900"}`}>
+                                      <p className={`truncate text-base font-bold ${darkMode ? "text-white" : "text-slate-900"}`}>
                                         {item.name || item.product_name || `Product ${itemIndex + 1}`}
                                       </p>
-                                      <p className={`mt-1 text-sm ${darkMode ? "text-slate-400" : "text-slate-500"}`}>
-                                        {getConfirmationItemDimensionText(item)}
+                                      <p className={`mt-1 text-sm leading-6 ${darkMode ? "text-slate-300" : "text-slate-700"}`}>
+                                        {(() => {
+                                          const dimensions = getConfirmationItemDimensions(item);
+                                          if (!dimensions) return getConfirmationItemDimensionText(item).replace(/^Size:\s*/i, "Dimensions: ");
+                                          return <><span className="font-bold">Dimensions:</span> <span className="font-medium">Width:</span> <strong className={darkMode ? "text-slate-100" : "text-slate-900"}>{dimensions.width}</strong> × <span className="font-medium">Height:</span> <strong className={darkMode ? "text-slate-100" : "text-slate-900"}>{dimensions.height}</strong> <span className={`ml-1 inline-flex rounded-md px-1.5 py-0.5 text-xs font-semibold ${darkMode ? "bg-slate-700 text-slate-200" : "bg-slate-100 text-slate-700"}`}>{dimensions.area} sq ft</span></>;
+                                        })()}
                                       </p>
                                       {(() => {
                                         const priceBreakdown = getProductLineBreakdown(item, item);
                                         return (priceBreakdown.baseTotal > 0 || priceBreakdown.extraCharges.length > 0) ? (
-                                          <div className={`mt-1 space-y-0.5 text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>
-                                            <p>Base price: <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(priceBreakdown.baseTotal)}</span></p>
+                                          <div className={`mt-2 space-y-1 text-sm ${darkMode ? "text-slate-300" : "text-slate-700"}`}>
+                                            <p><span className="font-semibold">Base price:</span> <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(priceBreakdown.baseTotal)}</span></p>
                                             {priceBreakdown.extraCharges.map((charge, chargeIndex) => (
                                               <p key={`${orderId}-item-${itemIndex}-charge-${chargeIndex}`}>
-                                                + {charge.name}: <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(charge.total)}</span>
+                                                <span className="font-semibold">+ {charge.name}:</span> <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(charge.total)}</span>
                                               </p>
                                             ))}
                                           </div>
@@ -8532,10 +8626,36 @@ function CustomerDashboard() {
                                       })()}
                                     </div>
                                   </div>
-                                  <div className="shrink-0 text-right">
-                                    <p className={`text-sm font-bold ${darkMode ? "text-slate-100" : "text-slate-900"}`}>
-                                      <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(getItemPriceValue(item))}</span>
-                                    </p>
+                                  <div className="flex shrink-0 flex-col gap-2 sm:items-end">
+                                    {itemIndex === 0 && (
+                                      <div className="flex max-w-full flex-wrap items-center justify-start gap-2 sm:justify-end">
+                                        {(orderInstallationBilling?.receipts?.length > 0 || orderInstallationBilling?.project_receipts?.length > 0) && (
+                                          <button
+                                            type="button"
+                                            onClick={() => openLatestExtraChargeReceipt(orderInstallationBilling, order)}
+                                            className={receiptActionButtonClassName}
+                                          >
+                                            View receipt
+                                          </button>
+                                        )}
+                                        {isOnlineContractAccepted && (
+                                          <button
+                                            type="button"
+                                            onClick={() => openContractModal(order)}
+                                            className={contractViewButtonClassName}
+                                          >
+                                            View Contract
+                                          </button>
+                                        )}
+                                        <button
+                                          type="button"
+                                          onClick={() => setSelectedOrderForModal(order)}
+                                          className={timelineViewButtonClassName}
+                                        >
+                                          View Order Timeline
+                                        </button>
+                                      </div>
+                                    )}
                                     {canAccessCustomerRatings && isProjectFinished && isOrderCompletedAndReviewable(order) && (
                                       ["reviewed", "completed"].includes(orderFilter)
                                         ? getOrderItemReview(order, itemIndex)?.submittedAt && (
@@ -8624,6 +8744,14 @@ function CustomerDashboard() {
                               </span>
                             </div>
                           </div>
+
+                          <InstallationBillingPanel
+                            order={order}
+                            darkMode={darkMode}
+                            readOnly
+                            issuesOnly
+                            onDataChange={handleInstallationBillingLoaded}
+                          />
 
                           {(() => {
                             const discrepancyContact = getPaymentSupportPhone(customerPaymentContactPhone);
@@ -9075,6 +9203,12 @@ function CustomerDashboard() {
             notificationTarget={timelineNotificationTarget}
           />
         )}
+
+        <ExtraChargeReceiptModal
+          receipt={selectedExtraChargeReceipt}
+          darkMode={darkMode}
+          onClose={() => setSelectedExtraChargeReceipt(null)}
+        />
 
         {reviewDetailsOrder && (
           <div className="customer-modal-overlay mobile-fullscreen-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm">
@@ -9618,8 +9752,9 @@ function CustomerDashboard() {
                     const isRead = readNotificationIds.has(order.notificationId);
                     const status = normalizeOrderStatusKey(order?.status);
                     const contractStatus = normalizeOrderStatusKey(order?.contract_status);
+                    const isReviewReadyNotification = order.notificationType === "product_ready_for_review";
                     const isPaymentNotification = ["payment", "payment_confirmed", "payment_amount_updated", "payment_rejected", "admin_payment_recorded", "downpayment_exception_approved", "downpayment_exception_pending", "payment_discrepancy", "payment_discrepancy_resolved", "overdue_payment", "installation_payment_reminder"].includes(order.notificationType);
-                    const notificationStatusLabel = order.notificationType === "overdue_payment" ? "Payment Due" : order.notificationType === "project_delay" ? order.delayStatus : null;
+                    const notificationStatusLabel = isReviewReadyNotification ? "Ready to Review" : order.notificationType === "overdue_payment" ? "Payment Due" : order.notificationType === "project_delay" ? order.delayStatus : null;
                       const isPaymentConfirmationNotification = ["payment_confirmed", "payment_amount_updated", "admin_payment_recorded", "downpayment_exception_approved"].includes(order.notificationType);
                     const isDelayNotification = ["delay", "project_delay"].includes(order.notificationType);
                       const isInstallationNotification = ["installation_up_next", "installation_completed"].includes(order.notificationType);
@@ -9638,6 +9773,10 @@ function CustomerDashboard() {
                       contractStatus === "accepted"
                     );
                     const notificationMessage = () => {
+                      if (isReviewReadyNotification) return `${order.reviewProductName || product.name || "Your product"} is complete. Share your feedback about this product.`;
+                              if (["extra_charge_receipt_sent", "project_payment_receipt_sent"].includes(order.notificationType)) {
+                                return "Your order receipt has been sent successfully. Your project balance is fully paid. You can now view and download your receipt.";
+                              }
                       if (order.notificationType === "feedback_response") return order.message;
                       if (order.notificationType === "repair_request") return order.message;
                       if (isSiteInspectionNotification) {
@@ -9710,6 +9849,7 @@ function CustomerDashboard() {
                     }[order.notificationType];
 
                     const notificationIcon = () => {
+                      if (isReviewReadyNotification) return "text-amber-600";
                       if (order.notificationType === "payment_rejected" || isCancellationCooldownNotification) return "text-red-600";
                       if (order.notificationType === "overdue_payment") return "text-red-600";
                       if (order.notificationType === "installation_payment_reminder") return "text-amber-600";
@@ -9739,14 +9879,14 @@ function CustomerDashboard() {
                       >
                         <div className="flex gap-2.5 sm:gap-3">
                           <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl sm:h-10 sm:w-10 ${darkMode ? "bg-slate-700" : "bg-slate-100"} ${notificationIcon()}`}>
-                              {isPaymentNotification ? <CreditCard size={16} /> : isDelayNotification || isCancellationPolicyNotification ? <AlertTriangle size={16} /> : isSiteInspectionNotification || isInstallationNotification ? <CalendarDays size={16} /> : isContractNotification ? <FileText size={16} /> : status === "completed" ? <CheckCircle size={16} /> : <Bell size={16} />}
+                              {isReviewReadyNotification ? <Star size={16} /> : isPaymentNotification ? <CreditCard size={16} /> : isDelayNotification || isCancellationPolicyNotification ? <AlertTriangle size={16} /> : isSiteInspectionNotification || isInstallationNotification ? <CalendarDays size={16} /> : isContractNotification ? <FileText size={16} /> : status === "completed" ? <CheckCircle size={16} /> : <Bell size={16} />}
                           </div>
 
                           <div className="min-w-0 flex-1">
                             <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                               <div className="min-w-0 flex-1">
                                 <div className="flex flex-wrap items-center gap-2">
-                                  <h3 className={`text-sm font-bold break-words ${darkMode ? "text-white" : "text-slate-950"}`}>{order.notificationType === "overdue_payment" ? "Remaining Balance" : order.title || paymentNotificationTitle || (isInstallationNotification ? ({ installation_up_next: "Installation Coming Up", installation_completed: "Installation Completed" }[order.notificationType]) : null) || product.name || "Project Update"}</h3>
+                                  <h3 className={`text-sm font-bold break-words ${darkMode ? "text-white" : "text-slate-950"}`}>{["extra_charge_receipt_sent", "project_payment_receipt_sent"].includes(order.notificationType) ? "Your Order Receipt" : order.notificationType === "overdue_payment" ? "Remaining Balance" : order.title || paymentNotificationTitle || (isInstallationNotification ? ({ installation_up_next: "Installation Coming Up", installation_completed: "Installation Completed" }[order.notificationType]) : null) || product.name || "Project Update"}</h3>
                                   {!isRead && <span className="rounded-full bg-red-100 px-2 py-0.5 text-[9px] font-bold uppercase text-red-700">New</span>}
                                 </div>
                                 <p className={`mt-1 text-xs leading-4 ${isRead ? darkMode ? "text-slate-400" : "text-slate-500" : darkMode ? "text-slate-200" : "text-slate-700"}`}>{renderAdminContactMessage(notificationMessage())}</p>
@@ -9762,10 +9902,13 @@ function CustomerDashboard() {
                                 {formatTimeAgo(order.notificationDate)}
                               </span>
                               <button
-                                onClick={() => openOrderDetailsFromNotification(order, order)}
+                                onClick={() => {
+                                  openOrderDetailsFromNotification(order, order);
+                                  setNotificationsOpen(false);
+                                }}
                                 className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 ${darkMode ? "text-red-300 hover:bg-red-950/40" : "text-red-700 hover:bg-red-50"}`}
                               >
-                                {order.notificationType === "repair_request" ? "View Repair" : "View Order"}
+                                {isReviewReadyNotification ? "Review Product" : order.notificationType === "repair_request" ? "View Repair" : "View Order"}
                                 <ArrowUpRight size={14} aria-hidden="true" />
                               </button>
                             </div>

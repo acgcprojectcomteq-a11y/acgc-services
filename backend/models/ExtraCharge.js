@@ -16,8 +16,6 @@ const ExtraChargeSchema = new mongoose.Schema({
   item_index: { type: Number, min: 0, default: null },
   description: { type: String, required: true, trim: true, maxlength: 1000 },
   reason: { type: String, required: true, trim: true, maxlength: 2000 },
-  customer_chargeable: { type: Boolean, required: true, default: false },
-  notes: { type: String, trim: true, maxlength: 2000, default: "" },
   evidence_urls: { type: [String], default: [] },
   items: { type: [ItemSchema], validate: { validator: (items) => items.length > 0, message: "At least one charge item is required." } },
   total: { type: Number, required: true, min: 0 },

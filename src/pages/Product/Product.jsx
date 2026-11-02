@@ -33,7 +33,7 @@ import {
 import { recordActivity } from "@/lib/activityLog";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { resolveBackendImageUrl } from "@/lib/resolveBackendImageUrl";
-import { getDefaultExtraChargeSelections, getDefaultProductLineTotal, getProductLineTotal } from "@/lib/productPricing";
+import { getBladePriceOverrideRate, getDefaultExtraChargeSelections, getDefaultProductLineTotal, getProductLineTotal } from "@/lib/productPricing";
 import UnsavedChangesDialog from "@/components/UnsavedChangesDialog";
 import { createUnsavedSnapshot } from "@/lib/unsavedSnapshot";
 import { getProductEstimatorState } from "@/components/ProductPriceEstimator";
@@ -1100,12 +1100,14 @@ function ProductFormModal({
             </div>
 
             <div className="mt-3">
-              <label className={labelClass}>Manual Overide Product Price ₱(PHP)</label>
-              <input type="number" min="0" step="0.01" value={newProduct.estimated_price_override || ""} onChange={(event) => updateField("estimated_price_override", event.target.value)} placeholder={pricingMethodValue === "blade" ? "Lowest price per blade" : "Auto-calculated"} className={fieldClass} />
+              <label className={labelClass}>Manual Product Price Override (PHP)</label>
+              <input type="number" min="0" step="0.01" value={newProduct.estimated_price_override || ""} onChange={(event) => updateField("estimated_price_override", event.target.value)} placeholder="Enter adjusted product base price" className={fieldClass} />
               <p className={`mt-1 text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>
                 {pricingMethodValue === "blade"
-                  ? "Sets the base price for the default blade and frame selection. Required charges are added separately; optional charges are added only when selected."
-                  : "Sets the product base price. Required charges are added separately; optional charges are added only when selected."}
+                  ? "Sets the base price for the default blade and frame selection. Other blade counts scale from that price. Required charges are added separately; optional charges are added only when selected."
+                  : ["sqft", "per_meter"].includes(pricingMethodValue)
+                    ? "Sets the base price at the product's listed size. It scales with measured area or length. Required charges are added separately; optional charges are added only when selected."
+                    : "Sets the product base price. Required charges are added separately; optional charges are added only when selected."}
               </p>
             </div>
 
@@ -1360,6 +1362,31 @@ function Products() {
         ? "fixed"
         : ""
     );
+    const override = Number(product.estimated_price_override) || 0;
+    if (override > 0) {
+      if (pricingMethod === "blade") {
+        const overrideRate = getBladePriceOverrideRate(product);
+        return `₱${overrideRate.toLocaleString("en-PH", { maximumFractionDigits: 2 })} / blade`;
+      }
+      if (pricingMethod === "sqft") {
+        const standardArea = Number(product.estimated_area) || (Number(product.width) > 0 && Number(product.height) > 0
+          ? toSquareFeet(Number(product.width), Number(product.height), product.measurement_unit || "in")
+          : 0);
+        const overrideRate = standardArea > 0 ? override / standardArea : override;
+        return `₱${overrideRate.toLocaleString("en-PH", { maximumFractionDigits: 2 })} / sq ft`;
+      }
+      if (pricingMethod === "per_meter") {
+        const length = Number(product.width ?? product.length) || 0;
+        const unit = product.measurement_unit || product.unit || "m";
+        const meters = length * ({ in: 0.0254, ft: 0.3048, cm: 0.01, m: 1 }[unit] || 1);
+        const overrideRate = meters > 0 ? override / meters : override;
+        return `₱${overrideRate.toLocaleString("en-PH", { maximumFractionDigits: 2 })} / meter`;
+      }
+      if (pricingMethod === "per_piece") {
+        return `₱${override.toLocaleString("en-PH", { maximumFractionDigits: 2 })} / piece`;
+      }
+      return `₱${override.toLocaleString("en-PH", { maximumFractionDigits: 2 })}`;
+    }
 
     if (pricingMethod === "blade") {
       if (bladePrice > 0) return `₱${bladePrice.toLocaleString()} / blade`;
@@ -2675,7 +2702,7 @@ function Products() {
                       const hasConfiguredBladePricing = pricingMethod === "blade" && (product.blade_glass_types?.length || product.blade_frame_types?.length);
                       const hasEstimatedCostOverride = pricingMethod === "fixed"
                         && Number(product.estimated_price_override) > 0;
-                      const unitPriceLabel = pricingMethod === "sqft" && productAreaSqft > 0 && estimatedCost > 0
+                      const unitPriceLabel = pricingMethod === "sqft" && Number(product.estimated_price_override) <= 0 && productAreaSqft > 0 && estimatedCost > 0
                         ? `₱${(Number(product.price_per_sqft) || estimatedCost / productAreaSqft).toLocaleString("en-PH", { maximumFractionDigits: 2 })} / sq ft`
                         : getProductPriceLabel(product);
                       const productDimensions = pricingMethod === "blade"

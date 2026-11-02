@@ -205,7 +205,7 @@ export const runPaymentReminderCheck = async ({ now = new Date(), realtime } = {
   const orders = await Order.find({
     customer: { $exists: true, $ne: null },
     status: { $not: /^(cancelled|canceled)$/i },
-  }).select("customer tracking status progress updatedAt total_amount final_project_cost contract_amount payment_terms agreed_payment_date required_downpayment_amount downpayment_amount payment_records payment_ledger_initialized legacy_verified_amount amount_paid payment_status payment_proof_confirmed_at payment_proof_submitted_at payment_proof_amount downpayment_received estimated_installation_date progress_stages items.progress_stages").lean();
+  }).select("customer tracking status progress updatedAt total_amount final_project_cost contract_amount installation_extra_charge_total installation_extra_charge_paid_total payment_terms agreed_payment_date required_downpayment_amount downpayment_amount payment_records payment_ledger_initialized legacy_verified_amount amount_paid payment_status payment_proof_confirmed_at payment_proof_submitted_at payment_proof_amount downpayment_received estimated_installation_date progress_stages items.progress_stages").lean();
 
   let created = 0;
   let sent = 0;

@@ -3,7 +3,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://acgc-main-wtzi.vercel.app/api/:path*"
+      "destination": "https://acgc-services-vpfc.vercel.app/api/:path*"
     },
     {
       "source": "/:path*",

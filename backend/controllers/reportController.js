@@ -13,7 +13,7 @@ const reportFields = [
   "status progress transactionCreatedAt acceptedAt createdAt updatedAt",
   "items review",
   "payment_terms final_project_cost contract_amount total_amount manual_override",
-  "required_downpayment_amount downpayment_amount payment_ledger_initialized legacy_verified_amount",
+  "required_downpayment_amount downpayment_amount payment_ledger_initialized legacy_verified_amount installation_extra_charge_total installation_extra_charge_paid_total",
   "amount_paid payment_amount paid_amount payment_records payment_status payment_method transaction_number",
   "payment_proof_confirmed_at warranty_assignment_mode warranty_period custom_warranty_days",
   "warranty_start_date warranty_expiry_date warranty_status warranty_terms",

@@ -35,7 +35,8 @@ import AdminPageHeader from "../../components/layout/AdminPageHeader";
 import ContractModal from "../../components/ContractModal";
 import TransactionDetailsModal from "../../components/TransactionDetailsModal";
 import ExtraChargeReceiptModal from "../../components/ExtraChargeReceiptModal";
-import { getAdminOrders, acceptContract, declineContract, updateOrderStatus, cancelAdminOrder, deleteOrderReview, setOrderReviewVisibility, respondToCustomerReview, downloadTransactionReport } from "@/api/orders";
+import { addExtraChargeReceiptContext, addProjectPaymentReceiptContext } from "@/lib/extraChargeReceipt";
+import { getAdminOrders, createOrGetProjectPaymentReceipt, acceptContract, declineContract, updateOrderStatus, cancelAdminOrder, deleteOrderReview, setOrderReviewVisibility, respondToCustomerReview, downloadTransactionReport } from "@/api/orders";
 import { hasAcceptedTransactionContract, isRecordedCancelledTransaction } from "@/lib/transactionAcceptance";
 import { formatDateToMMDDYYYY, formatDateTimeToMMDDYYYY, formatDateToMMMDDYYYY } from "@/lib/dateUtils";
 import { useAuth } from "@/contexts/AuthContext";
@@ -171,6 +172,20 @@ function Transactions() {
   const [contractPreviewOrder, setContractPreviewOrder] = useState(null);
   const [contractPreviewData, setContractPreviewData] = useState(null);
   const [selectedExtraChargeReceipt, setSelectedExtraChargeReceipt] = useState(null);
+  const openProjectPaymentReceipt = async (order) => {
+    try {
+      const result = await createOrGetProjectPaymentReceipt(order?._id || order?.id);
+      if (!result?.receipt) throw new Error("The project receipt could not be generated.");
+      setSelectedExtraChargeReceipt(addProjectPaymentReceiptContext({ ...result.receipt, order: result.order?._id || result.receipt.order }, { ...order, ...result.order }));
+    } catch (error) {
+      toast.error(error?.data?.message || error?.message || "The project receipt is not available yet.");
+    }
+  };
+  const openSavedProjectPaymentReceipt = (order) => {
+    const receipt = order?.project_payment_receipts?.[0];
+    if (!receipt) return;
+    setSelectedExtraChargeReceipt(addProjectPaymentReceiptContext(receipt, order));
+  };
   const [showEditPaymentModal, setShowEditPaymentModal] = useState(false);
   const [editPaymentOrder, setEditPaymentOrder] = useState(null);
   const [editPaymentMethod, setEditPaymentMethod] = useState("Cash");
@@ -1291,8 +1306,12 @@ function Transactions() {
   useEffect(() => {
     let active = true;
     let requestInFlight = false;
+    let refreshQueued = false;
     const fetchOrders = async (showLoading = true) => {
-      if (requestInFlight) return;
+      if (requestInFlight) {
+        refreshQueued = true;
+        return;
+      }
       requestInFlight = true;
       if (showLoading) setLoading(true);
       try {
@@ -1317,6 +1336,10 @@ function Transactions() {
       } finally {
         if (active && showLoading) setLoading(false);
         requestInFlight = false;
+        if (active && refreshQueued) {
+          refreshQueued = false;
+          void fetchOrders(false);
+        }
       }
     };
 
@@ -2400,6 +2423,7 @@ function Transactions() {
                       const showNeedsConfirmation = (order.payment_records || []).length > 0
                         ? getUnresolvedPaymentProofRecords(order).length > 0
                         : Boolean(order.payment_proof_submitted_at && !isPaymentProofConfirmed(order));
+                      const canGenerateProjectReceipt = isFullyPaid && !showNeedsConfirmation;
                       const warrantyStatus = getWarrantyStatus(order);
                       const warrantyStatusLabel = warrantyStatus === "Pending installation" ? "Pending" : warrantyStatus;
 
@@ -2501,8 +2525,8 @@ function Transactions() {
                               <td className="p-4"><div className="flex flex-col items-start gap-1.5"><span className={`${statusBadgeBaseClassName} !max-w-none !whitespace-nowrap !break-normal ${getPaymentStatusBadgeClassName(isFullyPaid ? "paid" : paymentSummary.status.key, darkMode)}`}>{paymentSummary.status.key === "partial" ? "Partial" : statusLabel}</span>{showNeedsConfirmation && (<span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold ${darkMode ? "border border-rose-400/40 bg-rose-500/15 text-rose-300" : "bg-rose-100 text-rose-700"}`}>Unverified</span>)}</div></td>
                               <td
                                 className={`${showTransactionActions ? "p-4" : "px-1 py-4"} text-right transition-[width,padding] duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none`}
-                                style={{ width: showTransactionActions ? `${190 + (order.extra_charge_receipts?.length ? 36 : 0) + (canCancelTransactions ? 36 : 0)}px` : "56px" }}
-                              ><div className={`ml-auto flex flex-nowrap justify-end gap-2 overflow-hidden transition-[width,opacity,transform] duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none ${showTransactionActions ? "translate-x-0 opacity-100" : "translate-x-2 opacity-0 pointer-events-none"}`} style={{ width: showTransactionActions ? `${128 + (order.extra_charge_receipts?.length ? 36 : 0) + (canCancelTransactions ? 36 : 0)}px` : "0px" }}><button title="View Transaction" onClick={() => openContractModal(order)} className="shrink-0 p-2 rounded-lg bg-blue-100 text-blue-600 hover:bg-blue-200 transition"><Search size={20} strokeWidth={2.6} /></button>{isFullyPaid ? (<button type="button" title="Fully paid" aria-label="Fully paid. Payment editing is locked." disabled className={`shrink-0 cursor-not-allowed rounded-lg p-2 ${darkMode ? "bg-slate-700 text-slate-400" : "bg-slate-100 text-slate-500"}`}><Lock size={18} aria-hidden="true" /></button>) : (<button type="button" title="Add Payment" aria-label="Add Payment" onClick={() => openEditPaymentModal(order)} className="shrink-0 p-2 rounded-lg bg-violet-100 text-violet-700 hover:bg-violet-200 transition"><Pencil size={18} /></button>)}<button type="button" title="View Contract" aria-label="View Contract" onClick={() => openReadOnlyContract(order)} className="shrink-0 p-2 rounded-lg bg-amber-100 text-amber-700 hover:bg-amber-200 transition"><FileText size={18} /></button>{order.extra_charge_receipts?.length > 0 && <button type="button" title="View extra charge receipt" aria-label={`View extra charge receipt for ${order.tracking || "project"}`} onClick={() => setSelectedExtraChargeReceipt(order.extra_charge_receipts[0])} className="shrink-0 rounded-lg bg-orange-100 p-2 text-orange-700 transition hover:bg-orange-200"><Receipt size={18} aria-hidden="true" /></button>}{isEligibleForAdminCancellation(order) && <button type="button" title="Cancel Transaction" aria-label={`Cancel project ${order.tracking || "transaction"}`} onClick={() => { setCancelTransactionOrder(order); setCancellationReason(""); }} className={`shrink-0 rounded-lg p-2 ${darkMode ? "bg-red-500/15 text-red-300 hover:bg-red-500/25" : "bg-red-100 text-red-700 hover:bg-red-200"}`}><Ban size={18} aria-hidden="true" /></button>}</div></td>
+                                style={{ width: showTransactionActions ? `${190 + (order.extra_charge_receipts?.length ? 36 : 0) + ((canGenerateProjectReceipt || order.project_payment_receipts?.length > 0) ? 36 : 0) + (canCancelTransactions ? 36 : 0)}px` : "56px" }}
+                              ><div className={`ml-auto flex flex-nowrap justify-end gap-2 overflow-hidden transition-[width,opacity,transform] duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none ${showTransactionActions ? "translate-x-0 opacity-100" : "translate-x-2 opacity-0 pointer-events-none"}`} style={{ width: showTransactionActions ? `${128 + (order.extra_charge_receipts?.length ? 36 : 0) + ((canGenerateProjectReceipt || order.project_payment_receipts?.length > 0) ? 36 : 0) + (canCancelTransactions ? 36 : 0)}px` : "0px" }}><button title="View Transaction" onClick={() => openContractModal(order)} className="shrink-0 p-2 rounded-lg bg-blue-100 text-blue-600 hover:bg-blue-200 transition"><Search size={20} strokeWidth={2.6} /></button>{isFullyPaid ? (<button type="button" title="Fully paid" aria-label="Fully paid. Payment editing is locked." disabled className={`shrink-0 cursor-not-allowed rounded-lg p-2 ${darkMode ? "bg-slate-700 text-slate-400" : "bg-slate-100 text-slate-500"}`}><Lock size={18} aria-hidden="true" /></button>) : (<button type="button" title="Add Payment" aria-label="Add Payment" onClick={() => openEditPaymentModal(order)} className="shrink-0 p-2 rounded-lg bg-violet-100 text-violet-700 hover:bg-violet-200 transition"><Pencil size={18} /></button>)}<button type="button" title="View Contract" aria-label="View Contract" onClick={() => openReadOnlyContract(order)} className="shrink-0 p-2 rounded-lg bg-amber-100 text-amber-700 hover:bg-amber-200 transition"><FileText size={18} /></button>{order.extra_charge_receipts?.length > 0 && <button type="button" title="View extra charge receipt" aria-label={`View extra charge receipt for ${order.tracking || "project"}`} onClick={() => setSelectedExtraChargeReceipt(addExtraChargeReceiptContext(order.extra_charge_receipts[0], order))} className="shrink-0 rounded-lg bg-orange-100 p-2 text-orange-700 transition hover:bg-orange-200"><Receipt size={18} aria-hidden="true" /></button>}{(canGenerateProjectReceipt || order.project_payment_receipts?.length > 0) && <button type="button" title={canGenerateProjectReceipt ? "Generate or view project payment receipt" : "View project payment receipt"} aria-label={`View project payment receipt for ${order.tracking || "project"}`} onClick={() => (canGenerateProjectReceipt ? void openProjectPaymentReceipt(order) : openSavedProjectPaymentReceipt(order))} className="shrink-0 rounded-lg bg-emerald-100 p-2 text-emerald-700 transition hover:bg-emerald-200"><Receipt size={18} aria-hidden="true" /></button>}{isEligibleForAdminCancellation(order) && <button type="button" title="Cancel Transaction" aria-label={`Cancel project ${order.tracking || "transaction"}`} onClick={() => { setCancelTransactionOrder(order); setCancellationReason(""); }} className={`shrink-0 rounded-lg p-2 ${darkMode ? "bg-red-500/15 text-red-300 hover:bg-red-500/25" : "bg-red-100 text-red-700 hover:bg-red-200"}`}><Ban size={18} aria-hidden="true" /></button>}</div></td>
                             </>
                           )}
                         </tr>
@@ -2583,6 +2607,10 @@ function Transactions() {
                 const amountVal = paymentSummary.totalAmount;
                 const paymentMethod = order.payment_method || (order.acceptance_method === "online" ? "Online" : "Cash");
                 const isFullyPaid = paymentSummary.status.key === "paid";
+                const hasUnverifiedPayment = (order.payment_records || []).length > 0
+                  ? getUnresolvedPaymentProofRecords(order).length > 0
+                  : Boolean(order.payment_proof_submitted_at && !isPaymentProofConfirmed(order));
+                const canGenerateProjectReceipt = isFullyPaid && !hasUnverifiedPayment;
                 return (
                   <div
                     key={order._id || index}
@@ -2627,8 +2655,8 @@ function Transactions() {
                         <button type="button" title="Add Payment" aria-label="Add Payment" onClick={() => openEditPaymentModal(order)} className="p-2 rounded-lg bg-violet-100 text-violet-700 hover:bg-violet-200 transition"><Pencil size={18} /></button>
                       )}
                       <button type="button" title="View Contract" aria-label="View Contract" onClick={() => openReadOnlyContract(order)} className="p-2 rounded-lg bg-amber-100 text-amber-700 hover:bg-amber-200 transition"><FileText size={18} /></button>
-                      {order.extra_charge_receipts?.length > 0 && <button type="button" title="View extra charge receipt" aria-label={`View extra charge receipt for ${order.tracking || "project"}`} onClick={() => setSelectedExtraChargeReceipt(order.extra_charge_receipts[0])} className="rounded-lg bg-orange-100 p-2 text-orange-700 transition hover:bg-orange-200"><Receipt size={18} aria-hidden="true" /></button>}
-                      {isEligibleForAdminCancellation(order) && <button type="button" title="Cancel Transaction" aria-label={`Cancel project ${order.tracking || "transaction"}`} onClick={() => { setCancelTransactionOrder(order); setCancellationReason(""); }} className={`rounded-lg p-2 ${darkMode ? "bg-red-500/15 text-red-300" : "bg-red-100 text-red-700"}`}><Ban size={18} aria-hidden="true" /></button>}
+                      {order.extra_charge_receipts?.length > 0 && <button type="button" title="View extra charge receipt" aria-label={`View extra charge receipt for ${order.tracking || "project"}`} onClick={() => setSelectedExtraChargeReceipt(addExtraChargeReceiptContext(order.extra_charge_receipts[0], order))} className="rounded-lg bg-orange-100 p-2 text-orange-700 transition hover:bg-orange-200"><Receipt size={18} aria-hidden="true" /></button>}
+                      {(canGenerateProjectReceipt || order.project_payment_receipts?.length > 0) && <button type="button" title={canGenerateProjectReceipt ? "Generate or view project payment receipt" : "View project payment receipt"} aria-label={`View project payment receipt for ${order.tracking || "project"}`} onClick={() => (canGenerateProjectReceipt ? void openProjectPaymentReceipt(order) : openSavedProjectPaymentReceipt(order))} className="shrink-0 rounded-lg bg-emerald-100 p-2 text-emerald-700 transition hover:bg-emerald-200"><Receipt size={18} aria-hidden="true" /></button>}{isEligibleForAdminCancellation(order) && <button type="button" title="Cancel Transaction" aria-label={`Cancel project ${order.tracking || "transaction"}`} onClick={() => { setCancelTransactionOrder(order); setCancellationReason(""); }} className={`rounded-lg p-2 ${darkMode ? "bg-red-500/15 text-red-300" : "bg-red-100 text-red-700"}`}><Ban size={18} aria-hidden="true" /></button>}
 
                     </div>
                   </div>
@@ -2905,7 +2933,7 @@ function Transactions() {
             />
           )}
 
-          {selectedExtraChargeReceipt && <ExtraChargeReceiptModal receipt={selectedExtraChargeReceipt} darkMode={darkMode} onClose={() => setSelectedExtraChargeReceipt(null)} />}
+          {selectedExtraChargeReceipt && <ExtraChargeReceiptModal receipt={selectedExtraChargeReceipt} darkMode={darkMode} enableSend={["admin", "super_admin"].includes(user?.role)} onClose={() => setSelectedExtraChargeReceipt(null)} />}
 
           {editPaymentModalContent}
 

@@ -1,4 +1,4 @@
-import { getFinalProjectCost, getRequiredDownpayment } from "../../src/lib/orderPricing.js";
+import { getFinalProjectCost, getInstallationExtraChargeTotal, getRequiredDownpayment } from "../../src/lib/orderPricing.js";
 
 const toCents = (value) => Math.round((Number(value) || 0) * 100);
 const fromCents = (value) => value / 100;
@@ -41,13 +41,14 @@ export const getOrderPaymentAmounts = (order = {}) => {
   } else if (order.payment_proof_confirmed_at) {
     paidAmount = Number(order.payment_proof_amount) || 0;
   } else if (order.payment_status === "paid" && !order.payment_proof_submitted_at) {
-    paidAmount = totalAmount;
+    paidAmount = Math.max(totalAmount - getInstallationExtraChargeTotal(order), 0);
   } else if (order.downpayment_received) {
-    paidAmount = requiredAmount;
+    paidAmount = getRequiredDownpayment({ ...order, installation_extra_charge_total: 0 });
   } else {
     paidAmount = 0;
   }
 
+  paidAmount += Math.max(0, Number(order.installation_extra_charge_paid_total) || 0);
   paidAmount = Math.min(Math.max(paidAmount, 0), totalAmount);
   const remainingAmount = Math.max(totalAmount - paidAmount, 0);
   const downpaymentRemaining = Math.max(requiredAmount - paidAmount, 0);
@@ -78,7 +79,9 @@ export const initializePaymentLedger = (order) => {
   if (removedDuplicate) order.markModified?.("payment_records");
   if (order.payment_ledger_initialized) return;
   const previousPaid = getOrderPaymentAmounts(order).paidAmount;
-  order.legacy_verified_amount = previousPaid;
+  const verifiedRecordAmount = verifiedRecords.reduce((sum, record) => sum + Math.max(0, Number(record.verified_amount) || 0), 0);
+  const extraChargePaidAmount = Math.max(0, Number(order.installation_extra_charge_paid_total) || 0);
+  order.legacy_verified_amount = Math.max(previousPaid - verifiedRecordAmount - extraChargePaidAmount, 0);
   order.payment_ledger_initialized = true;
   if (
     order.payment_proof_submitted_at &&

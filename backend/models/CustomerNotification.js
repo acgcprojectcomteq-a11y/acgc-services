@@ -3,8 +3,10 @@ import mongoose from "mongoose";
 const CustomerNotificationSchema = new mongoose.Schema({
   customer: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
   order: { type: mongoose.Schema.Types.ObjectId, ref: "Order", required: true },
+  receipt: { type: mongoose.Schema.Types.ObjectId, ref: "ExtraChargeReceipt", default: null, index: true },
+  project_receipt: { type: mongoose.Schema.Types.ObjectId, ref: "ProjectPaymentReceipt", default: null, index: true },
   eventKey: { type: String, required: true },
-  type: { type: String, enum: ["installation_up_next", "installation_completed", "site_inspection_today", "order_cancelled", "order_cancellation_warning", "order_cancellation_cooldown", "overdue_payment", "installation_payment_reminder", "feedback_response", "installation_issue_update", "extra_charge_update"], required: true },
+  type: { type: String, enum: ["installation_up_next", "installation_completed", "site_inspection_today", "order_cancelled", "order_cancellation_warning", "order_cancellation_cooldown", "overdue_payment", "installation_payment_reminder", "feedback_response", "installation_issue_update", "extra_charge_update", "extra_charge_receipt_sent", "project_payment_receipt_sent"], required: true },
   title: { type: String, required: true },
   message: { type: String, required: true },
   tracking: { type: String, default: "" },

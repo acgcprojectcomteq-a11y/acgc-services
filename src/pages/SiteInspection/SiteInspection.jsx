@@ -36,7 +36,7 @@ import { buildContractSnapshot, hasContractSnapshotChanged, hasExistingContract 
 import { getCustomerPaymentProof, getPaymentSummary } from "@/pages/Transactions/paymentProofUtils";
 import { getProducts } from "@/api/products";
 import { toSquareFeet } from "@/lib/estimator";
-import { getFinishedDoorMeasurementBreakdown, getMeasuredProductLineTotal, getProductLineBreakdown, getProductSizeLimitWarnings, isFinishedDoorPricingEnabled } from "@/lib/productPricing";
+import { getBladePriceOverrideRate, getFinishedDoorMeasurementBreakdown, getMeasuredProductLineTotal, getProductLineBreakdown, getProductSizeLimitWarnings, isFinishedDoorPricingEnabled } from "@/lib/productPricing";
 import UnsavedChangesDialog from "@/components/UnsavedChangesDialog";
 import FullAddressField from "@/components/FullAddressField";
 import { getStreetAddressError, isValidStreetAddress, normalizeFullAddress } from "@/lib/fullAddressValidation";
@@ -1746,7 +1746,7 @@ function SiteInspection() {
     return <div className={`col-span-full rounded-xl border p-3 ${darkMode ? "border-blue-400/30 bg-blue-400/5" : "border-blue-200 bg-blue-50/60"}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className={`text-sm font-bold ${darkMode ? "text-slate-100" : "text-slate-900"}`}>Finished Door - Measurement</p>
-        <p className={`text-xs font-semibold ${darkMode ? "text-blue-200" : "text-blue-800"}`}>Standard Price: {formatCurrency(Number(config.standard_price_per_piece) || 0)} / piece</p>
+        <p className={`text-xs font-semibold ${darkMode ? "text-blue-200" : "text-blue-800"}`}>Standard Price: {formatCurrency(breakdown?.standard_price_per_piece ?? (Number(config.standard_price_per_piece) || 0))} / piece</p>
       </div>
       <div className={`mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border px-3 py-2 ${darkMode ? "border-slate-700 bg-slate-900/40" : "border-blue-200 bg-white/80"}`}>
         <div>
@@ -1859,7 +1859,9 @@ function SiteInspection() {
     const selectedFrame = frameTypes.find((frame) => frame.name === (item.frame_type || product?.default_frame_type)) || frameTypes[0];
     const selectedGlass = glassTypes.find((glass) => glass.name === (item.blade_glass_type || product?.default_blade_glass_type)) || glassTypes[0];
     const bladeCount = Number(item.blade_count) || Number(selectedFrame?.blade_count) || minimumBlades;
-    const bladeRate = Number(selectedGlass?.price_per_blade ?? product?.price_per_blade ?? item.price_per_blade) || 0;
+    const bladeRate = Number(product?.estimated_price_override ?? item.estimated_price_override) > 0
+      ? getBladePriceOverrideRate(product, item)
+      : Number(selectedGlass?.price_per_blade ?? product?.price_per_blade ?? item.price_per_blade) || 0;
     const framePrice = saleMode === "frame"
       ? Number(item.custom_frame_size ? product?.custom_frame_price : item.frame_price || selectedFrame?.price) || 0
       : 0;
@@ -2403,10 +2405,13 @@ function SiteInspection() {
     const product = products.find((p) => String(p._id || p.id) === normalizedProductId) || null;
     if (!product) return `₱${(Number(item.unit_price) || 0).toLocaleString()}`;
     const pricingMethod = product.pricing_method || "";
+    const estimatedOverride = Number(product.estimated_price_override ?? item.estimated_price_override) || 0;
     if (pricingMethod === "blade") {
       const glassTypes = Array.isArray(product.blade_glass_types) ? product.blade_glass_types : item.blade_glass_types || [];
       const glass = glassTypes.find((entry) => entry.name === item.blade_glass_type) || glassTypes[0];
-      const bladeRate = Number(glass?.price_per_blade ?? product.price_per_blade ?? item.price_per_blade) || 0;
+      const bladeRate = estimatedOverride > 0
+        ? getBladePriceOverrideRate(product, item)
+        : Number(glass?.price_per_blade ?? product.price_per_blade ?? item.price_per_blade) || 0;
       const frameTypes = Array.isArray(product.blade_frame_types) ? product.blade_frame_types : item.blade_frame_types || [];
       const frame = frameTypes.find((entry) => entry.name === item.frame_type);
       const framePrice = item.sale_mode === "frame"
@@ -2418,13 +2423,12 @@ function SiteInspection() {
     const perBlade = Number(product.price_per_blade) || 0;
     const base = Number(product.base_price) || 0;
     const unitPrice = Number(product.unit_price) || 0;
-    const estimatedOverride = Number(product.estimated_price_override) || 0;
     const standardArea = Number(product.width) > 0 && Number(product.height) > 0
       ? toSquareFeet(Number(product.width), Number(product.height), product.measurement_unit || "in")
       : 0;
     switch (pricingMethod) {
       case "sqft":
-        return `₱${perSqft.toLocaleString()} / sq.ft`;
+        return `₱${(estimatedOverride > 0 && standardArea > 0 ? estimatedOverride / standardArea : estimatedOverride || perSqft).toLocaleString(undefined, { maximumFractionDigits: 2 })} / sq.ft`;
       case "blade":
         return `₱${perBlade.toLocaleString()} / blade`;
       case "fixed":
@@ -2436,11 +2440,17 @@ function SiteInspection() {
         {
           const pieceOptions = Array.isArray(product.piece_options) ? product.piece_options : item.piece_options || [];
           const option = pieceOptions.find((entry) => entry.name === item.piece_option) || pieceOptions[0];
-          const pieceRate = Number(option?.price_per_piece) || unitPrice;
+          const pieceRate = estimatedOverride || Number(option?.price_per_piece) || unitPrice;
           return option ? `${option.name}: ₱${pieceRate.toLocaleString()} / pc` : `₱${pieceRate.toLocaleString()} / pc`;
         }
       case "per_meter":
-        return `₱${unitPrice.toLocaleString()} / meter`;
+        {
+          const length = Number(product.width ?? product.length) || 0;
+          const unit = product.measurement_unit || product.unit || "m";
+          const meters = length * ({ in: 0.0254, ft: 0.3048, cm: 0.01, m: 1 }[unit] || 1);
+          const meterRate = estimatedOverride > 0 && meters > 0 ? estimatedOverride / meters : estimatedOverride || unitPrice;
+          return `₱${meterRate.toLocaleString(undefined, { maximumFractionDigits: 2 })} / meter`;
+        }
       default:
         return `₱${unitPrice.toLocaleString()}`;
     }

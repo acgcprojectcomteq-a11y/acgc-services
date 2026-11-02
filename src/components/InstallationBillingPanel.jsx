@@ -1,22 +1,32 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
+import { FileText, Trash2 } from "lucide-react";
 import { uploadFiles } from "@/api/uploads";
 import {
-  getInstallationBilling, createInstallationIssue, updateInstallationIssue,
-  updateInstallationStatus,
-  createExtraCharge, submitExtraCharge, reviewExtraCharge, issueExtraChargeReceipt,
-  recordExtraChargePayment, verifyExtraChargePayment,
+  getInstallationBilling,
+  createExtraCharge,
 } from "@/api/orders";
 import ExtraChargeReceiptModal from "@/components/ExtraChargeReceiptModal";
+import { addExtraChargeReceiptContext } from "@/lib/extraChargeReceipt";
 import { subscribeToRealtime } from "@/lib/realtimeEvents";
 
-const issueStatuses = ["Open", "Under Assessment", "For Adjustment", "Return Visit Required", "Resolved"];
 const money = (value) => `₱${Number(value || 0).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const getError = (error, fallback) => error?.message || fallback;
 const isImageEvidence = (url) => /\.(?:png|jpe?g|gif|webp|bmp)(?:[?#].*)?$/i.test(String(url || ""));
 const isPdfEvidence = (url) => /\.pdf(?:[?#].*)?$/i.test(String(url || ""));
+const formatIssueDate = (value) => {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "short" });
+};
+const issueStatusClass = (status, darkMode) => {
+  const normalized = String(status || "").toLowerCase();
+  if (normalized === "resolved") return darkMode ? "bg-emerald-950 text-emerald-200" : "bg-emerald-100 text-emerald-800";
+  if (normalized === "for adjustment" || normalized === "return visit required") return darkMode ? "bg-amber-950 text-amber-200" : "bg-amber-100 text-amber-800";
+  return darkMode ? "bg-sky-950 text-sky-200" : "bg-sky-100 text-sky-800";
+};
 
-export default function InstallationBillingPanel({ order, darkMode = false }) {
+export default function InstallationBillingPanel({ order, darkMode = false, readOnly = false, issuesOnly = false, onDataChange }) {
   const user = useMemo(() => {
     if (typeof window === "undefined") return null;
     try { return JSON.parse(window.localStorage.getItem("user") || "null"); }
@@ -25,24 +35,14 @@ export default function InstallationBillingPanel({ order, darkMode = false }) {
   const isAdmin = ["admin", "super_admin"].includes(user?.role);
   const isCustomer = user?.role === "customer";
   const canView = isAdmin || isCustomer || (user?.role === "skilled_worker" && user.staff_access?.modules?.progress_monitoring?.enabled === true && user.staff_access.modules.progress_monitoring.actions?.view === true);
-  const isStaff = isAdmin || (user?.role === "skilled_worker" && user.staff_access?.modules?.progress_monitoring?.enabled === true && user.staff_access.modules.progress_monitoring.actions?.edit === true);
-  const canUploadEvidence = ["admin", "super_admin"].includes(user?.role) || user?.staff_access?.modules?.progress_monitoring?.actions?.upload_progress_photo === true;
   const orderId = order?._id || order?.id;
-  const [data, setData] = useState({ issues: [], charges: [], receipts: [], items: [], balance: null });
+  const [data, setData] = useState({ issues: [], charges: [], receipts: [], project_receipts: [] });
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [showIssueForm, setShowIssueForm] = useState(false);
   const [showChargeForm, setShowChargeForm] = useState(false);
-  const [activeChargeId, setActiveChargeId] = useState(null);
   const [selectedReceipt, setSelectedReceipt] = useState(null);
   const [evidencePreview, setEvidencePreview] = useState(null);
-  const [issueDraft, setIssueDraft] = useState({ issue_type: "", item_index: "", description: "", measurement_details: "", required_action: "", files: [] });
-  const [chargeDraft, setChargeDraft] = useState({ installation_issue: "", item_index: "", description: "", reason: "", customer_chargeable: false, notes: "", files: [], items: [{ description: "", category: "Labor", quantity: 1, unit_price: "" }] });
-  const [declineReasons, setDeclineReasons] = useState({});
-  const [paymentDrafts, setPaymentDrafts] = useState({});
-  const [paymentDetails, setPaymentDetails] = useState({});
-  const paymentRequestIds = useRef({});
-  const [returnDrafts, setReturnDrafts] = useState({});
+  const [chargeDraft, setChargeDraft] = useState({ description: "", reason: "", files: [], items: [{ description: "", category: "Labor", quantity: 1, unit_price: "" }] });
   const panelClass = darkMode ? "border-slate-700 bg-slate-900 text-slate-100" : "border-slate-200 bg-white text-slate-900";
   const fieldClass = `w-full rounded-lg border px-3 py-2 text-sm ${darkMode ? "border-slate-700 bg-slate-950 text-slate-100" : "border-slate-300 bg-white text-slate-900"}`;
 
@@ -51,27 +51,28 @@ export default function InstallationBillingPanel({ order, darkMode = false }) {
     setLoading(true);
     try {
       const result = await getInstallationBilling(orderId);
-      setData({ issues: result.issues || [], charges: result.charges || [], receipts: result.receipts || [], items: result.items || [], balance: result.balance || null });
+      const nextData = { issues: result.issues || [], charges: result.charges || [], receipts: result.receipts || [], project_receipts: result.project_receipts || [], project_items: result.project_items || [] };
+      setData(nextData);
+      onDataChange?.(orderId, nextData);
     } catch (error) {
       toast.error(getError(error, "Could not load installation records."));
     } finally { setLoading(false); }
-  }, [orderId, canView]);
+  }, [orderId, canView, onDataChange]);
   useEffect(() => {
     const timer = window.setTimeout(() => refresh(), 0);
     return () => window.clearTimeout(timer);
   }, [refresh]);
   useEffect(() => subscribeToRealtime("orders", (event) => {
+    if (event.action === "reconcile") return;
     if (!event.orderId || String(event.orderId) === String(orderId)) refresh();
   }), [orderId, refresh]);
 
   const perform = async (action, successMessage) => {
     setSaving(true);
-    try { await action(); await refresh(); toast.success(successMessage); return true; }
+    try { const result = await action(); toast.success(successMessage); return result ?? true; }
     catch (error) { toast.error(getError(error, "The action could not be completed.")); return false; }
     finally { setSaving(false); }
   };
-  const items = Array.isArray(order?.items) ? order.items : [];
-  const issueNames = useMemo(() => new Map(data.issues.map((issue) => [String(issue._id), issue.issue_type])), [data.issues]);
   const receiptStatus = (receipt) => {
     const charge = data.charges.find((entry) => String(entry._id) === String(receipt.extra_charge));
     const paid = (charge?.payments || []).filter((entry) => entry.status === "verified").reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
@@ -79,112 +80,125 @@ export default function InstallationBillingPanel({ order, darkMode = false }) {
   };
   const receiptSnapshot = (receipt) => {
     const charge = data.charges.find((entry) => String(entry._id) === String(receipt.extra_charge));
-    return {
+    return addExtraChargeReceiptContext({
       ...receipt,
-      approved_by_name: charge?.approved_by_name || receipt.approved_by_name || "",
-      approved_at: charge?.approved_at || receipt.approved_at || null,
       payment_status: receiptStatus(receipt),
       payments: charge?.payments || [],
-    };
-  };
-  const activeCharge = data.charges.find((charge) => String(charge._id) === String(activeChargeId));
-
-  const saveIssue = async (event) => {
-    event.preventDefault();
-    if (!issueDraft.issue_type.trim() || !issueDraft.description.trim()) return toast.error("Issue type and description are required.");
-    await perform(async () => {
-      let evidence_urls = [];
-      if (issueDraft.files.length) {
-        const uploaded = await uploadFiles(issueDraft.files, undefined, { purpose: "progress-media" });
-        evidence_urls = (uploaded.files || []).map((file) => file.url).filter(Boolean);
-      }
-      await createInstallationIssue(orderId, { ...issueDraft, item_index: issueDraft.item_index === "" ? null : Number(issueDraft.item_index), evidence_urls, files: undefined });
-      setIssueDraft({ issue_type: "", item_index: "", description: "", measurement_details: "", required_action: "", files: [] });
-      setShowIssueForm(false);
-    }, "Installation issue recorded.");
+    }, { ...order, project_items: data.project_items }, data.charges);
   };
   const saveCharge = async (event) => {
     event.preventDefault();
     if (!chargeDraft.description.trim() || !chargeDraft.reason.trim()) return toast.error("Charge description and reason are required.");
-    await perform(async () => {
+    const created = await perform(async () => {
       const itemsPayload = chargeDraft.items.map((item) => ({ ...item, quantity: Number(item.quantity), unit_price: Number(item.unit_price) }));
       let evidence_urls = [];
       if (chargeDraft.files.length) {
         const uploaded = await uploadFiles(chargeDraft.files, undefined, { purpose: "progress-media" });
         evidence_urls = (uploaded.files || []).map((file) => file.url).filter(Boolean);
       }
-      await createExtraCharge(orderId, { ...chargeDraft, files: undefined, evidence_urls, installation_issue: chargeDraft.installation_issue || null, item_index: chargeDraft.item_index === "" ? null : Number(chargeDraft.item_index), items: itemsPayload });
-      setChargeDraft({ installation_issue: "", item_index: "", description: "", reason: "", customer_chargeable: false, notes: "", files: [], items: [{ description: "", category: "Labor", quantity: 1, unit_price: "" }] });
+      const result = await createExtraCharge(orderId, { ...chargeDraft, files: undefined, evidence_urls, installation_issue: null, item_index: null, items: itemsPayload });
+      setChargeDraft({ description: "", reason: "", files: [], items: [{ description: "", category: "Labor", quantity: 1, unit_price: "" }] });
       setShowChargeForm(false);
-    }, "Extra charge saved as draft.");
+      return result;
+    }, "Saved. Charge added to the customer balance and receipt generated.");
+    if (!created || created === true) return;
+    if (created.receipt) setSelectedReceipt({ ...created.receipt, payment_status: "Unpaid", payments: [] });
   };
-  const submitPayment = async (charge) => {
-    const value = paymentDrafts[charge._id];
-    if (!(Number(value) > 0)) return toast.error("Enter a payment amount greater than zero.");
-    paymentRequestIds.current[charge._id] ||= globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
-    const paymentInfo = paymentDetails[charge._id] || {};
-    const ok = await perform(() => recordExtraChargePayment(orderId, charge._id, { request_id: paymentRequestIds.current[charge._id], amount: Number(value), method: paymentInfo.method || "Cash", reference: paymentInfo.reference || "", action: "record" }), "Extra charge payment recorded for verification.");
-    if (ok) {
-      delete paymentRequestIds.current[charge._id];
-      setPaymentDrafts((current) => ({ ...current, [charge._id]: "" }));
-    }
-  };
-  const verifyPayment = async (charge, payment) => {
-    const ok = await perform(async () => {
-      const result = await verifyExtraChargePayment(orderId, charge._id, payment._id);
-      const verifiedTotal = (result.charge?.payments || []).filter((entry) => entry.status === "verified").reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
-      if (verifiedTotal >= Number(charge.total)) {
-        const issued = charge.receipt ? null : await issueExtraChargeReceipt(orderId, charge._id);
-        setActiveChargeId(null);
-        if (issued?.receipt) setSelectedReceipt({ ...issued.receipt, payments: result.charge.payments, approved_by_name: result.charge.approved_by_name, approved_at: result.charge.approved_at, payment_status: "Paid" });
-      }
-    }, "Payment verified.");
-    return ok;
-  };
-
   if (!canView) return null;
+  if (issuesOnly && (loading || (data.issues.length === 0 && data.charges.length === 0))) return null;
 
   return (
-    <section className={`mt-4 rounded-xl border p-3 sm:p-4 ${panelClass}`} aria-labelledby="installation-billing-title">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div><h3 id="installation-billing-title" className="text-sm font-bold">Installation issues and extra charges</h3><p className={`mt-1 text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Issues, approvals, receipts, and charge payments are tracked separately.</p></div>
-        {isStaff && <div className="flex gap-2"><button type="button" onClick={() => setShowIssueForm((value) => !value)} className="rounded-lg border px-3 py-2 text-xs font-semibold">{showIssueForm ? "Close issue form" : "Report issue"}</button>{isAdmin && <button type="button" onClick={() => setShowChargeForm((value) => !value)} className="rounded-lg bg-red-700 px-3 py-2 text-xs font-semibold text-white">{showChargeForm ? "Close charge form" : "Add extra charge"}</button>}</div>}
-      </div>
-      {(isAdmin || isCustomer) && data.balance && <div className={`mt-3 grid grid-cols-2 gap-2 rounded-lg p-3 text-xs sm:grid-cols-4 ${darkMode ? "bg-slate-800" : "bg-slate-50"}`}><div><span className="opacity-70">Original contract</span><p className="mt-1 font-bold">{money(data.balance.original_contract_amount)}</p></div><div><span className="opacity-70">Original outstanding</span><p className="mt-1 font-bold">{money(data.balance.original_outstanding)}</p></div><div><span className="opacity-70">Approved extra charges</span><p className="mt-1 font-bold">{money(data.balance.approved_extra_charges)}</p></div><div><span className="opacity-70">Verified extra charge payments</span><p className="mt-1 font-bold">{money(data.balance.verified_extra_charge_payments)}</p></div><div className="col-span-2 border-t pt-2 sm:col-span-4"><span className="opacity-70">Current total outstanding</span><p className="mt-1 font-bold text-red-600 dark:text-red-300">{money(data.balance.current_total_outstanding)}</p></div></div>}
-      {showIssueForm && isStaff && <form onSubmit={saveIssue} className={`mt-3 grid gap-2 rounded-lg border p-3 sm:grid-cols-2 ${darkMode ? "border-slate-700" : "border-slate-200"}`}>
-        <label className="text-xs font-semibold">Issue type<input className={`${fieldClass} mt-1`} value={issueDraft.issue_type} onChange={(e) => setIssueDraft({ ...issueDraft, issue_type: e.target.value })} placeholder="Enter issue type" maxLength={120} required /></label>
-        <label className="text-xs font-semibold">Affected product<select className={`${fieldClass} mt-1`} value={issueDraft.item_index} onChange={(e) => setIssueDraft({ ...issueDraft, item_index: e.target.value })}><option value="">Project / all items</option>{items.map((item, index) => <option key={item._id || index} value={index}>{item.name || `Item ${index + 1}`}</option>)}</select></label>
-        <label className="text-xs font-semibold sm:col-span-2">Description<textarea className={`${fieldClass} mt-1`} value={issueDraft.description} onChange={(e) => setIssueDraft({ ...issueDraft, description: e.target.value })} maxLength={4000} required rows={2} /></label>
-        <label className="text-xs font-semibold">Measurement details<textarea className={`${fieldClass} mt-1`} value={issueDraft.measurement_details} onChange={(e) => setIssueDraft({ ...issueDraft, measurement_details: e.target.value })} rows={2} /></label>
-        <label className="text-xs font-semibold">Required action<textarea className={`${fieldClass} mt-1`} value={issueDraft.required_action} onChange={(e) => setIssueDraft({ ...issueDraft, required_action: e.target.value })} rows={2} /></label>
-        {canUploadEvidence && <label className="text-xs font-semibold sm:col-span-2">Photos / evidence<input className={`${fieldClass} mt-1`} type="file" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf" multiple onChange={(e) => setIssueDraft({ ...issueDraft, files: Array.from(e.target.files || []).slice(0, 10) })} /><span className="mt-1 block font-normal opacity-70">Up to 10 files. Images and PDF are supported.</span></label>}
-        <div className="sm:col-span-2"><button disabled={saving} className="rounded-lg bg-sky-700 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">{saving ? "Saving…" : "Record issue"}</button></div>
-      </form>}
-      {showChargeForm && isAdmin && <form onSubmit={saveCharge} className={`mt-3 grid gap-2 rounded-lg border p-3 sm:grid-cols-2 ${darkMode ? "border-slate-700" : "border-slate-200"}`}>
+    <section className={`${issuesOnly ? "mt-3 p-3" : "mt-4 p-3 sm:p-4"} rounded-xl border ${panelClass}`} aria-label={issuesOnly ? "Installation Issue" : undefined} aria-labelledby={issuesOnly ? undefined : "installation-billing-title"}>
+      {issuesOnly && <h3 className="mb-3 text-sm font-bold">Installation Issue</h3>}
+      {!issuesOnly && <div className="flex flex-wrap items-start justify-between gap-3">
+        <div><h3 id="installation-billing-title" className="text-sm font-bold">Installation Issues</h3><p className={`mt-1 text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Track extra charges and receipts related to installation.</p></div>
+        {isAdmin && !readOnly && <button type="button" onClick={() => setShowChargeForm((value) => !value)} className="rounded-lg bg-red-700 px-3 py-2 text-xs font-semibold text-white">{showChargeForm ? "Close charge form" : "Add extra charge"}</button>}
+      </div>}
+      {!issuesOnly && showChargeForm && isAdmin && !readOnly && <form onSubmit={saveCharge} className={`mt-3 grid gap-2 rounded-lg border p-3 sm:grid-cols-2 ${darkMode ? "border-slate-700" : "border-slate-200"}`}>
         <label className="text-xs font-semibold sm:col-span-2">Charge description<input className={`${fieldClass} mt-1`} value={chargeDraft.description} onChange={(e) => setChargeDraft({ ...chargeDraft, description: e.target.value })} maxLength={1000} required /></label>
-        <label className="text-xs font-semibold">Related issue (optional)<select className={`${fieldClass} mt-1`} value={chargeDraft.installation_issue} onChange={(e) => setChargeDraft({ ...chargeDraft, installation_issue: e.target.value })}><option value="">None</option>{data.issues.map((issue) => <option key={issue._id} value={issue._id}>{issue.issue_type} · {issue.status}</option>)}</select></label>
-        <label className="text-xs font-semibold">Affected product<select className={`${fieldClass} mt-1`} value={chargeDraft.item_index} onChange={(e) => setChargeDraft({ ...chargeDraft, item_index: e.target.value })}><option value="">Project / all items</option>{items.map((item, index) => <option key={item._id || index} value={index}>{item.name || `Item ${index + 1}`}</option>)}</select></label>
         <label className="text-xs font-semibold sm:col-span-2">Reason for additional charge<textarea className={`${fieldClass} mt-1`} value={chargeDraft.reason} onChange={(e) => setChargeDraft({ ...chargeDraft, reason: e.target.value })} maxLength={2000} required rows={2} /></label>
-        <label className="flex items-start gap-2 text-xs font-semibold sm:col-span-2"><input type="checkbox" checked={chargeDraft.customer_chargeable} onChange={(e) => setChargeDraft({ ...chargeDraft, customer_chargeable: e.target.checked })} required className="mt-0.5" /><span>I assessed the cause and confirm this additional work is chargeable to the customer. Company measurement or installation errors must not be passed on without an authorized assessment.</span></label>
-        <div className="sm:col-span-2"><p className="mb-2 text-xs font-bold">Charge items</p>{chargeDraft.items.map((item, index) => <div key={index} className="mb-2 grid grid-cols-2 gap-2 sm:grid-cols-4"><input className={fieldClass} placeholder="Item description" value={item.description} onChange={(e) => setChargeDraft({ ...chargeDraft, items: chargeDraft.items.map((row, rowIndex) => rowIndex === index ? { ...row, description: e.target.value } : row) })} required /><select className={fieldClass} value={item.category} onChange={(e) => setChargeDraft({ ...chargeDraft, items: chargeDraft.items.map((row, rowIndex) => rowIndex === index ? { ...row, category: e.target.value } : row) })}><option>Labor</option><option>Materials</option><option>Adjustment</option><option>Return visit</option><option>Other</option></select><input className={fieldClass} type="number" min="0.001" step="any" aria-label="Quantity" value={item.quantity} onChange={(e) => setChargeDraft({ ...chargeDraft, items: chargeDraft.items.map((row, rowIndex) => rowIndex === index ? { ...row, quantity: e.target.value } : row) })} required /><input className={fieldClass} type="number" min="0" step="0.01" placeholder="Unit price" aria-label="Unit price" value={item.unit_price} onChange={(e) => setChargeDraft({ ...chargeDraft, items: chargeDraft.items.map((row, rowIndex) => rowIndex === index ? { ...row, unit_price: e.target.value } : row) })} required /></div>)}<button type="button" className="text-xs font-semibold text-blue-600" onClick={() => setChargeDraft({ ...chargeDraft, items: [...chargeDraft.items, { description: "", category: "Labor", quantity: 1, unit_price: "" }] })}>+ Add charge item</button><p className="mt-2 text-xs">Total: <strong>{money(chargeDraft.items.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unit_price || 0), 0))}</strong></p></div>
+        <div className="sm:col-span-2"><p className="mb-2 text-xs font-bold">Charge items</p>{chargeDraft.items.map((item, index) => <div key={index} className="mb-2 grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1.5fr)_auto]"><input className={fieldClass} placeholder="Item description" value={item.description} onChange={(e) => setChargeDraft({ ...chargeDraft, items: chargeDraft.items.map((row, rowIndex) => rowIndex === index ? { ...row, description: e.target.value } : row) })} required /><input className={fieldClass} type="number" min="0.001" step="any" aria-label="Quantity" value={item.quantity} onChange={(e) => setChargeDraft({ ...chargeDraft, items: chargeDraft.items.map((row, rowIndex) => rowIndex === index ? { ...row, quantity: e.target.value } : row) })} required /><input className={fieldClass} type="number" min="0" step="0.01" placeholder="Unit price" aria-label="Unit price" value={item.unit_price} onChange={(e) => setChargeDraft({ ...chargeDraft, items: chargeDraft.items.map((row, rowIndex) => rowIndex === index ? { ...row, unit_price: e.target.value } : row) })} required /><button type="button" aria-label={`Remove charge item ${index + 1}`} title="Remove item" disabled={chargeDraft.items.length === 1} onClick={() => setChargeDraft({ ...chargeDraft, items: chargeDraft.items.filter((_, rowIndex) => rowIndex !== index) })} className="rounded-lg border px-3 py-2 text-sm font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-40"><Trash2 size={16} aria-hidden="true" /></button></div>)}<button type="button" className="text-xs font-semibold text-blue-600" onClick={() => setChargeDraft({ ...chargeDraft, items: [...chargeDraft.items, { description: "", category: "Labor", quantity: 1, unit_price: "" }] })}>+ Add charge item</button><p className="mt-2 text-xs">Total: <strong>{money(chargeDraft.items.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unit_price || 0), 0))}</strong></p></div>
         <label className="text-xs font-semibold sm:col-span-2">Supporting image or document<input className={`${fieldClass} mt-1`} type="file" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf" multiple onChange={(e) => setChargeDraft({ ...chargeDraft, files: Array.from(e.target.files || []).slice(0, 10) })} /></label>
-        <label className="text-xs font-semibold sm:col-span-2">Internal notes<textarea className={`${fieldClass} mt-1`} value={chargeDraft.notes} onChange={(e) => setChargeDraft({ ...chargeDraft, notes: e.target.value })} maxLength={2000} rows={2} /></label>
-        <div className="flex gap-2 sm:col-span-2"><button disabled={saving} className="rounded-lg bg-red-700 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">Save draft</button></div>
+        <div className="sm:col-span-2"><p className="mb-2 text-xs opacity-70">Saving immediately adds this charge to the customer balance and generates its receipt.</p><button disabled={saving} className="rounded-lg bg-red-700 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">Save draft</button></div>
       </form>}
 
       {loading ? <p className="mt-3 text-xs opacity-70">Loading records…</p> : <>
-        {data.items.length > 0 && <div className="mt-4 space-y-2"><h4 className="text-xs font-bold uppercase tracking-wide opacity-70">Per-product installation status</h4>{data.items.map((item, itemIndex) => <div key={`${item.name}-${itemIndex}`} className={`rounded-lg border p-2 ${darkMode ? "border-slate-700" : "border-slate-200"}`}><div className="flex flex-wrap items-center justify-between gap-2"><span className="text-xs font-semibold">{item.name || `Item ${itemIndex + 1}`}</span>{isStaff ? <select aria-label={`Installation status for ${item.name || `item ${itemIndex + 1}`}`} className={fieldClass} value={item.installation_status} disabled={saving} onChange={(event) => perform(() => updateInstallationStatus(orderId, { item_index: itemIndex, status: event.target.value }), "Installation status updated.")}><option>Not Started</option><option>Installation in Progress</option><option>Installed</option><option>For Adjustment</option><option>Installation Completed</option></select> : <span className="rounded-full bg-sky-100 px-2 py-1 text-[10px] font-bold text-sky-900">{item.installation_status}</span>}</div>{item.installation_status_history?.length > 0 && <p className="mt-1 text-[10px] opacity-60">Updated {new Date(item.installation_status_history.at(-1).changed_at).toLocaleString()} by {item.installation_status_history.at(-1).changed_by_name || "staff"}</p>}</div>)}</div>}
-        <div className="mt-4 space-y-2"><h4 className="text-xs font-bold uppercase tracking-wide opacity-70">Installation issues</h4>{data.issues.length === 0 ? <p className="text-xs opacity-60">No reported issues.</p> : data.issues.map((issue) => <article key={issue._id} className={`rounded-lg border p-3 ${darkMode ? "border-slate-700" : "border-slate-200"}`}><div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-sm">{issue.issue_type}</strong><span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-bold text-amber-900">{issue.status}</span></div><p className="mt-1 whitespace-pre-wrap text-xs">{issue.description}</p><p className="mt-1 text-[10px] opacity-60">Affected product: {issue.item_index === null || issue.item_index === undefined ? "Project installation" : items[issue.item_index]?.name || `Item ${Number(issue.item_index) + 1}`} · Reported {new Date(issue.createdAt).toLocaleDateString()} by {issue.reported_by_name || "Staff"}</p>{issue.measurement_details && <p className="mt-1 text-xs opacity-75">Measurements: {issue.measurement_details}</p>}{issue.required_action && <p className="mt-1 text-xs opacity-75">Action: {issue.required_action}</p>}{issue.evidence_urls?.length > 0 && <div className="mt-2 flex flex-wrap gap-2">{issue.evidence_urls.map((url, index) => <button key={url} type="button" onClick={() => setEvidencePreview({ url, label: `Evidence ${index + 1}` })} className="text-xs font-semibold text-blue-600 underline">Evidence {index + 1}</button>)}</div>}{issue.return_visit?.date && <p className="mt-2 text-xs">Return visit: {new Date(issue.return_visit.date).toLocaleDateString()} {issue.return_visit.time} · {issue.return_visit.reason}</p>}{issue.history?.length > 0 && <ul className="mt-2 space-y-1 border-t pt-2 text-[10px] opacity-70">{issue.history.map((entry, index) => <li key={entry._id || `${entry.status}-${index}`}>{entry.status} · {new Date(entry.changed_at).toLocaleString()} by {entry.changed_by_name || "Staff"}</li>)}</ul>}{isStaff && <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_auto]"><select aria-label="Issue status" className={fieldClass} value={returnDrafts[issue._id]?.status || issue.status} onChange={(e) => { const status = e.target.value; if (status === "Return Visit Required") setReturnDrafts((current) => ({ ...current, [issue._id]: { ...(current[issue._id] || {}), status } })); else perform(async () => { await updateInstallationIssue(orderId, issue._id, { status }); setReturnDrafts((current) => { const next = { ...current }; delete next[issue._id]; return next; }); }, "Issue status updated."); }}><option>{issue.status}</option>{issueStatuses.filter((status) => status !== issue.status).map((status) => <option key={status}>{status}</option>)}</select>{(issue.status === "Return Visit Required" || returnDrafts[issue._id]?.status === "Return Visit Required") && <><input aria-label="Return visit date" type="date" className={fieldClass} value={returnDrafts[issue._id]?.date || issue.return_visit?.date?.slice(0, 10) || ""} onChange={(e) => setReturnDrafts((current) => ({ ...current, [issue._id]: { ...current[issue._id], date: e.target.value } }))} /><input aria-label="Return visit time" required type="time" className={fieldClass} value={returnDrafts[issue._id]?.time || issue.return_visit?.time || ""} onChange={(e) => setReturnDrafts((current) => ({ ...current, [issue._id]: { ...current[issue._id], time: e.target.value } }))} /><input aria-label="Return visit reason" className={`${fieldClass} sm:col-span-2`} placeholder="Return visit reason" value={returnDrafts[issue._id]?.reason ?? issue.return_visit?.reason ?? ""} onChange={(e) => setReturnDrafts((current) => ({ ...current, [issue._id]: { ...current[issue._id], reason: e.target.value } }))} /><button type="button" className="rounded-lg bg-sky-700 px-3 py-2 text-xs font-semibold text-white" onClick={() => { const draft = returnDrafts[issue._id] || {}; const reason = draft.reason || issue.return_visit?.reason || ""; if (!draft.date && !issue.return_visit?.date) return toast.error("Choose a return visit date."); if (!draft.time && !issue.return_visit?.time) return toast.error("Choose a return visit time."); if (!reason.trim()) return toast.error("Enter a reason for the return visit."); perform(async () => { await updateInstallationIssue(orderId, issue._id, { status: "Return Visit Required", return_visit: { date: draft.date || issue.return_visit?.date, time: draft.time || issue.return_visit?.time, reason } }); setReturnDrafts((current) => { const next = { ...current }; delete next[issue._id]; return next; }); }, "Return visit saved."); }}>Save return</button></>}</div>}</article>)}</div>
 
-        {isAdmin && <div className="mt-4 space-y-2"><h4 className="text-xs font-bold uppercase tracking-wide opacity-70">Extra charge review</h4>{data.charges.length === 0 ? <p className="text-xs opacity-60">No extra charges.</p> : data.charges.map((charge) => { const paid = (charge.payments || []).filter((entry) => entry.status === "verified").reduce((sum, entry) => sum + Number(entry.amount || 0), 0); const receipt = data.receipts.find((entry) => String(entry._id) === String(charge.receipt)); return <article key={charge._id} className={`rounded-lg border p-3 ${darkMode ? "border-slate-700" : "border-slate-200"}`}><div className="flex flex-wrap justify-between gap-2"><strong className="text-sm">{charge.description}</strong><span className="rounded-full bg-violet-100 px-2 py-1 text-[10px] font-bold text-violet-900">{charge.status}</span></div><p className="mt-1 text-xs">Reason: {charge.reason}</p><p className="mt-1 text-[10px] opacity-60">Affected product: {charge.item_index === null || charge.item_index === undefined ? "Project installation" : items[charge.item_index]?.name || `Item ${Number(charge.item_index) + 1}`} · Recorded by {charge.recorded_by_name}</p><p className="mt-1 text-xs">{charge.items?.map((item) => `${item.description} (${item.quantity} × ${money(item.unit_price)})`).join(" · ")}</p>{charge.evidence_urls?.length > 0 && <div className="mt-1 flex flex-wrap gap-2">{charge.evidence_urls.map((url, index) => <button key={url} type="button" onClick={() => setEvidencePreview({ url, label: `Supporting file ${index + 1}` })} className="text-xs font-semibold text-blue-600 underline">Supporting file {index + 1}</button>)}</div>}<p className="mt-1 text-sm font-bold">Total: {money(charge.total)} · Remaining: {money(Math.max(Number(charge.total) - paid, 0))}</p>{charge.approved_by_name && <p className="mt-1 text-[10px] opacity-60">Approved by {charge.approved_by_name} · {charge.approved_at ? new Date(charge.approved_at).toLocaleString() : ""}</p>}{charge.installation_issue && <p className="mt-1 text-xs opacity-70">Related issue: {issueNames.get(String(charge.installation_issue)) || "Installation issue"}</p>}
-          {isAdmin && <div className="mt-3 flex justify-end"><button type="button" className="rounded-lg bg-blue-700 px-4 py-2 text-xs font-semibold text-white" onClick={() => setActiveChargeId(charge._id)}>{receipt ? `View receipt · ${receipt.receipt_number}` : "Manage charge"}</button></div>}
-        </article>; })}</div>}
-        {isCustomer && <div className="mt-4 space-y-2"><h4 className="text-xs font-bold uppercase tracking-wide opacity-70">Approved extra charges and receipts</h4>{data.charges.length === 0 ? <p className="text-xs opacity-60">No approved extra charges.</p> : data.charges.map((charge) => { const receipt = data.receipts.find((entry) => String(entry._id) === String(charge.receipt)); return <article key={charge._id} className={`rounded-lg border p-3 ${darkMode ? "border-slate-700" : "border-slate-200"}`}><strong className="text-sm">{charge.description}</strong><p className="mt-1 text-xs">Reason: {charge.reason}</p><p className="mt-1 text-xs opacity-70">Affected product: {charge.item_index === null || charge.item_index === undefined ? "Project installation" : items[charge.item_index]?.name || `Item ${Number(charge.item_index) + 1}`}</p><p className="mt-1 font-bold">{money(charge.total)} · {receipt ? receiptStatus(receipt) : "Approved"}</p>{charge.evidence_urls?.length > 0 && <div className="mt-1 flex gap-2">{charge.evidence_urls.map((url, index) => <button key={url} type="button" onClick={() => setEvidencePreview({ url, label: `Supporting file ${index + 1}` })} className="text-xs font-semibold text-blue-600 underline">Supporting file {index + 1}</button>)}</div>}{receipt && <button type="button" className="mt-2 rounded-lg border px-3 py-2 text-xs font-semibold" onClick={() => setSelectedReceipt(receiptSnapshot(receipt))}>View / Download Receipt · {receipt.receipt_number}</button>}</article>; })}</div>}
+
+        {!issuesOnly && isAdmin && <div className="mt-4 space-y-2"><h4 className="text-xs font-bold uppercase tracking-wide opacity-70">Additional installation charges</h4>{data.charges.length === 0 ? <p className="text-xs opacity-60">No extra charges.</p> : data.charges.map((charge) => {
+          const receipt = data.receipts.find((entry) => String(entry._id) === String(charge.receipt));
+          return <article key={charge._id} className={`rounded-xl border p-4 ${darkMode ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-slate-50/60"}`}>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <strong className="min-w-0 text-base font-bold leading-6">{charge.description}</strong>
+              <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${darkMode ? "bg-violet-950 text-violet-200" : "bg-violet-100 text-violet-900"}`}>{receipt || ["Approved", "Receipt Generated"].includes(charge.status) ? "Added to balance" : charge.status}</span>
+            </div>
+            {(charge.reason || charge.items?.length > 0) && <div className={`mt-3 grid gap-3 border-t pt-3 sm:grid-cols-2 ${darkMode ? "border-slate-700" : "border-slate-200"}`}>
+              {charge.reason && <div className="min-w-0"><p className={`text-xs font-bold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Reason</p><p className={`mt-1 text-sm font-medium leading-6 ${darkMode ? "text-slate-200" : "text-slate-800"}`}>{charge.reason}</p></div>}
+              {charge.items?.length > 0 && <div className="min-w-0"><p className={`text-xs font-bold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Items</p><div className={`mt-1 space-y-0.5 text-sm leading-6 ${darkMode ? "text-slate-200" : "text-slate-800"}`}>{charge.items.map((item, index) => <p key={`${item.description}-${index}`}><span className="font-medium">{item.description}</span> <span>({item.quantity} × {money(item.unit_price)})</span></p>)}</div></div>}
+            </div>}
+            {charge.evidence_urls?.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{charge.evidence_urls.map((url, index) => <button key={url} type="button" onClick={() => setEvidencePreview({ url, label: `Supporting file ${index + 1}` })} className={`rounded-md border px-2.5 py-1.5 text-xs font-semibold ${darkMode ? "border-slate-600 text-blue-200 hover:bg-slate-700" : "border-slate-200 text-blue-700 hover:bg-white"}`}>Supporting file {index + 1}</button>)}</div>}
+            <div className={`mt-3 flex flex-wrap items-center justify-between gap-3 border-t pt-3 ${darkMode ? "border-slate-700" : "border-slate-200"}`}>
+              <div><p className={`text-xs font-semibold ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Added to project total</p><p className={`mt-0.5 text-lg font-bold ${darkMode ? "text-emerald-300" : "text-emerald-700"}`}>{money(charge.total)}</p></div>
+              {receipt && <button type="button" className={`inline-flex min-h-9 items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${darkMode ? "border-blue-500/40 bg-blue-500/10 text-blue-200 hover:bg-blue-500/20" : "border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100"}`} onClick={() => setSelectedReceipt(receiptSnapshot(receipt))}><FileText size={15} aria-hidden="true" /><span>View receipt</span></button>}
+            </div>
+          </article>; })}</div>}
+        {isCustomer && data.issues.length > 0 && <section className={`${issuesOnly ? "mt-2 space-y-1.5" : "mt-4 space-y-2"}`} aria-label="Reported installation issues">
+          {!issuesOnly && <h4 className="text-xs font-bold uppercase tracking-wide opacity-70">Installation issues</h4>}
+          {data.issues.map((issue) => {
+            const hasItemIndex = issue.item_index !== null && issue.item_index !== undefined && issue.item_index !== "";
+            const affectedProduct = hasItemIndex ? order?.items?.[Number(issue.item_index)]?.name : "";
+            const genericProductNames = ["project installation", "project / all items", "all items"];
+            const showAffectedProduct = affectedProduct && !genericProductNames.includes(String(affectedProduct).trim().toLowerCase());
+            const recordedAt = formatIssueDate(issue.createdAt || issue.created_at);
+            const reporter = issue.reported_by_name || issue.recorded_by_name || "ACGC team";
+            return <article key={issue._id} className={`rounded-lg border ${issuesOnly ? "p-2" : "p-3"} ${darkMode ? "border-slate-700" : "border-slate-200"}`}>
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <strong className={issuesOnly ? "text-xs" : "text-sm"}>{issue.issue_type || "Installation issue"}</strong>
+                <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${issueStatusClass(issue.status, darkMode)}`}>{issue.status || "Open"}</span>
+              </div>
+              {issue.description && <p className={`${issuesOnly ? "mt-1 text-xs" : "mt-2 text-sm"} whitespace-pre-wrap break-words`}>{issue.description}</p>}
+              {showAffectedProduct && <p className="mt-1 text-xs opacity-70">Affected product: {affectedProduct}</p>}
+              <p className="mt-1 text-xs opacity-70">{recordedAt ? `Recorded ${recordedAt}` : "Recorded"} by {reporter}</p>
+              {issue.measurement_details && <p className={`${issuesOnly ? "mt-1" : "mt-2"} whitespace-pre-wrap break-words text-xs`}><span className="font-semibold">Measurements:</span> {issue.measurement_details}</p>}
+              {issue.required_action && <p className="mt-1 whitespace-pre-wrap break-words text-xs"><span className="font-semibold">Required action:</span> {issue.required_action}</p>}
+              {issue.status === "Return Visit Required" && issue.return_visit?.date && <div className={`mt-2 rounded-md p-2 text-xs ${darkMode ? "bg-amber-950 text-amber-100" : "bg-amber-50 text-amber-900"}`}>
+                <p className="font-semibold">Return visit scheduled</p>
+                <p>{formatIssueDate(issue.return_visit.date)}{issue.return_visit.time ? ` at ${issue.return_visit.time}` : ""}</p>
+                {issue.return_visit.reason && <p className="mt-1">{issue.return_visit.reason}</p>}
+              </div>}
+              {issue.evidence_urls?.length > 0 && <div className="mt-2 flex flex-wrap gap-2">{issue.evidence_urls.map((url, index) => <button key={url} type="button" onClick={() => setEvidencePreview({ url, label: `Issue evidence ${index + 1}` })} className="text-xs font-semibold text-blue-600 underline">Evidence {index + 1}</button>)}</div>}
+            </article>;
+          })}
+        </section>}
+        {isCustomer && issuesOnly && data.charges.length > 0 && <section className="mt-3 space-y-2" aria-label="Additional installation charges to pay">
+          <h4 className={`text-sm font-bold uppercase tracking-wide ${darkMode ? "text-slate-300" : "text-slate-600"}`}>Additional charges</h4>
+          {data.charges.map((charge) => {
+            const verifiedPayments = (charge.payments || []).filter((payment) => payment.status === "verified").reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+            const amountDue = Math.max(0, Math.round((Number(charge.total || 0) - verifiedPayments) * 100) / 100);
+            return <article key={charge._id} className={`rounded-lg border p-4 ${darkMode ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-slate-50/70"}`}>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-5">
+                <div className="min-w-0 flex-1">
+                  <strong className="block text-base font-bold leading-6">{charge.description}</strong>
+                </div>
+                <div className={`shrink-0 border-t pt-2 sm:border-t-0 sm:pt-0 sm:text-right ${darkMode ? "border-slate-700" : "border-slate-200"}`}>
+                  <span className={`text-xs font-semibold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Amount due</span>
+                  <p className={`mt-0.5 whitespace-nowrap text-base font-bold ${darkMode ? "text-emerald-300" : "text-emerald-700"}`}>{money(amountDue)}</p>
+                </div>
+              </div>
+              {(charge.reason || charge.items?.length > 0) && <div className={`mt-3 grid gap-3 border-t pt-3 sm:grid-cols-2 ${darkMode ? "border-slate-700" : "border-slate-200"}`}>
+                {charge.reason && <div className="min-w-0"><p className={`text-xs font-bold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Reason</p><p className={`mt-1 text-base font-medium leading-6 ${darkMode ? "text-slate-200" : "text-slate-800"}`}>{charge.reason}</p></div>}
+                {charge.items?.length > 0 && <div className="min-w-0"><p className={`text-xs font-bold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Items</p><div className={`mt-1 space-y-0.5 text-base leading-6 ${darkMode ? "text-slate-200" : "text-slate-800"}`}>{charge.items.map((item, index) => <p key={`${item.description}-${index}`}><span className="font-medium">{item.description}</span> <span className="text-sm">({item.quantity} × {money(item.unit_price)})</span></p>)}</div></div>}
+              </div>}
+            </article>;
+          })}
+        </section>}
+        {!issuesOnly && isCustomer && <div className="mt-4 space-y-2"><h4 className="text-xs font-bold uppercase tracking-wide opacity-70">Installation charges and receipts</h4>{data.charges.length === 0 ? <p className="text-xs opacity-60">No additional installation charges.</p> : data.charges.map((charge) => { const receipt = data.receipts.find((entry) => String(entry._id) === String(charge.receipt)); return <article key={charge._id} className={`rounded-lg border p-3 ${darkMode ? "border-slate-700" : "border-slate-200"}`}><strong className="text-sm">{charge.description}</strong><p className="mt-1 text-xs">Reason: {charge.reason}</p><p className="mt-1 font-bold">{money(charge.total)} · {receipt ? receiptStatus(receipt) : "Added to balance"}</p>{charge.evidence_urls?.length > 0 && <div className="mt-1 flex gap-2">{charge.evidence_urls.map((url, index) => <button key={url} type="button" onClick={() => setEvidencePreview({ url, label: `Supporting file ${index + 1}` })} className="text-xs font-semibold text-blue-600 underline">Supporting file {index + 1}</button>)}</div>}{receipt && <button type="button" className="mt-2 rounded-lg border px-3 py-2 text-xs font-semibold" onClick={() => setSelectedReceipt(receiptSnapshot(receipt))}>View / Download Receipt · {receipt.receipt_number}</button>}</article>; })}</div>}
       </>}
 
-      <ExtraChargeReceiptModal receipt={selectedReceipt} darkMode={darkMode} onClose={() => setSelectedReceipt(null)} />
+      <ExtraChargeReceiptModal receipt={selectedReceipt} darkMode={darkMode} enableSend={isAdmin && !readOnly} onReceiptSent={() => refresh()} onClose={() => setSelectedReceipt(null)} />
       {evidencePreview && <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/75 p-3 sm:p-6" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setEvidencePreview(null); }}><section role="dialog" aria-modal="true" aria-label={evidencePreview.label} className={`flex max-h-[94vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border shadow-2xl ${panelClass}`}><header className="flex shrink-0 items-center justify-between gap-3 border-b p-3"><h3 className="truncate text-sm font-bold">{evidencePreview.label}</h3><div className="flex shrink-0 items-center gap-2"><a href={evidencePreview.url} target="_blank" rel="noreferrer" className="rounded-lg border px-3 py-2 text-xs font-semibold">Open original</a><button type="button" aria-label="Close evidence preview" onClick={() => setEvidencePreview(null)} className="rounded-lg border p-2"><span aria-hidden="true">×</span></button></div></header><div className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-black/5 p-2 sm:p-4">{isImageEvidence(evidencePreview.url) ? <img src={evidencePreview.url} alt={evidencePreview.label} className="max-h-[78vh] max-w-full rounded-lg object-contain" /> : isPdfEvidence(evidencePreview.url) ? <iframe title={evidencePreview.label} src={evidencePreview.url} className="h-[78vh] w-full rounded-lg bg-white" /> : <div className="text-center"><p className="text-sm">Preview is unavailable for this file type.</p><a href={evidencePreview.url} target="_blank" rel="noreferrer" className="mt-2 inline-block text-sm font-semibold text-blue-600 underline">Open or download file</a></div>}</div></section></div>}
-      {activeCharge && <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/65 p-3 sm:p-5" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setActiveChargeId(null); }}><section role="dialog" aria-modal="true" aria-labelledby="charge-workflow-title" className={`max-h-[92dvh] w-full max-w-xl overflow-y-auto rounded-2xl border p-4 shadow-2xl sm:p-5 ${panelClass}`}><header className="flex items-start justify-between gap-3"><div><h3 id="charge-workflow-title" className="text-base font-bold">Extra charge action</h3><p className="mt-1 text-sm">{activeCharge.description}</p></div><button type="button" className="rounded-lg border px-3 py-1.5 text-xs font-semibold" onClick={() => setActiveChargeId(null)}>Close</button></header><p className="mt-3 text-xs opacity-70">Complete approval and verify the full payment. The receipt is generated after the final payment is verified.</p><div className={`mt-3 space-y-1 rounded-lg p-3 text-xs ${darkMode ? "bg-slate-800" : "bg-slate-50"}`}><p><strong>Status:</strong> {activeCharge.status}</p><p><strong>Reason:</strong> {activeCharge.reason}</p><p><strong>Total:</strong> {money(activeCharge.total)} · <strong>Verified:</strong> {money((activeCharge.payments || []).filter((entry) => entry.status === "verified").reduce((sum, entry) => sum + Number(entry.amount || 0), 0))}</p></div><div className="mt-4 space-y-3">{activeCharge.status === "Draft" && <button type="button" disabled={saving} className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" onClick={() => perform(() => submitExtraCharge(orderId, activeCharge._id), "Charge submitted for approval.")}>Submit for approval</button>}{activeCharge.status === "Pending Approval" && <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto]"><input className={fieldClass} placeholder="Decline reason (required)" value={declineReasons[activeCharge._id] || ""} onChange={(event) => setDeclineReasons((current) => ({ ...current, [activeCharge._id]: event.target.value }))} /><button type="button" disabled={saving} className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" onClick={() => perform(() => reviewExtraCharge(orderId, activeCharge._id, { decision: "approve" }), "Extra charge approved.")}>Approve</button><button type="button" disabled={saving || !declineReasons[activeCharge._id]?.trim()} className="rounded-lg border border-red-400 px-4 py-2 text-sm font-semibold text-red-600 disabled:opacity-50" onClick={() => perform(() => reviewExtraCharge(orderId, activeCharge._id, { decision: "decline", reason: declineReasons[activeCharge._id] }), "Charge declined.")}>Decline</button></div>}{["Approved", "Receipt Generated"].includes(activeCharge.status) && <><div className="grid gap-2 sm:grid-cols-4"><input aria-label="Extra charge payment amount" type="number" min="0.01" step="0.01" max={Math.max(Number(activeCharge.total) - (activeCharge.payments || []).filter((entry) => entry.status === "verified").reduce((sum, entry) => sum + Number(entry.amount || 0), 0), 0)} placeholder="Payment amount" className={fieldClass} value={paymentDrafts[activeCharge._id] || ""} onChange={(event) => setPaymentDrafts((current) => ({ ...current, [activeCharge._id]: event.target.value }))} /><select aria-label="Extra charge payment method" className={fieldClass} value={paymentDetails[activeCharge._id]?.method || "Cash"} onChange={(event) => setPaymentDetails((current) => ({ ...current, [activeCharge._id]: { ...current[activeCharge._id], method: event.target.value } }))}><option>Cash</option><option>Online Payment</option><option>Other</option></select><input aria-label="Payment reference" placeholder="Payment reference" className={fieldClass} value={paymentDetails[activeCharge._id]?.reference || ""} onChange={(event) => setPaymentDetails((current) => ({ ...current, [activeCharge._id]: { ...current[activeCharge._id], reference: event.target.value } }))} /><button type="button" disabled={saving} className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50" onClick={() => submitPayment(activeCharge)}>Record payment</button></div>{(activeCharge.payments || []).filter((entry) => entry.status === "pending").map((payment) => <div key={payment._id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-300 p-3 text-xs"><span>Payment awaiting verification: {money(payment.amount)} · {payment.method}</span><button type="button" disabled={saving} className="rounded-lg bg-emerald-700 px-3 py-2 font-semibold text-white disabled:opacity-50" onClick={() => verifyPayment(activeCharge, payment)}>Verify payment</button></div>)}</>}{activeCharge.status === "Approved" && !activeCharge.receipt && (activeCharge.payments || []).filter((entry) => entry.status === "verified").reduce((sum, entry) => sum + Number(entry.amount || 0), 0) >= Number(activeCharge.total) && <button type="button" disabled={saving} className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" onClick={() => perform(async () => { const issued = await issueExtraChargeReceipt(orderId, activeCharge._id); setActiveChargeId(null); setSelectedReceipt({ ...issued.receipt, payments: activeCharge.payments, approved_by_name: activeCharge.approved_by_name, approved_at: activeCharge.approved_at, payment_status: "Paid" }); }, "Payment verified and receipt generated.")}>Generate receipt</button>}{activeCharge.status === "Receipt Generated" && <button type="button" className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white" onClick={() => { const receipt = data.receipts.find((entry) => String(entry.extra_charge) === String(activeCharge._id)); if (receipt) setSelectedReceipt(receiptSnapshot(receipt)); }}>View receipt</button>}</div></section></div>}
+
+
     </section>
   );
 }

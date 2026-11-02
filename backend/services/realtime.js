@@ -164,7 +164,10 @@ export const realtimeResponseMiddleware = (io) => (req, res, next) => {
           const scopedEvent = { ...publicEvent, area };
           const isSharedData = ["products", "catalog", "reviews", "settings"].includes(area);
           if (["orders", "repairs", "products", "catalog", "reviews", "settings"].includes(area)) {
-            io.to("admins").emit("realtime:changed", scopedEvent);
+            io.to("admins").emit("realtime:changed", {
+              ...scopedEvent,
+              ...(originClientId ? { originClientId } : {}),
+            });
           }
           if (req.user.role === "skilled_worker") {
             for (const moduleKey of getStaffRealtimeModules(area)) {

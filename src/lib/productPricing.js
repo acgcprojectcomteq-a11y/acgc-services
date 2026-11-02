@@ -20,7 +20,8 @@ export const getFinishedDoorMeasurementBreakdown = (product = {}, item = {}) => 
   const standardSizeCm = configuredStandard > 0 ? configuredStandard : 190;
   const entered = Number(item.door_measurement?.actual_measurement_cm);
   const actualMeasurementCm = mode === "custom" ? entered : standardSizeCm;
-  const standardPricePerPiece = toNonNegativeNumber(config.standard_price_per_piece);
+  const standardPricePerPiece = toNonNegativeNumber(product.estimated_price_override ?? item.estimated_price_override)
+    || toNonNegativeNumber(config.standard_price_per_piece);
   const additionalPricePerCm = toNonNegativeNumber(config.additional_price_per_cm);
   const isValidMeasurement = Number.isFinite(actualMeasurementCm) && actualMeasurementCm > 0;
   const excessMeasurementCm = isValidMeasurement ? Math.max(actualMeasurementCm - standardSizeCm, 0) : 0;
@@ -81,11 +82,11 @@ const getBladePricing = (product = {}, item = {}) => {
     || frameTypes.find((frame) => String(frame.name).toLowerCase() === String(frameName).toLowerCase());
   const configuredBladeCount = Number(item.blade_count) || Number(frameType?.blade_count) || Number(product.blade_count) || Number(product.minimum_blades) || 0;
   const bladeCount = Math.max(0, configuredBladeCount);
-  const configuredBladeRate = toNonNegativeNumber(glassType?.price_per_blade ?? product.price_per_blade ?? item.price_per_blade);
   const hasPriceOverride = toNonNegativeNumber(product.estimated_price_override ?? item.estimated_price_override) > 0;
-  const bladeRate = configuredBladeRate > 0
-    ? configuredBladeRate
-    : hasPriceOverride ? getBladePriceOverrideRate(product, item) : 0;
+  const configuredBladeRate = toNonNegativeNumber(glassType?.price_per_blade ?? product.price_per_blade ?? item.price_per_blade);
+  const bladeRate = hasPriceOverride
+    ? getBladePriceOverrideRate(product, item)
+    : configuredBladeRate;
   const framePrice = saleMode === "frame"
     ? toNonNegativeNumber(item.frame_price ?? (item.custom_frame_size ? product.custom_frame_price : frameType?.price))
     : 0;
@@ -163,13 +164,11 @@ export const getProductLineTotal = (product = {}, item = {}, options = {}) => {
   const overrideCoreSubtotal = productPriceOverride > 0
     ? getProductOverrideBaseSubtotal(product, item)
     : 0;
-  const overridePrice = ["fixed", "per_piece", "per_set", "piece", "set"].includes(method)
+  const isAreaPricing = method === "sqft" || method === "per_sqft";
+  const overridePrice = !isAreaPricing && !["per_meter", "meter", "blade", "per_blade"].includes(method)
     ? overrideCoreSubtotal
     : 0;
   const configuredAreaRate = toNonNegativeNumber(product.price_per_sqft ?? item.price_per_sqft);
-  const measuredPriceOverride = ["sqft", "per_sqft"].includes(method) && configuredAreaRate <= 0
-    ? overrideCoreSubtotal
-    : 0;
   const lengthPriceOverride = ["per_meter", "meter"].includes(method) ? overrideCoreSubtotal : 0;
 
   const unit = item.measurement_unit || item.measurementUnit || item.dimensions?.unit || product.measurement_unit || "in";
@@ -186,13 +185,6 @@ export const getProductLineTotal = (product = {}, item = {}, options = {}) => {
     : 1;
   let subtotal = doorBreakdown ? doorBreakdown.final_item_price : overridePrice > 0 ? overridePrice * fixedOverrideRatio * quantity : 0;
 
-  if (measuredPriceOverride > 0) {
-    const pricedArea = measuredArea || standardArea;
-    subtotal = standardArea > 0 && pricedArea > 0
-      ? measuredPriceOverride * pricedArea / standardArea * quantity
-      : measuredPriceOverride * quantity;
-  }
-
   if (lengthPriceOverride > 0) {
     const productLength = Number(product.length ?? product.width) || 0;
     const selectedLength = Number(item.length ?? item.dimensions?.length ?? item.width ?? item.dimensions?.width ?? productLength) || 0;
@@ -206,10 +198,11 @@ export const getProductLineTotal = (product = {}, item = {}, options = {}) => {
   }
 
   if (method === "sqft" || method === "per_sqft") {
-    const rate = configuredAreaRate;
-    if (rate > 0 && width > 0 && height > 0) {
-      const areaPerUnit = toSquareFeet(width, height, unit);
-      subtotal = areaPerUnit * rate * quantity;
+    if (overrideCoreSubtotal > 0) {
+      const areaRatio = standardArea > 0 && measuredArea > 0 ? measuredArea / standardArea : 1;
+      subtotal = overrideCoreSubtotal * areaRatio * quantity;
+    } else if (configuredAreaRate > 0 && width > 0 && height > 0) {
+      subtotal = measuredArea * configuredAreaRate * quantity;
     }
   }
 
@@ -234,7 +227,7 @@ export const getProductLineTotal = (product = {}, item = {}, options = {}) => {
     subtotal = doorBreakdown ? doorBreakdown.final_item_price : fixedPrice * quantity;
   }
 
-  if (!doorBreakdown && pieceOptionPricing?.pieceRate > 0) {
+  if (!doorBreakdown && productPriceOverride <= 0 && pieceOptionPricing?.pieceRate > 0) {
     subtotal = pieceOptionPricing.pieceRate * quantity;
   }
 
@@ -414,10 +407,9 @@ export const getMeasuredProductLineTotal = (product = {}, item = {}) => {
   const standardArea = productWidth > 0 && productHeight > 0
     ? toSquareFeet(productWidth, productHeight, productUnit)
     : toNonNegativeNumber(product.estimated_area);
-  const isMeasuredOverride = ["sqft", "per_sqft"].includes(method);
   const isDimensionedFixedPrice = method === "fixed" && standardArea > 0;
 
-  if (!isMeasuredOverride && !isDimensionedFixedPrice) {
+  if (!isDimensionedFixedPrice) {
     return getProductLineTotal(product, item);
   }
 

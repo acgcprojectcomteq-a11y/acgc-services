@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto";
 import mongoose from "mongoose";
 import Order from "../models/Order.js";
 import ExtraChargeReceipt from "../models/ExtraChargeReceipt.js";
+import ProjectPaymentReceipt from "../models/ProjectPaymentReceipt.js";
 import ExtraCharge from "../models/ExtraCharge.js";
 import SystemSetting from "../models/SystemSetting.js";
 import ScheduleReservation from "../models/ScheduleReservation.js";
@@ -45,6 +46,8 @@ import {
   validateDownpaymentExceptionApproval,
   validatePaymentAmount,
 } from "../services/paymentLedger.js";
+
+const getBaseProjectCost = (order = {}) => getFinalProjectCost({ ...order, installation_extra_charge_total: 0 });
 
 const isWithinReviewEditWindow = (submittedAt) => {
   if (!submittedAt) return false;
@@ -939,6 +942,39 @@ export const listOrders = async (req, res) => {
 
     orders.forEach(attachOrderScheduleOverdue);
 
+    // Preserve the running balance written by Save draft, while using charge
+    // records to recover older issued charges missing from an Order snapshot.
+    if (req.user.role === "customer" && orders.length > 0) {
+      const chargeRecords = await ExtraCharge.find({
+        order: { $in: orders.map((order) => order._id) },
+        status: { $in: ["Approved", "Receipt Generated"] },
+      }).select("order total payments").lean();
+      const totalsByOrder = new Map();
+      const paidByOrder = new Map();
+      chargeRecords.forEach((charge) => {
+        const key = String(charge.order);
+        const total = Math.max(Number(charge.total) || 0, 0);
+        const paid = (charge.payments || []).reduce((sum, payment) => (
+          payment.status === "verified" ? sum + Math.max(Number(payment.amount) || 0, 0) : sum
+        ), 0);
+        totalsByOrder.set(key, Math.round(((totalsByOrder.get(key) || 0) + total) * 100) / 100);
+        paidByOrder.set(key, Math.round(((paidByOrder.get(key) || 0) + paid) * 100) / 100);
+      });
+      orders.forEach((order) => {
+        const key = String(order._id);
+        // Keep the persisted running balance (which is incremented on every
+        // Save draft) and use charge records to fill any older missing totals.
+        order.installation_extra_charge_total = Math.max(
+          Number(order.installation_extra_charge_total) || 0,
+          totalsByOrder.get(key) || 0,
+        );
+        order.installation_extra_charge_paid_total = Math.max(
+          Number(order.installation_extra_charge_paid_total) || 0,
+          paidByOrder.get(key) || 0,
+        );
+      });
+    }
+
     if (req.user.role === "customer" && orders.length > 0) {
       orders.forEach((order) => {
         delete order.progress_notes;
@@ -1449,7 +1485,7 @@ export const getAdminOrders = async (req, res) => {
     const pageValue = Math.max(Number(req.query.page) || 1, 1);
     const skipValue = limitValue ? (pageValue - 1) * limitValue : 0;
     const baseFields = [
-      "customer customer_name customer_email customer_phone has_account_on_website shipping_address items project_additional_charges total_amount estimated_cost final_project_cost manual_override",
+      "customer customer_name customer_email customer_phone has_account_on_website shipping_address items project_additional_charges total_amount estimated_cost final_project_cost manual_override installation_extra_charge_total installation_extra_charge_paid_total",
       "payment_terms downpayment_amount required_downpayment_amount amount_paid payment_status payment_records payment_proof_amount payment_proof_submitted_at payment_proof_confirmed_at payment_proof_file_name payment_proof_file_url payment_method transaction_number",
       "status cancellation_reason customer_cancellation_count_at_cancel is_rush_order order_type contract_status contractStatus contractGenerated contractId contractVersion currentContractVersion contractGeneratedAt contractNeedsRegeneration contractSentAt contract_email_status contract_email_error contractDeclineReason contractDeclinedAt acceptedByCustomer acceptedAt acceptanceMethod transactionCreated transactionCreatedAt transaction_approved",
       "tracking inspection_status inspection_completed_at inspection_date inspection_time inspection_duration_minutes inspection_travel_minutes estimated_installation_date estimated_installation_time installation_duration_minutes inspection_notes issues_found",
@@ -1457,21 +1493,21 @@ export const getAdminOrders = async (req, res) => {
     ].join(" ");
     const moduleFields = {
       dashboard: [
-        "customer customer_name customer_email customer_phone items total_amount estimated_cost final_project_cost manual_override",
+        "customer customer_name customer_email customer_phone items total_amount estimated_cost final_project_cost manual_override installation_extra_charge_total installation_extra_charge_paid_total",
         "status is_rush_order contract_status contractStatus contractSentAt contractDeclineReason acceptedByCustomer acceptedAt transactionCreated tracking createdAt updatedAt",
       ].join(" "),
       notifications: [
-        "customer customer_name customer_email customer_phone items total_amount final_project_cost",
+        "customer customer_name customer_email customer_phone items total_amount final_project_cost installation_extra_charge_total installation_extra_charge_paid_total",
         "status cancellation_reason customer_cancellation_count_at_cancel order_type contract_status contractStatus contractSentAt payment_status payment_records payment_proof_amount payment_proof_submitted_at tracking inspection_status inspection_date inspection_time estimated_installation_date estimated_installation_time createdAt updatedAt",
       ].join(" "),
       transactions: [
-        "customer customer_name customer_email customer_phone shipping_address has_account_on_website items project_additional_charges total_amount estimated_cost final_project_cost manual_override",
+        "customer customer_name customer_email customer_phone shipping_address has_account_on_website items project_additional_charges total_amount estimated_cost final_project_cost manual_override installation_extra_charge_total installation_extra_charge_paid_total",
         "payment_terms downpayment_amount required_downpayment_amount amount_paid payment_status payment_records payment_proof_amount payment_proof_submitted_at payment_proof_confirmed_at payment_proof_file_name payment_proof_file_url payment_method transaction_number",
         "inspection_status inspection_completed_at inspection_date inspection_time",
         "status cancellation_reason cancellation_date cancellation_previous_status cancelled_by cancelled_by_name order_type contract_status contractStatus contractGenerated contractId contractVersion currentContractVersion contractGeneratedAt contractNeedsRegeneration contractSentAt contract_email_status contract_email_error contractDeclineReason contractDeclinedAt acceptedByCustomer acceptedAt acceptanceMethod acceptance_method transactionCreated transactionCreatedAt transaction_approved tracking warranty_period warranty_status estimated_installation_date estimated_installation_time installation_duration_minutes progress progress_stages signed_contract_url contract_number contract_signed_date createdAt updatedAt",
       ].join(" "),
       site_inspection: [
-        "customer customer_name customer_email customer_phone items project_additional_charges total_amount estimated_cost final_project_cost manual_override",
+        "customer customer_name customer_email customer_phone items project_additional_charges total_amount estimated_cost final_project_cost manual_override installation_extra_charge_total installation_extra_charge_paid_total",
         "status cancellation_reason cancellation_date cancellation_previous_status cancelled_by cancelled_by_name order_type contract_status contractStatus contractGenerated contractId contractVersion currentContractVersion contractGeneratedAt contractNeedsRegeneration contractSentAt contract_email_status contractDeclineReason acceptedByCustomer acceptedAt transactionCreated tracking",
         "inspection_status inspection_completed_at inspection_date inspection_time inspection_duration_minutes inspection_travel_minutes estimated_installation_date estimated_installation_time installation_duration_minutes inspection_notes issues_found shipping_address warranty_period warranty_status createdAt updatedAt",
       ].join(" "),
@@ -1509,11 +1545,25 @@ export const getAdminOrders = async (req, res) => {
 
     if (req.user.role !== "skilled_worker" && (view || module) === "transactions" && orders.length) {
       const orderIds = orders.map((order) => order._id);
-      const [receipts, charges] = await Promise.all([
+      const [receipts, charges, projectReceipts] = await Promise.all([
         ExtraChargeReceipt.find({ order: { $in: orderIds } }).sort({ issued_at: -1 }).lean(),
-        ExtraCharge.find({ order: { $in: orderIds }, receipt: { $ne: null } }).select("receipt payments approved_by_name approved_at").lean(),
+        ExtraCharge.find({ order: { $in: orderIds }, status: { $in: ["Approved", "Receipt Generated"] } }).select("order total receipt payments approved_by_name approved_at").lean(),
+        ProjectPaymentReceipt.find({ order: { $in: orderIds } }).sort({ issued_at: -1 }).lean(),
       ]);
-      const chargeByReceipt = new Map(charges.map((charge) => [String(charge.receipt), charge]));
+      const chargeByReceipt = new Map();
+      const chargeTotalsByOrder = new Map();
+      const chargePaymentsByOrder = new Map();
+      for (const charge of charges) {
+        const orderKey = String(charge.order);
+        const currentTotal = chargeTotalsByOrder.get(orderKey) || 0;
+        chargeTotalsByOrder.set(orderKey, Math.round((currentTotal + Math.max(Number(charge.total) || 0, 0)) * 100) / 100);
+        const verifiedChargePayments = (charge.payments || []).reduce((sum, payment) => (
+          payment.status === "verified" ? sum + Math.max(Number(payment.amount) || 0, 0) : sum
+        ), 0);
+        const currentPaid = chargePaymentsByOrder.get(orderKey) || 0;
+        chargePaymentsByOrder.set(orderKey, Math.round((currentPaid + verifiedChargePayments) * 100) / 100);
+        if (charge.receipt) chargeByReceipt.set(String(charge.receipt), charge);
+      }
       const receiptsByOrder = new Map();
       for (const receipt of receipts) {
         const orderKey = String(receipt.order);
@@ -1527,9 +1577,27 @@ export const getAdminOrders = async (req, res) => {
         });
         receiptsByOrder.set(orderKey, group);
       }
+      const projectReceiptsByOrder = new Map();
+      for (const receipt of projectReceipts) {
+        const orderKey = String(receipt.order);
+        const group = projectReceiptsByOrder.get(orderKey) || [];
+        group.push(receipt);
+        projectReceiptsByOrder.set(orderKey, group);
+      }
       responseOrders = orders.map((order) => ({
         ...order,
+        // Keep the running balance incremented by Save draft. Charge records
+        // fill older missing totals without replacing a larger saved balance.
+        installation_extra_charge_total: Math.max(
+          Number(order.installation_extra_charge_total) || 0,
+          chargeTotalsByOrder.get(String(order._id)) || 0,
+        ),
+        installation_extra_charge_paid_total: Math.max(
+          Number(order.installation_extra_charge_paid_total) || 0,
+          chargePaymentsByOrder.get(String(order._id)) || 0,
+        ),
         extra_charge_receipts: receiptsByOrder.get(String(order._id)) || [],
+        project_payment_receipts: projectReceiptsByOrder.get(String(order._id)) || [],
       }));
     }
 
@@ -1558,7 +1626,7 @@ export const getAdminOrderById = async (req, res) => {
     const staffFields = {
       dashboard: "customer customer_name customer_email customer_phone items status is_rush_order contract_status contractStatus contractSentAt contractDeclineReason acceptedByCustomer acceptedAt transactionCreated tracking createdAt updatedAt",
       site_inspection: "customer customer_name customer_email customer_phone items status contract_status contractStatus tracking inspection_status inspection_completed_at inspection_date inspection_time inspection_duration_minutes inspection_travel_minutes estimated_installation_date estimated_installation_time installation_duration_minutes inspection_notes issues_found shipping_address warranty_period warranty_status createdAt updatedAt",
-      transactions: "customer customer_name customer_email customer_phone items project_additional_charges total_amount estimated_cost final_project_cost manual_override payment_terms downpayment_amount required_downpayment_amount amount_paid payment_status payment_records payment_proof_amount payment_proof_submitted_at payment_proof_confirmed_at payment_proof_file_name payment_proof_file_url payment_method transaction_number inspection_status inspection_completed_at inspection_date inspection_time status cancellation_reason cancellation_date cancellation_previous_status cancelled_by cancelled_by_name contract_status contractStatus contractGenerated contractId contractVersion currentContractVersion contractGeneratedAt contractNeedsRegeneration contractSentAt contract_email_status contractDeclineReason acceptedByCustomer acceptedAt transactionCreated tracking warranty_period warranty_status estimated_installation_date estimated_installation_time installation_duration_minutes progress progress_stages createdAt updatedAt",
+      transactions: "customer customer_name customer_email customer_phone items project_additional_charges total_amount estimated_cost final_project_cost manual_override installation_extra_charge_total installation_extra_charge_paid_total payment_terms downpayment_amount required_downpayment_amount amount_paid payment_status payment_records payment_proof_amount payment_proof_submitted_at payment_proof_confirmed_at payment_proof_file_name payment_proof_file_url payment_method transaction_number inspection_status inspection_completed_at inspection_date inspection_time status cancellation_reason cancellation_date cancellation_previous_status cancelled_by cancelled_by_name contract_status contractStatus contractGenerated contractId contractVersion currentContractVersion contractGeneratedAt contractNeedsRegeneration contractSentAt contract_email_status contractDeclineReason acceptedByCustomer acceptedAt transactionCreated tracking warranty_period warranty_status estimated_installation_date estimated_installation_time installation_duration_minutes progress progress_stages createdAt updatedAt",
       progress_monitoring: "customer customer_name customer_email customer_phone items status cancellation_reason cancellation_date cancellation_previous_status cancelled_by cancelled_by_name contract_status acceptance_method acceptanceMethod acceptedByCustomer order_type signed_contract_url contract_signed_date tracking progress progress_stages progress_notes progress_audit progress_activity_notes project_delay attachments estimated_installation_date estimated_installation_time installation_duration_minutes createdAt updatedAt",
     };
     if (isStaff && !staffFields[detailModule]) return res.status(403).json({ success: false, message: "This staff module or action is disabled for your account." });
@@ -3595,7 +3663,7 @@ export const updateOrderInspection = async (req, res) => {
       ? updatedManualOverride
       : updatedEstimatedCost > 0
         ? updatedEstimatedCost
-        : getFinalProjectCost(order);
+        : getBaseProjectCost(order);
     const updatedPaymentTerms = payment_terms !== undefined ? payment_terms : order.payment_terms;
     const configuredRequiredAmount = required_downpayment_amount !== undefined
       ? required_downpayment_amount
@@ -3607,7 +3675,7 @@ export const updateOrderInspection = async (req, res) => {
     );
     const currentEstimatedCost = Number(order.estimated_cost) || (order.items || []).reduce((sum, item) => sum + getItemAmountValue(item), 0);
     const currentRequiredAmount = Number(order.required_downpayment_amount ?? order.downpayment_amount) || 0;
-    const amountChanged = Math.round(updatedTotalAmount * 100) !== Math.round(getFinalProjectCost(order) * 100)
+    const amountChanged = Math.round(updatedTotalAmount * 100) !== Math.round(getBaseProjectCost(order) * 100)
       || Math.round(updatedEstimatedCost * 100) !== Math.round(currentEstimatedCost * 100)
       || Math.round(updatedRequiredAmount * 100) !== Math.round(currentRequiredAmount * 100);
     if (isProjectPriceLocked(order) && amountChanged) {
@@ -3673,7 +3741,7 @@ export const updateOrderInspection = async (req, res) => {
         changed_by_name: [actor.first_name, actor.last_name].filter(Boolean).join(" "),
         reason: "Optional charges updated during site inspection",
         previous_total: previousProjectTotal,
-        new_total: updatedTotalAmount,
+        new_total: updatedTotalAmount + Math.max(Number(order.installation_extra_charge_total) || 0, 0),
         optional_charge_changes: optionalChargeChanges,
       });
     }

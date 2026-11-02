@@ -62,7 +62,7 @@ describe("getProductLineTotal", () => {
     )).toBe(1200);
   });
 
-  it("uses configured blade and frame prices instead of the product-card override, then adds charges", () => {
+  it("uses the manual product price override for the default blade and frame, then adds charges", () => {
     expect(getProductLineTotal(
       {
         pricing_method: "blade",
@@ -77,7 +77,7 @@ describe("getProductLineTotal", () => {
         extra_charges: [{ name: "Delivery", type: "fixed", amount: 750 }],
       },
       { blade_glass_type: "Clear", sale_mode: "frame", frame_type: "Small", blade_count: 8, quantity: 1 },
-    )).toBe(2050);
+    )).toBe(5194);
   });
 
   it("breaks a blade-and-frame total into its configured base and selected charges", () => {
@@ -129,7 +129,7 @@ describe("getProductLineTotal", () => {
           { is_selected: true },
         ],
       },
-    )).toBe(2050);
+    )).toBe(5194);
   });
 
   it("returns the same default blade estimate for product tiles and estimator panels", () => {
@@ -145,7 +145,7 @@ describe("getProductLineTotal", () => {
         { name: "Additional frame", type: "fixed", amount: 250, is_optional: true, is_default_selected: true },
         { name: "Rush", type: "fixed", amount: 500, is_optional: true, is_default_selected: true },
       ],
-    })).toBe(2050);
+    })).toBe(5194);
   });
 
   it("uses the selected frame count before the legacy product blade count", () => {
@@ -173,11 +173,11 @@ describe("getProductLineTotal", () => {
     )).toBe(1000);
   });
 
-  it("uses the configured square-foot rate for live estimates despite a product-card override", () => {
+  it("uses the manual product price override as the base for area products", () => {
     expect(getProductLineTotal(
-      { pricing_method: "sqft", estimated_price_override: 2400, price_per_sqft: 300 },
+      { pricing_method: "sqft", width: 48, height: 48, measurement_unit: "in", estimated_price_override: 2400, price_per_sqft: 300 },
       { width: 48, height: 48, quantity: 2 },
-    )).toBe(9600);
+    )).toBe(4800);
   });
 
   it("keeps legacy per-piece products fixed even when a rate field is present", () => {

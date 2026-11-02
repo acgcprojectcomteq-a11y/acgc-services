@@ -351,7 +351,7 @@ export default function OrderTimelineModal({
             onClick={() => setActiveTab("installation-billing")}
             className={`border-b-2 px-3 py-3 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500 ${activeTab === "installation-billing" ? "border-emerald-600 text-emerald-700" : `border-transparent ${darkMode ? "text-slate-400 hover:text-slate-200" : "text-slate-500 hover:text-slate-800"}`}`}
           >
-            Installation issues &amp; extra charges
+            Installation Issues
           </button>
         </div>
 

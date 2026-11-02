@@ -1,5 +1,17 @@
 import mongoose from "mongoose";
 
+const ReceiptSendAttemptSchema = new mongoose.Schema({
+  attempt_id: { type: String, required: true },
+  status: { type: String, enum: ["Sending", "Sent", "Failed"], required: true },
+  attempted_at: { type: Date, required: true },
+  completed_at: { type: Date, default: null },
+  admin_id: { type: mongoose.Schema.Types.ObjectId, default: null },
+  recipient_email: { type: String, trim: true, lowercase: true, default: "" },
+  provider: { type: String, trim: true, default: "" },
+  provider_message_id: { type: String, trim: true, default: "" },
+  error: { type: String, trim: true, default: "" },
+}, { _id: false });
+
 const ExtraChargeReceiptSchema = new mongoose.Schema({
   receipt_type: { type: String, enum: ["Extra Charge Receipt"], default: "Extra Charge Receipt" },
   receipt_number: { type: String, required: true, unique: true, index: true },
@@ -10,6 +22,10 @@ const ExtraChargeReceiptSchema = new mongoose.Schema({
   project_reference: { type: String, trim: true, default: "" },
   item_index: { type: Number, min: 0, default: null },
   affected_item: { type: String, trim: true, default: "Project installation" },
+  project_items: { type: [mongoose.Schema.Types.Mixed], default: [] },
+  other_charges: { type: [mongoose.Schema.Types.Mixed], default: [] },
+  project_total_before_charge: { type: Number, min: 0 },
+  project_total_after_charge: { type: Number, min: 0 },
   items: { type: [mongoose.Schema.Types.Mixed], required: true },
   description: { type: String, required: true },
   reason: { type: String, required: true },
@@ -19,6 +35,17 @@ const ExtraChargeReceiptSchema = new mongoose.Schema({
   issued_by: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
   issued_by_name: { type: String, trim: true, default: "" },
   issued_at: { type: Date, default: Date.now },
+  customer_id: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null, index: true },
+  send_status: { type: String, enum: ["Not Sent", "Sending", "Sent", "Failed"], default: "Not Sent", index: true },
+  recipient_email: { type: String, trim: true, lowercase: true, default: "" },
+  sent_at: { type: Date, default: null },
+  sent_by: { type: mongoose.Schema.Types.ObjectId, default: null },
+  provider_delivery_status: { type: String, enum: ["not_attempted", "pending", "accepted", "failed"], default: "not_attempted" },
+  provider_name: { type: String, trim: true, default: "" },
+  provider_message_id: { type: String, trim: true, default: "" },
+  send_error: { type: String, trim: true, default: "" },
+  send_attempts: { type: Number, min: 0, default: 0 },
+  send_history: { type: [ReceiptSendAttemptSchema], default: [] },
 }, { timestamps: true });
 
 export default mongoose.model("ExtraChargeReceipt", ExtraChargeReceiptSchema);

@@ -17,7 +17,7 @@ describe("OrderTimelineModal", () => {
     render(<OrderTimelineModal order={singleItemOrderMock} onClose={vi.fn()} />);
 
     const timelinePanel = document.getElementById("order-timeline-panel");
-    const billingTab = screen.getByRole("tab", { name: "Installation issues & extra charges" });
+    const billingTab = screen.getByRole("tab", { name: "Installation Issues" });
     const billingPanel = document.getElementById("installation-billing-panel");
 
     expect(timelinePanel.hidden).toBe(false);

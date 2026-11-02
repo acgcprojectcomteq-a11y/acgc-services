@@ -418,7 +418,7 @@ function TransactionDetailsModal({ order, onClose, onViewContract, scrollToWarra
               </section>
             </>
           )}
-          <InstallationBillingPanel order={order} darkMode={darkMode} />
+          <InstallationBillingPanel order={order} darkMode={darkMode} readOnly />
         </div>
 
         <div className="flex shrink-0 flex-col-reverse gap-2 border-t border-slate-200 bg-white px-4 py-3 sm:flex-row sm:justify-end">

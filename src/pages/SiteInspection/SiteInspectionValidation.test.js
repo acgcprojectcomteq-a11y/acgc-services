@@ -413,10 +413,10 @@ describe("inspection measurement calculations", () => {
       height: 324,
       quantity: 1,
       measurement_unit: "in",
-    }, product)).toBe(729000);
+    }, product)).toBe(341718.75);
   });
 
-  it("uses the configured area rate when inspection matches standard size despite a product-card override", () => {
+  it("uses the manual product price override when inspection matches standard size", () => {
     const product = {
       pricing_method: "sqft",
       width: 48,
@@ -431,7 +431,7 @@ describe("inspection measurement calculations", () => {
       height: 48,
       quantity: 1,
       measurement_unit: "in",
-    }, product)).toBe(16000);
+    }, product)).toBe(7500);
   });
 
   it("scales a fixed product base price when batch inspection dimensions change", () => {

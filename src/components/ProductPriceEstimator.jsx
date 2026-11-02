@@ -48,11 +48,6 @@ const getProductEstimateRate = (product, form) => {
   const pricingMethod = String(product?.pricing_method || "").toLowerCase();
   const legacyUnit = String(product?.unit || "").toLowerCase();
   const override = Number(product?.estimated_price_override) || 0;
-  if (isPiecePricingProduct(product)) {
-    const selectedPieceOption = (product?.piece_options || []).find((option) => option.name === form.piece_option)
-      || product?.piece_options?.[0];
-    if (Number(selectedPieceOption?.price_per_piece) > 0) return Number(selectedPieceOption.price_per_piece);
-  }
   if (override > 0) {
     const overrideBaseSubtotal = getProductOverrideBaseSubtotal(product);
     if (isBladePricingProduct(product)) {
@@ -73,6 +68,11 @@ const getProductEstimateRate = (product, form) => {
       return meters > 0 ? overrideBaseSubtotal / meters : overrideBaseSubtotal;
     }
     return overrideBaseSubtotal;
+  }
+  if (isPiecePricingProduct(product)) {
+    const selectedPieceOption = (product?.piece_options || []).find((option) => option.name === form.piece_option)
+      || product?.piece_options?.[0];
+    if (Number(selectedPieceOption?.price_per_piece) > 0) return Number(selectedPieceOption.price_per_piece);
   }
   if (["sqft", "per_sqft"].includes(pricingMethod) || legacyUnit === "per_sqft") return Number(product?.price_per_sqft) || undefined;
   if (["per_meter", "meter"].includes(pricingMethod) || legacyUnit === "per_meter") return Number(product?.unit_price) || undefined;
@@ -242,8 +242,7 @@ export const getProductEstimatorState = (product, form = {}) => {
 function ProductPriceEstimator({ product, form, onFormChange, darkMode = false, formatCurrency = currency, compact = false, defaultMeasurements = null, footer = null, bladeModalLayout = false, structuredModalLayout = false }) {
   const state = getProductEstimatorState(product, form);
   const sizeLimitWarnings = getProductSizeLimitWarnings(product, state.item);
-  const hasExactPriceOverride = Number(product?.estimated_price_override) > 0
-    && !(state.isPieceEstimator && state.pieceOptions?.length > 0);
+  const hasExactPriceOverride = Number(product?.estimated_price_override) > 0;
   const priceBreakdown = getProductLineBreakdown(product, state.item);
   const {
     isBladeEstimator,

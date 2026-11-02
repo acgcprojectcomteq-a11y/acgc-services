@@ -43,6 +43,7 @@ import {
   verifyBackupRecoveryPassword,
 } from "../services/backupRecoverySecurity.js";
 import { buildFrontendUrl } from "../services/frontendUrl.js";
+import { getAdminPublicContact } from "../services/businessContact.js";
 import { buildCustomerEmailTemplate } from "../services/customerEmailTemplate.js";
 import { runSiteInspectionReminderCheck } from "../services/siteInspectionReminders.js";
 import { runPaymentReminderCheck } from "../services/paymentReminders.js";
@@ -967,42 +968,6 @@ router.get("/customer-permissions", async (_req, res) => {
     res.status(500).json({ success: false, message: "Unable to load customer permissions." });
   }
 });
-
-const getAdminPublicContact = async () => {
-  const username = String(process.env.ADMIN_RECOVERY_USERNAME || "").trim().toLowerCase();
-  let account = null;
-  if (username) {
-    account = await Admin.findOne({ username, is_active: { $ne: false } }).select("email phone street_address city province zip_code").lean();
-  }
-  const preferredAccount = account;
-  if (!String(account?.phone || "").trim()) {
-    account = await Admin.findOne({
-      is_active: { $ne: false },
-      phone: { $regex: /\S/ },
-    }).sort({ updatedAt: -1, _id: 1 }).select("email phone street_address city province zip_code").lean();
-  }
-  if (!String(account?.phone || "").trim()) {
-    account = await User.findOne({
-      role: "admin",
-      is_active: { $ne: false },
-      phone: { $regex: /\S/ },
-    }).sort({ updatedAt: -1, _id: 1 }).select("email phone street_address city province zip_code").lean();
-  }
-  const preferredAddress = [preferredAccount?.street_address, preferredAccount?.city, preferredAccount?.province, preferredAccount?.zip_code]
-    .map((part) => String(part || "").trim())
-    .filter(Boolean);
-  const addressAccount = preferredAddress.length ? preferredAccount : account;
-  const email = String(preferredAccount?.email || account?.email || "").trim();
-  const streetAddress = String(addressAccount?.street_address || "").trim();
-  return {
-    email,
-    phone: String(account?.phone || "").trim(),
-    address: streetAddress || [addressAccount?.city, addressAccount?.province, addressAccount?.zip_code]
-      .map((part) => String(part || "").trim())
-      .filter(Boolean)
-      .join(", "),
-  };
-};
 
 router.get("/public-contact", async (_req, res) => {
   try {

@@ -432,6 +432,20 @@ const OrderSchema = new mongoose.Schema(
       required: true,
       default: 0,
     },
+    installation_extra_charge_total: {
+      type: Number,
+      min: 0,
+      default: 0,
+    },
+    installation_extra_charge_paid_total: {
+      type: Number,
+      min: 0,
+      default: 0,
+    },
+    installation_extra_charge_total_initialized: {
+      type: Boolean,
+      default: false,
+    },
     payment_proof_amount: {
       type: Number,
       default: 0,
