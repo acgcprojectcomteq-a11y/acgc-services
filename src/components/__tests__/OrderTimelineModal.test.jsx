@@ -33,7 +33,7 @@ describe("OrderTimelineModal", () => {
 
     const dialog = screen.getByRole("dialog", { name: "Order timeline" });
     expect(dialog.className).toContain("h-[100dvh]");
-    expect(dialog.className).toContain("lg:max-w-[560px]");
+    expect(dialog.className).toContain("lg:max-w-[960px]");
     expect(screen.getByText("Glass Door")).toBeTruthy();
     expect(screen.getByText('Dimension: Width: 121" x Height: 121" (101.67 sq ft)')).toBeTruthy();
     expect(screen.getByText("Assembly", { selector: "p" })).toBeTruthy();
