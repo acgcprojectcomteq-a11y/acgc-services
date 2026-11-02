@@ -13,6 +13,21 @@ afterEach(() => {
 });
 
 describe("OrderTimelineModal", () => {
+  it("shows installation issues and extra charges in the second tab", () => {
+    render(<OrderTimelineModal order={singleItemOrderMock} onClose={vi.fn()} />);
+
+    const timelinePanel = document.getElementById("order-timeline-panel");
+    const billingTab = screen.getByRole("tab", { name: "Installation issues & extra charges" });
+    const billingPanel = document.getElementById("installation-billing-panel");
+
+    expect(timelinePanel.hidden).toBe(false);
+    expect(billingPanel.hidden).toBe(true);
+    fireEvent.click(billingTab);
+    expect(billingTab.getAttribute("aria-selected")).toBe("true");
+    expect(billingPanel.hidden).toBe(false);
+    expect(timelinePanel.hidden).toBe(true);
+  });
+
   it("shows a single item's summary and expanded custom stage timeline", () => {
     render(<OrderTimelineModal order={singleItemOrderMock} onClose={vi.fn()} />);
 

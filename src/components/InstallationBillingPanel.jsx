@@ -32,7 +32,7 @@ export default function InstallationBillingPanel({ order, darkMode = false }) {
   const [showIssueForm, setShowIssueForm] = useState(false);
   const [showChargeForm, setShowChargeForm] = useState(false);
   const [receiptForReview, setReceiptForReview] = useState(null);
-  const [issueDraft, setIssueDraft] = useState({ issue_type: "Siwang / Awang", item_index: "", description: "", measurement_details: "", required_action: "", files: [] });
+  const [issueDraft, setIssueDraft] = useState({ issue_type: "", item_index: "", description: "", measurement_details: "", required_action: "", files: [] });
   const [chargeDraft, setChargeDraft] = useState({ installation_issue: "", item_index: "", description: "", reason: "", customer_chargeable: false, notes: "", files: [], items: [{ description: "", category: "Labor", quantity: 1, unit_price: "" }] });
   const [declineReasons, setDeclineReasons] = useState({});
   const [paymentDrafts, setPaymentDrafts] = useState({});
@@ -85,7 +85,7 @@ export default function InstallationBillingPanel({ order, darkMode = false }) {
         evidence_urls = (uploaded.files || []).map((file) => file.url).filter(Boolean);
       }
       await createInstallationIssue(orderId, { ...issueDraft, item_index: issueDraft.item_index === "" ? null : Number(issueDraft.item_index), evidence_urls, files: undefined });
-      setIssueDraft({ issue_type: "Siwang / Awang", item_index: "", description: "", measurement_details: "", required_action: "", files: [] });
+      setIssueDraft({ issue_type: "", item_index: "", description: "", measurement_details: "", required_action: "", files: [] });
       setShowIssueForm(false);
     }, "Installation issue recorded.");
   };
@@ -126,7 +126,7 @@ export default function InstallationBillingPanel({ order, darkMode = false }) {
       </div>
       {(isAdmin || isCustomer) && data.balance && <div className={`mt-3 grid grid-cols-2 gap-2 rounded-lg p-3 text-xs sm:grid-cols-4 ${darkMode ? "bg-slate-800" : "bg-slate-50"}`}><div><span className="opacity-70">Original contract</span><p className="mt-1 font-bold">{money(data.balance.original_contract_amount)}</p></div><div><span className="opacity-70">Original outstanding</span><p className="mt-1 font-bold">{money(data.balance.original_outstanding)}</p></div><div><span className="opacity-70">Approved extra charges</span><p className="mt-1 font-bold">{money(data.balance.approved_extra_charges)}</p></div><div><span className="opacity-70">Verified extra charge payments</span><p className="mt-1 font-bold">{money(data.balance.verified_extra_charge_payments)}</p></div><div className="col-span-2 border-t pt-2 sm:col-span-4"><span className="opacity-70">Current total outstanding</span><p className="mt-1 font-bold text-red-600 dark:text-red-300">{money(data.balance.current_total_outstanding)}</p></div></div>}
       {showIssueForm && isStaff && <form onSubmit={saveIssue} className={`mt-3 grid gap-2 rounded-lg border p-3 sm:grid-cols-2 ${darkMode ? "border-slate-700" : "border-slate-200"}`}>
-        <label className="text-xs font-semibold">Issue type<input className={`${fieldClass} mt-1`} value={issueDraft.issue_type} onChange={(e) => setIssueDraft({ ...issueDraft, issue_type: e.target.value })} maxLength={120} required /></label>
+        <label className="text-xs font-semibold">Issue type<input className={`${fieldClass} mt-1`} value={issueDraft.issue_type} onChange={(e) => setIssueDraft({ ...issueDraft, issue_type: e.target.value })} placeholder="Enter issue type" maxLength={120} required /></label>
         <label className="text-xs font-semibold">Affected product<select className={`${fieldClass} mt-1`} value={issueDraft.item_index} onChange={(e) => setIssueDraft({ ...issueDraft, item_index: e.target.value })}><option value="">Project / all items</option>{items.map((item, index) => <option key={item._id || index} value={index}>{item.name || `Item ${index + 1}`}</option>)}</select></label>
         <label className="text-xs font-semibold sm:col-span-2">Description<textarea className={`${fieldClass} mt-1`} value={issueDraft.description} onChange={(e) => setIssueDraft({ ...issueDraft, description: e.target.value })} maxLength={4000} required rows={2} /></label>
         <label className="text-xs font-semibold">Measurement details<textarea className={`${fieldClass} mt-1`} value={issueDraft.measurement_details} onChange={(e) => setIssueDraft({ ...issueDraft, measurement_details: e.target.value })} rows={2} /></label>

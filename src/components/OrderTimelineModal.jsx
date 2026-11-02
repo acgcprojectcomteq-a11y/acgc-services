@@ -142,6 +142,7 @@ export default function OrderTimelineModal({
     return initialKeys;
   });
   const [stageFilter, setStageFilter] = useState("all");
+  const [activeTab, setActiveTab] = useState("timeline");
   const [photoGallery, setPhotoGallery] = useState(null);
   const [copied, setCopied] = useState(false);
   const dialogRef = useRef(null);
@@ -327,7 +328,35 @@ export default function OrderTimelineModal({
           </button>
         </header>
 
+        <div role="tablist" aria-label="Order details" className={`grid shrink-0 grid-cols-2 border-b px-4 sm:px-5 ${darkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-white"}`}>
+          <button
+            type="button"
+            role="tab"
+            id="order-timeline-tab"
+            aria-selected={activeTab === "timeline"}
+            aria-controls="order-timeline-panel"
+            tabIndex={activeTab === "timeline" ? 0 : -1}
+            onClick={() => setActiveTab("timeline")}
+            className={`border-b-2 px-3 py-3 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500 ${activeTab === "timeline" ? "border-emerald-600 text-emerald-700" : `border-transparent ${darkMode ? "text-slate-400 hover:text-slate-200" : "text-slate-500 hover:text-slate-800"}`}`}
+          >
+            Order timeline
+          </button>
+          <button
+            type="button"
+            role="tab"
+            id="installation-billing-tab"
+            aria-selected={activeTab === "installation-billing"}
+            aria-controls="installation-billing-panel"
+            tabIndex={activeTab === "installation-billing" ? 0 : -1}
+            onClick={() => setActiveTab("installation-billing")}
+            className={`border-b-2 px-3 py-3 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500 ${activeTab === "installation-billing" ? "border-emerald-600 text-emerald-700" : `border-transparent ${darkMode ? "text-slate-400 hover:text-slate-200" : "text-slate-500 hover:text-slate-800"}`}`}
+          >
+            Installation issues &amp; extra charges
+          </button>
+        </div>
+
         <div className={`min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3.5 lg:max-h-[70vh] lg:px-5 ${darkMode ? "bg-slate-950/40" : "bg-slate-50/70"}`}>
+          <div id="order-timeline-panel" role="tabpanel" aria-labelledby="order-timeline-tab" hidden={activeTab !== "timeline"}>
           {order?.project_delay?.is_delayed && (
             <section className={`mb-3 rounded-xl border p-3 ${darkMode ? "border-amber-800 bg-amber-950/40" : "border-amber-200 bg-amber-50"}`} aria-label="Project delay update">
               <div className="flex flex-wrap items-center gap-2">
@@ -417,7 +446,10 @@ export default function OrderTimelineModal({
               </p>
             </section>
           )}
-          <InstallationBillingPanel order={order} darkMode={darkMode} />
+          </div>
+          <div id="installation-billing-panel" role="tabpanel" aria-labelledby="installation-billing-tab" hidden={activeTab !== "installation-billing"}>
+            <InstallationBillingPanel order={order} darkMode={darkMode} />
+          </div>
         </div>
 
         <footer className={`flex shrink-0 items-center justify-end gap-3 border-t px-4 py-3 sm:px-5 ${darkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-white"}`}>
