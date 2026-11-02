@@ -68,7 +68,17 @@ const validateProductPayload = (payload, existingProduct = null) => {
     if (toNonNegativeNumber(merged.width) <= 0 || toNonNegativeNumber(merged.height) <= 0) {
       return "Width and height must be greater than 0.";
     }
-    if (toNonNegativeNumber(merged.price_per_sqft) <= 0) {
+    const areaOptions = Array.isArray(merged.area_options) ? merged.area_options : [];
+    if (areaOptions.some((option) => {
+      const price = String(option?.price_per_sqft ?? "").trim();
+      return !trimText(option?.name)
+        || (price && (!Number.isFinite(Number(option.price_per_sqft)) || Number(option.price_per_sqft) <= 0));
+    })) {
+      return "Each area option needs a name, and any entered price must be greater than zero.";
+    }
+    const areaOptionNames = areaOptions.map((option) => trimText(option.name).toLowerCase());
+    if (new Set(areaOptionNames).size !== areaOptionNames.length) return "Area option names must be unique.";
+    if (toNonNegativeNumber(merged.price_per_sqft) <= 0 && areaOptions.length === 0) {
       return "Price per sq ft is required.";
     }
   }
@@ -190,7 +200,7 @@ export const listProducts = async (req, res) => {
 
     const productQuery = Product.find(filter).sort({ is_featured: -1, createdAt: -1 });
     if (adminOnly !== "true") {
-      productQuery.select("name sku category description unit_price unit measurement_unit stock_quantity is_featured image_url images product_type product_name pricing_method variant base_price price_per_sqft price_per_blade customization customization_fee extra_charges size_limits standard_size finished_door_pricing width height blade_count blade_glass_types piece_options sell_blades_only sell_with_frame blade_frame_types allow_custom_frame_size custom_frame_size_unit custom_frame_price minimum_blades maximum_blades customer_can_choose_blade_count default_blade_glass_type default_sale_mode default_frame_type show_price_per_blade estimated_area estimated_price estimated_price_override is_active");
+      productQuery.select("name sku category description unit_price unit measurement_unit stock_quantity is_featured image_url images product_type product_name pricing_method variant base_price price_per_sqft price_per_blade customization customization_fee extra_charges size_limits standard_size finished_door_pricing width height blade_count blade_glass_types piece_options area_options sell_blades_only sell_with_frame blade_frame_types allow_custom_frame_size custom_frame_size_unit custom_frame_price minimum_blades maximum_blades customer_can_choose_blade_count default_blade_glass_type default_sale_mode default_frame_type show_price_per_blade estimated_area estimated_price estimated_price_override is_active");
     }
     const products = await productQuery.lean();
     res.json({ success: true, products });
@@ -244,6 +254,7 @@ export const createProduct = async (req, res) => {
       blade_count,
       blade_glass_types,
       piece_options,
+      area_options,
       sell_blades_only,
       sell_with_frame,
       blade_frame_types,
@@ -311,6 +322,7 @@ export const createProduct = async (req, res) => {
       blade_count: Number(blade_count) || 0,
       blade_glass_types: Array.isArray(blade_glass_types) ? blade_glass_types : [],
       piece_options: Array.isArray(piece_options) ? piece_options : [],
+      area_options: Array.isArray(area_options) ? area_options : [],
       sell_blades_only: sell_blades_only !== false,
       sell_with_frame: normalizedSellWithFrame,
       blade_frame_types: Array.isArray(blade_frame_types) ? blade_frame_types : [],
@@ -396,6 +408,7 @@ export const updateProduct = async (req, res) => {
       blade_count: req.body.blade_count != null ? Number(req.body.blade_count) : product.blade_count,
       blade_glass_types: req.body.blade_glass_types != null ? req.body.blade_glass_types : product.blade_glass_types,
       piece_options: req.body.piece_options != null ? req.body.piece_options : product.piece_options,
+      area_options: req.body.area_options != null ? req.body.area_options : product.area_options,
       sell_blades_only: req.body.sell_blades_only != null ? Boolean(req.body.sell_blades_only) : product.sell_blades_only,
       sell_with_frame: normalizedSellWithFrame,
       blade_frame_types: req.body.blade_frame_types != null ? req.body.blade_frame_types : product.blade_frame_types,

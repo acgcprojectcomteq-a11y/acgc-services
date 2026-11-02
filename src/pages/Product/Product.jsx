@@ -43,6 +43,18 @@ import { hasStaffModulePermission } from "../../../shared/staffPermissions.js";
 const PRODUCT_IMAGE_PLACEHOLDER =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='400' viewBox='0 0 600 400'%3E%3Crect width='600' height='400' fill='%23e2e8f0'/%3E%3Cpath d='M248 148h104a28 28 0 0 1 28 28v48a28 28 0 0 1-28 28H248a28 28 0 0 1-28-28v-48a28 28 0 0 1 28-28Zm0 20a8 8 0 0 0-8 8v48a8 8 0 0 0 8 8h104a8 8 0 0 0 8-8v-48a8 8 0 0 0-8-8H248Zm18 22a16 16 0 1 1 0 32 16 16 0 0 1 0-32Zm50 35 17-21 31 40H244l34-42 25 30 13-7Z' fill='%2394a3b8'/%3E%3Ctext x='300' y='292' text-anchor='middle' font-family='Arial, sans-serif' font-size='24' font-weight='700' fill='%23475569'%3EProduct image%3C/text%3E%3C/svg%3E";
 
+const getProductFormSnapshot = (product = {}) => {
+  // These values are recalculated by the estimator effect, so they should not
+  // make an untouched product form appear dirty.
+  const editableFields = Object.fromEntries(
+    Object.entries(product).filter(([field]) => field !== "estimated_area" && field !== "estimated_price"),
+  );
+  return createUnsavedSnapshot({
+    ...editableFields,
+    imageFiles: Object.keys(editableFields.imageFiles || {}),
+  });
+};
+
 const MEASUREMENT_UNITS = [
   ["in", "Inches (in)"],
   ["ft", "Feet (ft)"],
@@ -274,9 +286,9 @@ function ProductFormModal({
   canDeleteProducts,
 }) {
   const { darkMode } = useAdminTheme();
-  const initialProductSnapshot = useRef(createUnsavedSnapshot({ ...newProduct, imageFiles: Object.keys(newProduct.imageFiles || {}) }));
+  const initialProductSnapshot = useRef(getProductFormSnapshot(newProduct));
   const [confirmExit, setConfirmExit] = useState(false);
-  const productSnapshot = createUnsavedSnapshot({ ...newProduct, imageFiles: Object.keys(newProduct.imageFiles || {}) });
+  const productSnapshot = getProductFormSnapshot(newProduct);
   const hasUnsavedChanges = productSnapshot !== initialProductSnapshot.current;
   const requestClose = () => {
     if (saving || uploading) return;
@@ -303,6 +315,7 @@ function ProductFormModal({
   const isJalousiePerBladeProduct = pricingMethodValue === "blade"
     && /jalousie/i.test(newProduct.product_name || newProduct.name || "");
   const extraCharges = Array.isArray(newProduct.extra_charges) ? newProduct.extra_charges : [];
+  const areaOptions = Array.isArray(newProduct.area_options) ? newProduct.area_options : [];
   const sizeLimits = newProduct.size_limits || {};
 
   const updateBladeSellingOption = (field, enabled) => setNewProduct((product) => {
@@ -462,6 +475,7 @@ function ProductFormModal({
     blade_count: Number(newProduct.blade_count) || 0,
     blade_glass_types: newProduct.blade_glass_types || [],
     piece_options: newProduct.piece_options || [],
+    area_options: areaOptions,
     sell_blades_only: newProduct.sell_blades_only !== false,
     sell_with_frame: Boolean(newProduct.sell_with_frame),
     blade_frame_types: newProduct.blade_frame_types || [],
@@ -506,6 +520,8 @@ function ProductFormModal({
     blade_glass_type: defaultGlassType,
     piece_option: (newProduct.piece_options || [])[0]?.name || "",
     piece_options: newProduct.piece_options || [],
+    area_option: areaOptions[0]?.name || "",
+    area_options: areaOptions,
     sale_mode: isJalousiePerBladeProduct
       && newProduct.default_sale_mode === "frame"
       && !defaultFrameType
@@ -525,6 +541,7 @@ function ProductFormModal({
     height: String(estimateItem.height || 0),
     blade_glass_type: estimateItem.blade_glass_type,
     piece_option: estimateItem.piece_option,
+    area_option: estimateItem.area_option,
     sale_mode: estimateItem.sale_mode,
     frame_type: estimateItem.frame_type,
     custom_frame_size: estimateItem.custom_frame_size,
@@ -594,10 +611,38 @@ function ProductFormModal({
     && Number.isFinite(Number(charge.amount))
     && Number(charge.amount) >= 0
   ));
+  const areaOptionsAreValid = areaOptions.every((option) => (
+    String(option.name || "").trim()
+    && (!String(option.price_per_sqft ?? "").trim()
+      || (Number.isFinite(Number(option.price_per_sqft)) && Number(option.price_per_sqft) > 0))
+  )) && new Set(areaOptions.map((option) => String(option.name || "").trim().toLowerCase())).size === areaOptions.length;
+  const areaOptionValidationMessage = "Each area option needs a name, and any entered price must be greater than zero.";
+  const hasAreaOptionFieldError = modalError === areaOptionValidationMessage
+    || modalError === "Area option names must be unique.";
+  const getAreaOptionNameError = (index) => {
+    const name = String(areaOptions[index]?.name || "").trim();
+    if (modalError === areaOptionValidationMessage && !name) {
+      return "Enter an option name.";
+    }
+    if (modalError === "Area option names must be unique." && name) {
+      const firstMatchingIndex = areaOptions.findIndex((option) => String(option.name || "").trim().toLowerCase() === name.toLowerCase());
+      if (firstMatchingIndex !== index) return "This option name is already used.";
+    }
+    return "";
+  };
+  const getAreaOptionPriceError = (index) => {
+    const price = areaOptions[index]?.price_per_sqft;
+    const enteredPrice = String(price ?? "").trim();
+    return modalError === areaOptionValidationMessage && enteredPrice
+      && (!Number.isFinite(Number(price)) || Number(price) <= 0)
+      ? "If entered, the price must be greater than zero."
+      : "";
+  };
   const pricingConfigurationIsValid = pricingMethodValue === "blade"
     ? bladeConfigurationIsValid
     : pricingMethodValue === "sqft"
-      ? Number(newProduct.width) > 0 && Number(newProduct.height) > 0 && Number(newProduct.price_per_sqft) > 0
+      ? Number(newProduct.width) > 0 && Number(newProduct.height) > 0 && areaOptionsAreValid
+        && (Number(newProduct.price_per_sqft) > 0 || areaOptions.some((option) => Number(option.price_per_sqft) > 0))
       : pricingMethodValue === "per_meter"
         ? Number(newProduct.width) > 0 && Number(newProduct.unit_price) > 0
         : pricingMethodValue === "per_piece"
@@ -681,7 +726,7 @@ function ProductFormModal({
         </header>
 
         <div data-catalog-picker-scroll-area className={`min-h-0 flex-1 space-y-7 overflow-y-auto px-5 py-5 !pb-[calc(6rem+env(safe-area-inset-bottom))] sm:px-7 sm:py-6 sm:!pb-6 ${darkMode ? "bg-slate-900" : "bg-white"}`}>
-          {modalError && (
+          {modalError && !hasAreaOptionFieldError && (
             <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">
               {modalError}
             </div>
@@ -899,7 +944,7 @@ function ProductFormModal({
                 <>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div>
-                      <label className={labelClass}>Price per sq ft (PHP) *</label>
+                      <label className={labelClass}>Default price per sq ft (PHP) {areaOptions.length ? "(optional)" : "*"}</label>
                       <input type="number" min="0" step="0.01" value={newProduct.price_per_sqft} onChange={(event) => updateField("price_per_sqft", event.target.value)} placeholder="0.00" className={fieldClass} />
                     </div>
                     <div>
@@ -918,6 +963,26 @@ function ProductFormModal({
                     </div>
                   </div>
                   <p className={`mt-3 text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Customers and inspectors can enter a different size for a live estimate.</p>
+                  <div className="mt-5">
+                    {sectionHeading("Product Attributes and Pricing")}
+                    <p className={`-mt-2 mb-3 text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Customers and inspectors can choose an area option. Its price is optional; when blank, the default price per sq ft is used.</p>
+                    <div className={`space-y-2 rounded-xl border p-3 ${darkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-white"}`}>
+                      {areaOptions.map((option, index) => (
+                        <div key={`area-option-${index}`} className="grid items-start gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(140px,0.55fr)_auto]">
+                          <div className="min-w-0">
+                            <input aria-label={`Per area option ${index + 1}`} aria-invalid={Boolean(getAreaOptionNameError(index))} aria-describedby={getAreaOptionNameError(index) ? `area-option-name-error-${index}` : undefined} value={option.name || ""} onChange={(event) => setNewProduct((product) => ({ ...product, area_options: (product.area_options || []).map((item, itemIndex) => itemIndex === index ? { ...item, name: event.target.value } : item) }))} placeholder="Option name (e.g. Standard, Premium)" className={`${fieldClass} ${getAreaOptionNameError(index) ? "border-red-500 focus:border-red-500 focus:ring-red-500/20" : ""}`} />
+                            {getAreaOptionNameError(index) && <p id={`area-option-name-error-${index}`} className="mt-1 text-xs font-medium text-red-600">{getAreaOptionNameError(index)}</p>}
+                          </div>
+                          <div className="min-w-0">
+                            <input aria-label={`Price per sq ft for option ${index + 1}`} aria-invalid={Boolean(getAreaOptionPriceError(index))} aria-describedby={getAreaOptionPriceError(index) ? `area-option-price-error-${index}` : undefined} type="number" min="0.01" step="0.01" value={option.price_per_sqft ?? ""} onChange={(event) => setNewProduct((product) => ({ ...product, area_options: (product.area_options || []).map((item, itemIndex) => itemIndex === index ? { ...item, price_per_sqft: event.target.value } : item) }))} placeholder="PHP per sq ft" className={`${fieldClass} ${getAreaOptionPriceError(index) ? "border-red-500 focus:border-red-500 focus:ring-red-500/20" : ""}`} />
+                            {getAreaOptionPriceError(index) && <p id={`area-option-price-error-${index}`} className="mt-1 text-xs font-medium text-red-600">{getAreaOptionPriceError(index)}</p>}
+                          </div>
+                          <button type="button" aria-label={`Remove per area option ${index + 1}`} onClick={() => setNewProduct((product) => ({ ...product, area_options: (product.area_options || []).filter((_, itemIndex) => itemIndex !== index) }))} className={`inline-flex h-12 w-12 items-center justify-center rounded-xl border ${darkMode ? "border-slate-700 text-red-300 hover:bg-slate-800" : "border-slate-200 text-red-700 hover:bg-rose-50"}`}><Trash2 size={16} /></button>
+                        </div>
+                      ))}
+                      <button type="button" onClick={() => updateField("area_options", [...areaOptions, { name: "", price_per_sqft: "" }])} className={`inline-flex items-center gap-2 rounded-lg border border-dashed px-3 py-2 text-sm font-semibold ${darkMode ? "border-slate-600 text-red-300 hover:bg-slate-800" : "border-red-300 text-red-800 hover:bg-rose-50"}`}><Plus size={15} />Add option</button>
+                    </div>
+                  </div>
                 </>
               )}
 
@@ -1801,6 +1866,7 @@ function Products() {
     price_per_blade: "",
     blade_glass_types: [],
     piece_options: [],
+    area_options: [],
     sell_blades_only: true,
     sell_with_frame: false,
     blade_frame_types: [],
@@ -1894,6 +1960,7 @@ function Products() {
       blade_count: bladeCount,
       blade_glass_types: newProduct.blade_glass_types || [],
       piece_options: newProduct.piece_options || [],
+      area_options: newProduct.area_options || [],
       sell_blades_only: newProduct.sell_blades_only !== false,
       sell_with_frame: Boolean(newProduct.sell_with_frame),
       blade_frame_types: newProduct.blade_frame_types || [],
@@ -1917,6 +1984,8 @@ function Products() {
       blade_glass_type: newProduct.default_blade_glass_type || newProduct.blade_glass_types?.[0]?.name || "",
       piece_option: newProduct.piece_options?.[0]?.name || "",
       piece_options: newProduct.piece_options || [],
+      area_option: newProduct.area_options?.[0]?.name || "",
+      area_options: newProduct.area_options || [],
       sale_mode: newProduct.default_sale_mode || "blades_only",
       frame_type: newProduct.default_frame_type || newProduct.blade_frame_types?.[0]?.name || "",
       custom_frame_size: newProduct.default_sale_mode === "frame" && !defaultFrame && Boolean(newProduct.allow_custom_frame_size),
@@ -1943,6 +2012,7 @@ function Products() {
     newProduct.price_per_blade,
     newProduct.blade_glass_types,
     newProduct.piece_options,
+    newProduct.area_options,
     newProduct.sell_blades_only,
     newProduct.sell_with_frame,
     newProduct.blade_frame_types,
@@ -2127,6 +2197,7 @@ function Products() {
           price_per_blade: product.price_per_blade ?? "",
           blade_glass_types: bladeGlassTypes,
           piece_options: Array.isArray(product.piece_options) ? product.piece_options.map((option) => ({ ...option })) : [],
+          area_options: Array.isArray(product.area_options) ? product.area_options.map((option) => ({ ...option })) : [],
           sell_blades_only: editSellBladesOnly,
           sell_with_frame: editSellWithFrame,
           blade_frame_types: editFrameTypes,
@@ -2287,8 +2358,21 @@ function Products() {
         setModalError("Width and height must be greater than 0.");
         return;
       }
-      if (!newProduct.price_per_sqft) {
+      if (Number(newProduct.price_per_sqft) <= 0 && !(newProduct.area_options || []).length) {
         setModalError("Price per sq ft is required.");
+        return;
+      }
+      const configuredAreaOptions = newProduct.area_options || [];
+      if (configuredAreaOptions.some((option) => {
+        const optionPrice = String(option.price_per_sqft ?? "").trim();
+        return !String(option.name || "").trim()
+          || (optionPrice && (!Number.isFinite(Number(option.price_per_sqft)) || Number(option.price_per_sqft) <= 0));
+      })) {
+        setModalError("Each area option needs a name, and any entered price must be greater than zero.");
+        return;
+      }
+      if (new Set(configuredAreaOptions.map((option) => String(option.name || "").trim().toLowerCase())).size !== configuredAreaOptions.length) {
+        setModalError("Area option names must be unique.");
         return;
       }
     }
@@ -2428,7 +2512,7 @@ function Products() {
         sku: "",
         unit_price: pricingMethod === "per_meter"
           ? Number(newProduct.unit_price) || 0
-          : Number(newProduct.estimated_price_override) || (pricingMethod === "per_piece" ? Number(newProduct.piece_options?.[0]?.price_per_piece) : 0) || Number(newProduct.estimated_price) || Number(newProduct.finished_door_pricing?.standard_price_per_piece) || Number(newProduct.base_price) || Number(newProduct.price_per_sqft) || Number(newProduct.price_per_blade) || 0,
+          : Number(newProduct.estimated_price_override) || (pricingMethod === "per_piece" ? Number(newProduct.piece_options?.[0]?.price_per_piece) : 0) || (pricingMethod === "sqft" ? Number(newProduct.price_per_sqft) || Number(newProduct.area_options?.[0]?.price_per_sqft) : 0) || Number(newProduct.estimated_price) || Number(newProduct.finished_door_pricing?.standard_price_per_piece) || Number(newProduct.base_price) || Number(newProduct.price_per_sqft) || Number(newProduct.price_per_blade) || 0,
         unit: pricingMethod === "sqft" ? "per_sqft" : pricingMethod === "blade" ? "per_blade" : pricingMethod === "per_meter" ? "per_meter" : "per_piece",
         measurement_unit: newProduct.unit || "in",
         image_url: finalImages.main || "",
@@ -2472,6 +2556,7 @@ function Products() {
         blade_count: numberIfEntered(newProduct.blade_count),
         blade_glass_types: (newProduct.blade_glass_types || []).map((glass) => ({ name: String(glass.name || "").trim(), price_per_blade: Number(glass.price_per_blade) || 0 })),
         piece_options: (newProduct.piece_options || []).map((option) => ({ name: String(option.name || "").trim(), price_per_piece: Number(option.price_per_piece) || 0 })),
+        area_options: (newProduct.area_options || []).map((option) => ({ name: String(option.name || "").trim(), price_per_sqft: Number(option.price_per_sqft) || 0 })),
         sell_blades_only: Boolean(newProduct.sell_blades_only),
         sell_with_frame: Boolean(newProduct.sell_with_frame),
         blade_frame_types: (newProduct.blade_frame_types || []).map((frame) => ({ name: String(frame.name || "").trim(), blade_count: Number(frame.blade_count) || 0, price: Number(frame.price) || 0 })),

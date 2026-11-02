@@ -231,6 +231,7 @@ function LandingPage() {
     return {
       blade_glass_type: product?.default_blade_glass_type || glassTypes[0]?.name || "",
       piece_option: product?.piece_options?.[0]?.name || "",
+      area_option: product?.area_options?.[0]?.name || "",
       sale_mode: saleMode,
       frame_type: defaultFrame?.name || "",
       custom_frame_size: saleMode === "frame" && frameTypes.length === 0 && Boolean(product?.allow_custom_frame_size),
@@ -453,6 +454,7 @@ function LandingPage() {
       notes: options.notes || "",
       blade_glass_type: options.blade_glass_type || product.default_blade_glass_type || "",
       piece_option: options.piece_option || product.piece_options?.[0]?.name || "",
+      area_option: options.area_option || product.area_options?.[0]?.name || "",
       sale_mode: options.sale_mode || product.default_sale_mode || "blades_only",
       frame_type: options.frame_type || product.default_frame_type || "",
       frame_blade_count: Number(options.frame_blade_count) || 0,
@@ -649,7 +651,7 @@ function LandingPage() {
   };
 
   const getProductUnitRate = (product) => {
-    const pricePerSqft = Number(product.price_per_sqft) || 0;
+    const pricePerSqft = Number(product.price_per_sqft) || Number(product.area_options?.[0]?.price_per_sqft) || 0;
     const pricePerBlade = Number(product.price_per_blade) || 0;
     const unitPrice = Number(product.unit_price) || 0;
     const unitKey = product.unit || product.pricing_method || "unit";
@@ -695,7 +697,9 @@ function LandingPage() {
       return Number(selectedPieceOption?.price_per_piece || product?.base_price || product?.unit_price) || undefined;
     }
     if (pricingMethod === "sqft" || (!pricingMethod && ["per_sqft", "sqft"].includes(legacyUnit))) {
-      return Number(product?.price_per_sqft) || undefined;
+      const selectedAreaOption = (product?.area_options || []).find((option) => option.name === selections.area_option)
+        || product?.area_options?.[0];
+      return Number(selectedAreaOption?.price_per_sqft || product?.price_per_sqft) || undefined;
     }
     if (isBladeProduct(product)) {
       const selectedGlass = (product?.blade_glass_types || []).find(
@@ -778,6 +782,8 @@ function LandingPage() {
             customized: true,
             piece_option: productEstimatorForm.piece_option,
             piece_options: selectedProduct.piece_options || [],
+            area_option: productEstimatorForm.area_option,
+            area_options: selectedProduct.area_options || [],
           }),
         }
     : null;
@@ -850,6 +856,7 @@ function LandingPage() {
       variant: actionProduct.variant || actionProduct.color || "",
       blade_glass_type: actionConfiguration.blade_glass_type || "",
       piece_option: actionConfiguration.piece_option || actionProduct.piece_options?.[0]?.name || "",
+      area_option: actionConfiguration.area_option || actionProduct.area_options?.[0]?.name || "",
       sale_mode: actionConfiguration.sale_mode || "blades_only",
       frame_type: actionConfiguration.frame_type || "",
       custom_frame_size: Boolean(actionConfiguration.custom_frame_size),
@@ -876,6 +883,7 @@ function LandingPage() {
         price_per_sqft: Number(actionProduct.price_per_sqft) || 0,
         price_per_blade: Number(actionProduct.price_per_blade) || 0,
         piece_options: actionProduct.piece_options || [],
+        area_options: actionProduct.area_options || [],
         unit_price: Number(actionProduct.unit_price) || 0,
         base_price: Number(actionProduct.base_price) || 0,
       },

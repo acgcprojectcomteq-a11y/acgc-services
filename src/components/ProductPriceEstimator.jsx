@@ -16,9 +16,13 @@ export const isMeterPricingProduct = (product) =>
 export const isPiecePricingProduct = (product) =>
   ["per_piece", "piece", "per_set", "set"].includes(String(product?.pricing_method || product?.unit || "").toLowerCase());
 
+export const isAreaPricingProduct = (product) =>
+  ["sqft", "per_sqft", "area"].includes(String(product?.pricing_method || product?.unit || "").toLowerCase());
+
 export const getDefaultProductEstimatorForm = (product = {}) => {
   const glassTypes = Array.isArray(product.blade_glass_types) ? product.blade_glass_types : [];
   const pieceOptions = Array.isArray(product.piece_options) ? product.piece_options : [];
+  const areaOptions = Array.isArray(product.area_options) ? product.area_options : [];
   const frameTypes = Array.isArray(product.blade_frame_types) ? product.blade_frame_types : [];
   const defaultFrame = frameTypes.find((frame) => frame.name === product.default_frame_type) || frameTypes[0];
   const sellBladesOnly = product.sell_blades_only !== false;
@@ -35,6 +39,7 @@ export const getDefaultProductEstimatorForm = (product = {}) => {
     height: "0",
     blade_glass_type: product.default_blade_glass_type || glassTypes[0]?.name || "",
     piece_option: pieceOptions[0]?.name || "",
+    area_option: areaOptions[0]?.name || "",
     sale_mode: saleMode,
     frame_type: defaultFrame?.name || "",
     frame_blade_count: Number(defaultFrame?.blade_count) || 0,
@@ -74,7 +79,12 @@ const getProductEstimateRate = (product, form) => {
       || product?.piece_options?.[0];
     if (Number(selectedPieceOption?.price_per_piece) > 0) return Number(selectedPieceOption.price_per_piece);
   }
-  if (["sqft", "per_sqft"].includes(pricingMethod) || legacyUnit === "per_sqft") return Number(product?.price_per_sqft) || undefined;
+  if (isAreaPricingProduct(product)) {
+    const selectedAreaOption = (product?.area_options || []).find((option) => option.name === form.area_option)
+      || product?.area_options?.[0];
+    if (Number(selectedAreaOption?.price_per_sqft) > 0) return Number(selectedAreaOption.price_per_sqft);
+    return Number(product?.price_per_sqft) || undefined;
+  }
   if (["per_meter", "meter"].includes(pricingMethod) || legacyUnit === "per_meter") return Number(product?.unit_price) || undefined;
   if (isPiecePricingProduct(product)) return Number(product?.base_price || product?.unit_price) || undefined;
   if (isBladePricingProduct(product)) {
@@ -90,6 +100,7 @@ export const getProductEstimatorState = (product, form = {}) => {
       isBladeEstimator: false,
       isMeterEstimator: false,
       isPieceEstimator: false,
+      isAreaEstimator: false,
       needsDimensions: true,
       hasEstimate: false,
       result: null,
@@ -105,11 +116,14 @@ export const getProductEstimatorState = (product, form = {}) => {
   const isBladeEstimator = isBladePricingProduct(product);
   const isMeterEstimator = isMeterPricingProduct(product);
   const isPieceEstimator = isPiecePricingProduct(product);
+  const isAreaEstimator = isAreaPricingProduct(product);
   const glassTypes = Array.isArray(product.blade_glass_types) ? product.blade_glass_types : [];
   const pieceOptions = Array.isArray(product.piece_options) ? product.piece_options : [];
+  const areaOptions = Array.isArray(product.area_options) ? product.area_options : [];
   const frameTypes = Array.isArray(product.blade_frame_types) ? product.blade_frame_types : [];
   const selectedGlass = glassTypes.find((glass) => glass.name === form.blade_glass_type) || glassTypes[0] || null;
   const selectedPieceOption = pieceOptions.find((option) => option.name === form.piece_option) || pieceOptions[0] || null;
+  const selectedAreaOption = areaOptions.find((option) => option.name === form.area_option) || areaOptions[0] || null;
   const requestedFrameBladeCount = Number(form.frame_blade_count) || 0;
   const selectedFrame = frameTypes.find((frame) => frame.name === form.frame_type
     && (!requestedFrameBladeCount || Number(frame.blade_count) === requestedFrameBladeCount))
@@ -159,6 +173,8 @@ export const getProductEstimatorState = (product, form = {}) => {
     blade_glass_type: selectedGlass?.name || form.blade_glass_type,
     piece_option: selectedPieceOption?.name || form.piece_option,
     piece_options: pieceOptions,
+    area_option: selectedAreaOption?.name || form.area_option,
+    area_options: areaOptions,
     sale_mode: form.sale_mode || product.default_sale_mode || "blades_only",
     frame_type: selectedFrame?.name || form.frame_type,
     frame_blade_count: Number(selectedFrame?.blade_count) || Number(form.frame_blade_count) || 0,
@@ -191,6 +207,7 @@ export const getProductEstimatorState = (product, form = {}) => {
         : Number(selectedGlass?.price_per_blade ?? product.price_per_blade) || 0
       : Number(product.estimated_price_override) > 0 || isMeterEstimator || isPieceEstimator
         ? Number(getProductEstimateRate(product, form)) || 0
+        : isAreaEstimator ? Number(selectedAreaOption?.price_per_sqft) || Number(product.price_per_sqft) || 0
         : rawResult?.rate || 0,
     areaDisplay: isBladeEstimator
       ? `${bladeCount} blade${bladeCount === 1 ? "" : "s"}`
@@ -214,11 +231,14 @@ export const getProductEstimatorState = (product, form = {}) => {
       ? width > 0 && Number(result.estimated_price) > 0
       : isPieceEstimator
         ? (!pieceOptions.length || Boolean(selectedPieceOption && Number(selectedPieceOption.price_per_piece) > 0)) && Number(result.estimated_price) > 0
+      : isAreaEstimator
+        ? (!areaOptions.length || Boolean(selectedAreaOption && (Number(selectedAreaOption.price_per_sqft) > 0 || Number(product.price_per_sqft) > 0))) && Number(result.estimated_price) > 0
       : width > 0 && height > 0 && Number(result.estimated_price) > 0);
   return {
     isBladeEstimator,
     isMeterEstimator,
     isPieceEstimator,
+    isAreaEstimator,
     needsDimensions,
     hasEstimate,
     dimensionError,
@@ -232,9 +252,11 @@ export const getProductEstimatorState = (product, form = {}) => {
     quantityError,
     selectedGlass,
     selectedPieceOption,
+    selectedAreaOption,
     selectedFrame,
     glassTypes,
     pieceOptions,
+    areaOptions,
     frameTypes,
   };
 };
@@ -248,6 +270,7 @@ function ProductPriceEstimator({ product, form, onFormChange, darkMode = false, 
     isBladeEstimator,
     isMeterEstimator,
     isPieceEstimator,
+    isAreaEstimator,
     needsDimensions,
     hasEstimate,
     dimensionError,
@@ -260,9 +283,11 @@ function ProductPriceEstimator({ product, form, onFormChange, darkMode = false, 
     quantityError,
     selectedGlass,
     selectedPieceOption,
+    selectedAreaOption,
     selectedFrame,
     glassTypes,
     pieceOptions,
+    areaOptions,
     frameTypes,
   } = state;
   const useSoftDark = darkMode && bladeModalLayout;
@@ -352,6 +377,16 @@ function ProductPriceEstimator({ product, form, onFormChange, darkMode = false, 
           <CustomerDropdown ariaLabel="Per piece option" darkMode={darkMode} value={form.piece_option || selectedPieceOption?.name || ""} onChange={(event) => updateForm({ piece_option: event.target.value })} className={fieldClass}>
             <option value="">Choose an option</option>
             {pieceOptions.map((option) => <option key={option.name} value={option.name}>{option.name} - {formatCurrency(option.price_per_piece)} / piece</option>)}
+          </CustomerDropdown>
+        </label>
+      )}
+
+      {isAreaEstimator && areaOptions.length > 0 && (
+        <label className={`block ${useAreaModalLayout ? "mx-[18px] min-[760px]:col-start-1" : "mt-4"}`}>
+          <span className={labelClass}>Area option</span>
+          <CustomerDropdown ariaLabel="Per area option" darkMode={darkMode} value={form.area_option || selectedAreaOption?.name || ""} onChange={(event) => updateForm({ area_option: event.target.value })} className={fieldClass}>
+            <option value="">Choose an option</option>
+            {areaOptions.map((option) => <option key={option.name} value={option.name}>{option.name} - {formatCurrency(Number(option.price_per_sqft) || Number(product.price_per_sqft) || 0)} / sq ft</option>)}
           </CustomerDropdown>
         </label>
       )}

@@ -509,7 +509,7 @@ function CustomerDashboard() {
   const [productError, setProductError] = useState("");
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [selectedProductImageIndex, setSelectedProductImageIndex] = useState(0);
-  const [productEstimatorForm, setProductEstimatorForm] = useState({ unit: "in", width: "0", height: "0", blade_glass_type: "", sale_mode: "blades_only", frame_type: "", custom_frame_size: false, blade_count: 1, extra_charges: [] });
+  const [productEstimatorForm, setProductEstimatorForm] = useState({ unit: "in", width: "0", height: "0", blade_glass_type: "", piece_option: "", area_option: "", sale_mode: "blades_only", frame_type: "", custom_frame_size: false, blade_count: 1, extra_charges: [] });
   const [showAboutProduct, setShowAboutProduct] = useState(false);
   const [showCartDecisionModal, setShowCartDecisionModal] = useState(false);
   const [cartDecisionStep, setCartDecisionStep] = useState("choice");
@@ -522,6 +522,7 @@ function CustomerDashboard() {
     notes: "",
     blade_glass_type: "",
     piece_option: "",
+    area_option: "",
     sale_mode: "blades_only",
     frame_type: "",
     custom_frame_size: false,
@@ -658,6 +659,7 @@ function CustomerDashboard() {
     quantity: Math.max(1, Number(form.quantity) || 1),
     blade_glass_type: form.blade_glass_type,
     piece_option: form.piece_option,
+    area_option: form.area_option,
     sale_mode: form.sale_mode,
     frame_type: form.frame_type,
     frame_blade_count: form.frame_blade_count,
@@ -2343,6 +2345,7 @@ function CustomerDashboard() {
       notes: options.notes || "",
       blade_glass_type: options.blade_glass_type || product?.blade_glass_type || product?.default_blade_glass_type || "",
       piece_option: options.piece_option || product?.piece_option || product?.piece_options?.[0]?.name || "",
+      area_option: options.area_option || product?.area_option || product?.area_options?.[0]?.name || "",
       sale_mode: options.sale_mode || product?.sale_mode || product?.default_sale_mode || "blades_only",
       frame_type: options.frame_type || product?.frame_type || product?.default_frame_type || "",
       custom_frame_size: Boolean(options.custom_frame_size ?? product?.custom_frame_size),
@@ -2376,6 +2379,7 @@ function CustomerDashboard() {
     return {
       blade_glass_type: product?.default_blade_glass_type || glassTypes[0]?.name || "",
       piece_option: product?.piece_options?.[0]?.name || "",
+      area_option: product?.area_options?.[0]?.name || "",
       sale_mode: defaultSaleMode === "frame" && !product?.sell_with_frame ? "blades_only" : defaultSaleMode,
       frame_type: defaultFrame?.name || "",
       custom_frame_size: defaultSaleMode === "frame" && frameTypes.length === 0 && Boolean(product?.allow_custom_frame_size),
@@ -2424,6 +2428,7 @@ function CustomerDashboard() {
       is_estimate: pendingAction.actionType === "estimate",
       blade_glass_type: selection.blade_glass_type || bladeDefaults.blade_glass_type,
       piece_option: selection.piece_option || bladeDefaults.piece_option,
+      area_option: selection.area_option || bladeDefaults.area_option,
       sale_mode: selection.sale_mode || bladeDefaults.sale_mode,
       frame_type: selection.frame_type || bladeDefaults.frame_type,
       custom_frame_size: Boolean(selection.custom_frame_size),
@@ -2517,6 +2522,9 @@ function CustomerDashboard() {
             piece_option: product.piece_options?.some((option) => option.name === current.piece_option)
               ? current.piece_option
               : selection.piece_option || bladeDefaults.piece_option,
+            area_option: product.area_options?.some((option) => option.name === current.area_option)
+              ? current.area_option
+              : selection.area_option || bladeDefaults.area_option,
             sale_mode: current.sale_mode === "frame" && !product.sell_with_frame ? bladeDefaults.sale_mode : current.sale_mode,
             frame_type: isFrameAvailable ? current.frame_type : selection.frame_type || bladeDefaults.frame_type,
             blade_count: current.blade_count || selection.blade_count || bladeDefaults.blade_count,
@@ -2571,6 +2579,7 @@ function CustomerDashboard() {
         customized: estimateForm.customized,
         blade_glass_type: estimateForm.blade_glass_type,
         piece_option: estimateForm.piece_option,
+        area_option: estimateForm.area_option,
         sale_mode: estimateForm.sale_mode,
         frame_type: estimateForm.frame_type,
         custom_frame_size: estimateForm.custom_frame_size,
@@ -2724,7 +2733,7 @@ function CustomerDashboard() {
     handleAddToCart(product, extraCharges, options).finally(clearPendingCartAdd);
   }, [cartLoaded, handleAddToCart, loading, location.hash, location.pathname, location.search, location.state, navigate, user?.role]);
 
-  const handleAddEstimateToCart = async ({ product, width, height, quantity, notes, measurementUnit, blade_glass_type, piece_option, sale_mode, frame_type, custom_frame_size, blade_count, extra_charges }) => {
+  const handleAddEstimateToCart = async ({ product, width, height, quantity, notes, measurementUnit, blade_glass_type, piece_option, area_option, sale_mode, frame_type, custom_frame_size, blade_count, extra_charges }) => {
     if (!canRequestOrders) {
       setCartActionError("Order requests are disabled for your account.");
       return false;
@@ -2756,7 +2765,7 @@ function CustomerDashboard() {
       quantity: parsedQuantity,
       blade_count: product.blade_count || 0,
       base_price: product.base_price || undefined,
-      overrideRate: getProductEstimateRate(product, { piece_option }),
+      overrideRate: getProductEstimateRate(product, { piece_option, area_option }),
       customization: product.customization || false,
       customization_fee: product.customization_fee || 0,
     });
@@ -2770,6 +2779,7 @@ function CustomerDashboard() {
       customized: true,
       blade_glass_type,
       piece_option,
+      area_option,
       sale_mode,
       frame_type,
       custom_frame_size,
@@ -2794,6 +2804,7 @@ function CustomerDashboard() {
             is_estimate: true,
             blade_glass_type,
             piece_option,
+            area_option,
             sale_mode,
             frame_type,
             custom_frame_size,
@@ -3127,6 +3138,7 @@ function CustomerDashboard() {
         const bladeSelections = {
           blade_glass_type: estimateForm.blade_glass_type,
           piece_option: estimateForm.piece_option,
+          area_option: estimateForm.area_option,
           sale_mode: estimateForm.sale_mode,
           frame_type: estimateForm.frame_type,
           custom_frame_size: estimateForm.custom_frame_size,
@@ -3406,8 +3418,8 @@ function CustomerDashboard() {
       return;
     }
     const orderNowProductWithSelection = selectedProduct?._id === product?._id
-      ? { ...product, piece_option: productEstimatorForm.piece_option || product.piece_options?.[0]?.name || "" }
-      : { ...product, piece_option: product.piece_options?.[0]?.name || "" };
+      ? { ...product, piece_option: productEstimatorForm.piece_option || product.piece_options?.[0]?.name || "", area_option: productEstimatorForm.area_option || product.area_options?.[0]?.name || "" }
+      : { ...product, piece_option: product.piece_options?.[0]?.name || "", area_option: product.area_options?.[0]?.name || "" };
     setOrderNowProduct(orderNowProductWithSelection);
     setOrderNowQuantity(1);
     setOrderNowExtraCharges(
@@ -4355,7 +4367,9 @@ function CustomerDashboard() {
       return Number(product?.base_price || product?.unit_price) || undefined;
     }
     if (pricingMethod === "sqft" || (!pricingMethod && legacyUnit === "per_sqft")) {
-      return Number(product?.price_per_sqft) || undefined;
+      const selectedAreaOption = (product?.area_options || []).find((option) => option.name === selections.area_option)
+        || product?.area_options?.[0];
+      return Number(selectedAreaOption?.price_per_sqft || product?.price_per_sqft) || undefined;
     }
     if (pricingMethod === "blade" || (!pricingMethod && legacyUnit === "per_blade")) {
       return Number(product?.price_per_blade) || undefined;
@@ -4364,7 +4378,7 @@ function CustomerDashboard() {
   };
 
   const getProductUnitRate = (product) => {
-    const pricePerSqft = Number(product.price_per_sqft) || 0;
+    const pricePerSqft = Number(product.price_per_sqft) || Number(product.area_options?.[0]?.price_per_sqft) || 0;
     const pricePerBlade = Number(product.price_per_blade) || 0;
     const unitPrice = Number(product.unit_price) || 0;
     const unitKey = product.unit || product.pricing_method || "unit";
@@ -5141,6 +5155,8 @@ function CustomerDashboard() {
           blade_glass_type: estimateForm.blade_glass_type,
           piece_option: estimateForm.piece_option,
           piece_options: cartDecisionProduct.piece_options || [],
+          area_option: estimateForm.area_option,
+          area_options: cartDecisionProduct.area_options || [],
           sale_mode: estimateForm.sale_mode,
           frame_type: estimateForm.frame_type,
           custom_frame_size: estimateForm.custom_frame_size,
@@ -5160,11 +5176,14 @@ function CustomerDashboard() {
   const isBladeEstimator = selectedProduct?.pricing_method === "blade";
   const isMeterEstimator = selectedProduct?.pricing_method === "per_meter" || selectedProduct?.unit === "per_meter";
   const isPieceEstimator = ["per_piece", "per_set", "piece", "set"].includes(String(selectedProduct?.pricing_method || selectedProduct?.unit || "").toLowerCase());
+  const isAreaEstimator = selectedEstimatorState?.isAreaEstimator === true;
   const productBladeGlassTypes = Array.isArray(selectedProduct?.blade_glass_types) ? selectedProduct.blade_glass_types : [];
   const productPieceOptions = Array.isArray(selectedProduct?.piece_options) ? selectedProduct.piece_options : [];
+  const productAreaOptions = Array.isArray(selectedProduct?.area_options) ? selectedProduct.area_options : [];
   const productBladeFrameTypes = Array.isArray(selectedProduct?.blade_frame_types) ? selectedProduct.blade_frame_types : [];
   const selectedBladeGlass = productBladeGlassTypes.find((glass) => glass.name === productEstimatorForm.blade_glass_type);
   const selectedPieceOption = productPieceOptions.find((option) => option.name === productEstimatorForm.piece_option) || productPieceOptions[0];
+  const selectedAreaOption = productAreaOptions.find((option) => option.name === productEstimatorForm.area_option) || productAreaOptions[0];
   const selectedBladeFrame = productBladeFrameTypes.find((frame) => frame.name === productEstimatorForm.frame_type);
   const estimatorBladeCount = productEstimatorForm.sale_mode === "frame"
     ? Number(selectedBladeFrame?.blade_count) || Number(productEstimatorForm.blade_count) || 0
@@ -5196,6 +5215,8 @@ function CustomerDashboard() {
           blade_glass_type: productEstimatorForm.blade_glass_type,
           piece_option: productEstimatorForm.piece_option,
           piece_options: productPieceOptions,
+          area_option: productEstimatorForm.area_option,
+          area_options: productAreaOptions,
           sale_mode: productEstimatorForm.sale_mode,
           frame_type: productEstimatorForm.frame_type,
           custom_frame_size: productEstimatorForm.custom_frame_size,
@@ -5206,7 +5227,9 @@ function CustomerDashboard() {
           ? Number(selectedBladeGlass?.price_per_blade) || 0
           : isPieceEstimator && Number(selectedPieceOption?.price_per_piece) > 0
             ? Number(selectedPieceOption.price_per_piece)
-            : isMeterEstimator || isPieceEstimator ? Number(selectedProduct.unit_price || selectedProduct.base_price) || 0 : rawProductEstimatorResult?.rate || 0,
+            : isMeterEstimator || isPieceEstimator ? Number(selectedProduct.unit_price || selectedProduct.base_price) || 0
+              : isAreaEstimator ? Number(selectedAreaOption?.price_per_sqft) || Number(selectedProduct.price_per_sqft) || 0
+                : rawProductEstimatorResult?.rate || 0,
         areaDisplay: isBladeEstimator
           ? `${estimatorBladeCount} blade(s)`
           : isMeterEstimator ? `${productEstimatorWidth} ${productEstimatorForm.unit}` : isPieceEstimator ? "1 piece" : rawProductEstimatorResult?.areaDisplay,
@@ -5231,6 +5254,8 @@ function CustomerDashboard() {
       ? productEstimatorWidth > 0 && Number(productEstimatorResult?.estimated_price) > 0
       : isPieceEstimator
         ? (!productPieceOptions.length || Number(selectedPieceOption?.price_per_piece) > 0) && Number(productEstimatorResult?.estimated_price) > 0
+      : productAreaOptions.length > 0
+        ? Boolean(selectedAreaOption && Number(selectedAreaOption.price_per_sqft) > 0) && Number(productEstimatorResult?.estimated_price) > 0
       : productEstimatorWidth > 0 && productEstimatorHeight > 0 && Number(productEstimatorResult?.estimated_price) > 0);
   const productEstimatorBladeCountError = productEstimatorState?.bladeCountError || "";
   const productEstimatorInputsInvalid = Boolean(productEstimatorDimensionError || productEstimatorQuantityError || productEstimatorBladeCountError);
@@ -6664,6 +6689,15 @@ function CustomerDashboard() {
                               </CustomerDropdown>
                             </label>
                           )}
+                          {productAreaOptions.length > 0 && (
+                            <label className="mt-4 block">
+                              <span className={`mb-1 block text-[10px] font-bold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Area option</span>
+                              <CustomerDropdown ariaLabel="Per area option" darkMode={darkMode} value={productEstimatorForm.area_option || selectedAreaOption?.name || ""} onChange={(event) => setProductEstimatorForm((current) => ({ ...current, area_option: event.target.value }))} className="h-10 rounded-lg px-3">
+                                <option value="">Choose an option</option>
+                                {productAreaOptions.map((option) => <option key={option.name} value={option.name}>{option.name} · {formatCurrency(Number(option.price_per_sqft) || Number(selectedProduct.price_per_sqft) || 0)} / sq ft</option>)}
+                              </CustomerDropdown>
+                            </label>
+                          )}
                           {isBladeEstimator && (
                             <div className={`mt-4 space-y-3 rounded-lg border p-3 ${darkMode ? "border-slate-700 bg-slate-800" : "border-slate-200 bg-slate-50"}`}>
                               <label className="block">
@@ -6872,6 +6906,7 @@ function CustomerDashboard() {
                                 notes: "",
                                 blade_glass_type: productEstimatorForm.blade_glass_type,
                                 piece_option: productEstimatorForm.piece_option,
+                                area_option: productEstimatorForm.area_option,
                                 sale_mode: productEstimatorForm.sale_mode,
                                 frame_type: productEstimatorForm.frame_type,
                                 custom_frame_size: productEstimatorForm.custom_frame_size,

@@ -27,6 +27,11 @@ const PieceOptionSchema = new mongoose.Schema({
   price_per_piece: { type: Number, min: 0, required: true },
 }, { _id: false });
 
+const AreaOptionSchema = new mongoose.Schema({
+  name: { type: String, trim: true, required: true },
+  price_per_sqft: { type: Number, min: 0, default: 0 },
+}, { _id: false });
+
 const BladeFrameTypeSchema = new mongoose.Schema({
   name: { type: String, trim: true, required: true },
   blade_count: { type: Number, min: 1, required: true },
@@ -148,6 +153,10 @@ const ProductSchema = new mongoose.Schema(
     },
     piece_options: {
       type: [PieceOptionSchema],
+      default: [],
+    },
+    area_options: {
+      type: [AreaOptionSchema],
       default: [],
     },
     sell_blades_only: {

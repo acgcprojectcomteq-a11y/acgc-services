@@ -44,6 +44,7 @@ const toReceiptProjectItem = (item) => {
     Number(item.blade_count) > 0 ? `${Number(item.blade_count)} blade${Number(item.blade_count) === 1 ? "" : "s"}` : "",
     item.blade_glass_type ? `Glass: ${item.blade_glass_type}` : "",
     item.piece_option ? `Option: ${item.piece_option}` : "",
+    item.area_option ? `Area option: ${item.area_option}` : "",
     item.frame_type ? `Frame: ${item.frame_type}` : "",
     ...(Array.isArray(item.additional_project_charges) ? item.additional_project_charges.map((entry) => `${entry.name || "Additional item"}: PHP ${amount(entry.amount).toFixed(2)}`) : []),
   ].filter(Boolean);
@@ -67,6 +68,7 @@ const toReceiptProjectItem = (item) => {
     blade_count: Number(item.blade_count) || 0,
     blade_glass_type: String(item.blade_glass_type || ""),
     piece_option: String(item.piece_option || ""),
+    area_option: String(item.area_option || ""),
     frame_type: String(item.frame_type || ""),
     additional_project_charges: item.additional_project_charges || [],
     details: detailParts.join(" | "),
