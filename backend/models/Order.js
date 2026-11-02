@@ -270,6 +270,8 @@ const OrderItemSchema = new mongoose.Schema(
     progress_audit: { type: [mongoose.Schema.Types.Mixed], default: [] },
     protected_project_notes: { type: mongoose.Schema.Types.Mixed, default: null },
     progress_activity_notes: { type: [mongoose.Schema.Types.Mixed], default: [] },
+    installation_status: { type: String, enum: ["Not Started", "Installation in Progress", "Installed", "For Adjustment", "Installation Completed"], default: "Not Started" },
+    installation_status_history: { type: [mongoose.Schema.Types.Mixed], default: [] },
   },
   { _id: false }
 );

@@ -1,5 +1,5 @@
 import express from "express";
-import { authMiddleware, optionalAuthMiddleware, permissionMiddleware, roleMiddleware, staffModulePermission } from "../middleware/auth.js";
+import { authMiddleware, optionalAuthMiddleware, permissionMiddleware, roleMiddleware, staffModulePermission, staffModulePermissionIfStaff } from "../middleware/auth.js";
 import {
   createOrder,
   createOrderAsAdmin,
@@ -34,12 +34,25 @@ import {
 } from "../controllers/orderController.js";
 import { paymentProofUploadMiddleware } from "../controllers/uploadController.js";
 import { generateTransactionReport } from "../controllers/reportController.js";
+import {
+  listInstallationBilling,
+  createInstallationIssue,
+  updateInstallationIssue,
+  createExtraCharge,
+  submitExtraCharge,
+  reviewExtraCharge,
+  issueExtraChargeReceipt,
+  recordExtraChargePayment,
+  verifyExtraChargePayment,
+  updateInstallationStatus,
+} from "../controllers/installationBillingController.js";
 
 const router = express.Router();
 
 router.get("/", authMiddleware, listOrders);
 router.post("/", authMiddleware, roleMiddleware("customer"), permissionMiddleware("can_request_orders"), createOrder);
 router.get("/track/:tracking", optionalAuthMiddleware, permissionMiddleware("can_track_products"), trackOrder);
+router.get("/:orderId/installation-billing", authMiddleware, roleMiddleware(["customer", "admin", "super_admin", "skilled_worker"]), staffModulePermissionIfStaff("progress_monitoring", "view"), listInstallationBilling);
 router.put("/:orderId/contract", authMiddleware, roleMiddleware("customer"), respondToContract);
 router.put("/:orderId/cancel", authMiddleware, roleMiddleware("customer"), cancelCustomerOrder);
 router.put("/:orderId/payment-proof", authMiddleware, roleMiddleware("customer"), submitCustomerPaymentProof);
@@ -83,6 +96,15 @@ router.put("/admin/:orderId/review/visibility", authMiddleware, roleMiddleware([
 router.put("/admin/:orderId/review/response", authMiddleware, roleMiddleware(["admin", "super_admin"]), respondToCustomerReview);
 router.put("/admin/:orderId/inspection", authMiddleware, roleMiddleware(["admin", "super_admin", "skilled_worker"]), staffModulePermission("site_inspection", (req) => req.body?.inspection_status === "approved" || req.body?.inspection_status === "completed" ? "manual_approve" : "edit"), updateOrderInspection);
 router.put("/admin/:orderId/progress", authMiddleware, roleMiddleware(["admin", "super_admin", "skilled_worker"]), staffModulePermission("progress_monitoring", "edit"), updateOrderProgress);
+router.put("/admin/:orderId/installation-status", authMiddleware, roleMiddleware(["admin", "super_admin", "skilled_worker"]), staffModulePermission("progress_monitoring", "edit"), updateInstallationStatus);
+router.post("/admin/:orderId/installation-issues", authMiddleware, roleMiddleware(["admin", "super_admin", "skilled_worker"]), staffModulePermission("progress_monitoring", "edit"), createInstallationIssue);
+router.put("/admin/:orderId/installation-issues/:issueId", authMiddleware, roleMiddleware(["admin", "super_admin", "skilled_worker"]), staffModulePermission("progress_monitoring", "edit"), updateInstallationIssue);
+router.post("/admin/:orderId/extra-charges", authMiddleware, roleMiddleware(["admin", "super_admin"]), staffModulePermission("transactions", "edit"), createExtraCharge);
+router.put("/admin/:orderId/extra-charges/:chargeId/submit", authMiddleware, roleMiddleware(["admin", "super_admin"]), staffModulePermission("transactions", "edit"), submitExtraCharge);
+router.put("/admin/:orderId/extra-charges/:chargeId/review", authMiddleware, roleMiddleware(["admin", "super_admin"]), staffModulePermission("transactions", "manual_approve"), reviewExtraCharge);
+router.post("/admin/:orderId/extra-charges/:chargeId/receipt", authMiddleware, roleMiddleware(["admin", "super_admin"]), staffModulePermission("transactions", "edit"), issueExtraChargeReceipt);
+router.post("/admin/:orderId/extra-charges/:chargeId/payments", authMiddleware, roleMiddleware(["admin", "super_admin"]), staffModulePermission("transactions", "edit"), recordExtraChargePayment);
+router.put("/admin/:orderId/extra-charges/:chargeId/payments/:paymentId/verify", authMiddleware, roleMiddleware(["admin", "super_admin"]), staffModulePermission("transactions", "manual_approve"), verifyExtraChargePayment);
 router.put("/admin/:orderId/project-delay", authMiddleware, roleMiddleware(["admin", "super_admin"]), staffModulePermission("progress_monitoring", "edit"), updateProjectDelay);
 router.put("/admin/:orderId/protected-project-notes", authMiddleware, roleMiddleware(["admin", "super_admin"]), staffModulePermission("progress_monitoring", "edit"), updateProtectedProjectNotes);
 router.post("/admin/:orderId/activity-notes", authMiddleware, roleMiddleware(["admin", "super_admin", "skilled_worker"]), staffModulePermission("progress_monitoring", "edit"), addProgressActivityNote);

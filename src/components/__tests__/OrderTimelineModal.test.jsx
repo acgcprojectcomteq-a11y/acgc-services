@@ -20,7 +20,7 @@ describe("OrderTimelineModal", () => {
     expect(dialog.className).toContain("h-[100dvh]");
     expect(dialog.className).toContain("lg:max-w-[560px]");
     expect(screen.getByText("Glass Door")).toBeTruthy();
-    expect(screen.getByText('121" × 121" · 101.67 sq ft')).toBeTruthy();
+    expect(screen.getByText('Dimension: Width: 121" x Height: 121" (101.67 sq ft)')).toBeTruthy();
     expect(screen.getByText("Assembly", { selector: "p" })).toBeTruthy();
     expect(screen.getByText("1 of 5 stages done")).toBeTruthy();
   });
@@ -39,7 +39,8 @@ describe("OrderTimelineModal", () => {
 
     render(<OrderTimelineModal order={order} onClose={vi.fn()} />);
 
-    expect(screen.getByText("100cm × 120cm · 25.83 sq ft")).toBeTruthy();
+    expect(screen.getByText("Dimension: Width: 100cm x Height: 120cm (25.83 sq ft)")).toBeTruthy();
+
   });
 
   it("starts batch orders with the first item expanded and supports expand all", () => {

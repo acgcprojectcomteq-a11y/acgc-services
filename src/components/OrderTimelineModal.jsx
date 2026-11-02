@@ -14,6 +14,7 @@ import {
   getTimelineCurrentStage,
   getTimelineFocusStage,
 } from "./orderTimelineUtils";
+import InstallationBillingPanel from "@/components/InstallationBillingPanel";
 
 const getItemKey = (item, index) => String(item?._id || item?.id || `item-${index}`);
 const EMPTY_ITEMS = [];
@@ -416,6 +417,7 @@ export default function OrderTimelineModal({
               </p>
             </section>
           )}
+          <InstallationBillingPanel order={order} darkMode={darkMode} />
         </div>
 
         <footer className={`flex shrink-0 items-center justify-end gap-3 border-t px-4 py-3 sm:px-5 ${darkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-white"}`}>

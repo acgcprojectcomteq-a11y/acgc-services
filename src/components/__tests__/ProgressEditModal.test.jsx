@@ -15,6 +15,11 @@ const clickMarkDone = (name) => {
   if (confirmButton) fireEvent.click(confirmButton);
 };
 
+const chooseDropdownOption = (label, optionName, index = 0) => {
+  fireEvent.click(screen.getAllByLabelText(label)[index]);
+  fireEvent.click(screen.getByRole("option", { name: optionName }));
+};
+
 describe("ProgressEditModal", () => {
   it("places the mobile dialog above navigation and keeps its actions available", () => {
     render(
@@ -39,7 +44,7 @@ describe("ProgressEditModal", () => {
     expect(dialog.className).toContain("h-[100dvh]");
     expect(dialog.className).toContain("lg:max-w-[600px]");
     expect(screen.queryByRole("button", { name: /Add Sub-Stage/i })).toBeNull();
-    expect(screen.getAllByLabelText("Stage State")[0].value).toBe("in_progress");
+    expect(screen.getAllByLabelText("Stage State")[0].textContent).toContain("In Progress");
     expect(screen.queryByRole("option", { name: "Done" })).toBeNull();
     expect(screen.getByRole("button", { name: "Mark Cutting Done" })).toBeTruthy();
   });
@@ -54,7 +59,7 @@ describe("ProgressEditModal", () => {
       />
     );
 
-    fireEvent.change(screen.getByLabelText("Progress Photo Requirement for Cutting"), { target: { value: "required" } });
+    chooseDropdownOption("Progress Photo Requirement for Cutting", "Required");
     expect(screen.getByRole("button", { name: "Mark Cutting Done" }).disabled).toBe(true);
     expect(screen.getByText("A progress photo is required before this stage can be marked as completed.")).toBeTruthy();
     clickSaveChanges();
@@ -235,8 +240,8 @@ describe("ProgressEditModal", () => {
     const onSave = vi.fn().mockResolvedValue();
     render(<ProgressEditModal project={project} onSave={onSave} onClose={vi.fn()} />);
 
-    fireEvent.change(screen.getByLabelText("Select a preset stage"), { target: { value: "installation" } });
-    fireEvent.change(screen.getByLabelText("Insert after:"), { target: { value: "assembly" } });
+    chooseDropdownOption("Select a preset stage", "Installation");
+    chooseDropdownOption("Insert after:", "2. Assembly");
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
     clickSaveChanges();
 
@@ -259,8 +264,8 @@ describe("ProgressEditModal", () => {
       />
     );
 
-    fireEvent.change(screen.getByLabelText("Select a preset stage"), { target: { value: "cutting" } });
-    fireEvent.change(screen.getByLabelText("Insert after:"), { target: { value: "assembly" } });
+    chooseDropdownOption("Select a preset stage", "Cutting");
+    chooseDropdownOption("Insert after:", "2. Assembly");
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
     clickSaveChanges();
 
@@ -283,9 +288,9 @@ describe("ProgressEditModal", () => {
       />
     );
 
-    fireEvent.change(screen.getByLabelText("Select a preset stage"), { target: { value: "custom_stage" } });
+    chooseDropdownOption("Select a preset stage", "Custom Stage");
     fireEvent.change(screen.getByLabelText("Custom stage name"), { target: { value: "Final Packaging" } });
-    fireEvent.change(screen.getByLabelText("Insert after:"), { target: { value: "installation" } });
+    chooseDropdownOption("Insert after:", "4. Installation");
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
     clickSaveChanges();
 
@@ -309,9 +314,9 @@ describe("ProgressEditModal", () => {
       />
     );
 
-    fireEvent.change(screen.getByLabelText("Select a preset stage"), { target: { value: "custom_stage" } });
+    chooseDropdownOption("Select a preset stage", "Custom Stage");
     fireEvent.change(screen.getByLabelText("Custom stage name"), { target: { value: "Final Packaging" } });
-    fireEvent.change(screen.getByLabelText("Insert after:"), { target: { value: "installation" } });
+    chooseDropdownOption("Insert after:", "4. Installation");
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
     fireEvent.click(screen.getByText("Final Packaging"));
     fireEvent.click(screen.getByRole("button", { name: "Edit added stage Final Packaging" }));
@@ -333,9 +338,9 @@ describe("ProgressEditModal", () => {
       />
     );
 
-    fireEvent.change(screen.getByLabelText("Select a preset stage"), { target: { value: "custom_stage" } });
+    chooseDropdownOption("Select a preset stage", "Custom Stage");
     fireEvent.change(screen.getByLabelText("Custom stage name"), { target: { value: "Final Packaging" } });
-    fireEvent.change(screen.getByLabelText("Insert after:"), { target: { value: "installation" } });
+    chooseDropdownOption("Insert after:", "4. Installation");
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
     fireEvent.click(screen.getByText("Final Packaging"));
     fireEvent.click(screen.getByRole("button", { name: "Remove added stage Final Packaging" }));
@@ -392,9 +397,9 @@ describe("ProgressEditModal", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByLabelText("Insert after:").value).toBe("quality_inspection");
+      expect(screen.getByLabelText("Insert after:").textContent).toContain("5. Quality Inspection");
     });
-    fireEvent.change(screen.getByLabelText("Select a preset stage"), { target: { value: "assembly" } });
+    chooseDropdownOption("Select a preset stage", "Assembly");
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
     clickSaveChanges();
 
@@ -467,12 +472,12 @@ describe("ProgressEditModal", () => {
       />
     );
 
-    fireEvent.change(screen.getAllByLabelText("Stage State")[0], { target: { value: "delayed" } });
+    chooseDropdownOption("Stage State", "Delayed", 0);
     fireEvent.change(screen.getByLabelText("Delay Reason *"), { target: { value: "X" } });
     fireEvent.click(screen.getByRole("button", { name: "Save Delay Reason" }));
 
     expect(screen.queryByRole("dialog", { name: "Project Delay Reason" })).toBeNull();
-    expect(screen.getAllByLabelText("Stage State")[0].value).toBe("delayed");
+    expect(screen.getAllByLabelText("Stage State")[0].textContent).toContain("Delayed");
   });
 
   it("saves Assembly after Cutting and before Fabrication", async () => {

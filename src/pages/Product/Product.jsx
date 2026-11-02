@@ -1,6 +1,5 @@
 import CustomerDropdown from "@/components/CustomerDropdown";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useEffect, useRef, useState } from "react";
 import {
   Package,
   Plus,
@@ -68,43 +67,12 @@ function CatalogPicker({ label, value, options, catalogItems = [], onChange, onA
   const [editingValue, setEditingValue] = useState("");
   const [confirmingDelete, setConfirmingDelete] = useState(null);
   const [error, setError] = useState("");
-  const [menuPosition, setMenuPosition] = useState(null);
   const triggerRef = useRef(null);
   const menuRef = useRef(null);
 
-  const updateMenuPosition = () => {
-    const trigger = triggerRef.current;
-    if (!trigger) return;
-
-    const rect = trigger.getBoundingClientRect();
-    const dialog = trigger.closest(".mobile-fullscreen-dialog");
-    const dialogRect = dialog?.getBoundingClientRect();
-    const footer = dialog?.querySelector("footer");
-    const topLimit = Math.max(8, (dialogRect?.top ?? 0) + 8);
-    const footerTop = footer?.getBoundingClientRect().top ?? window.innerHeight;
-    const bottomLimit = Math.min(window.innerHeight - 8, footerTop - 8);
-    const spaceBelow = Math.max(0, bottomLimit - rect.bottom - 8);
-    const spaceAbove = Math.max(0, rect.top - topLimit - 8);
-    // Read the un-clamped scroll area's content height so repositioning never
-    // uses a height that was already reduced by an earlier scroll event.
-    const contentHeight = menuRef.current?.querySelector('[role="listbox"]')?.scrollHeight;
-    const naturalHeight = Math.min(320, contentHeight || options.length * 60 + 68);
-    const openAbove = spaceBelow < naturalHeight && spaceAbove > spaceBelow;
-    const maxHeight = Math.max(80, Math.min(naturalHeight, openAbove ? spaceAbove : spaceBelow));
-
-    setMenuPosition({
-      position: "fixed",
-      top: openAbove ? Math.max(topLimit, rect.top - maxHeight - 8) : Math.min(rect.bottom + 8, bottomLimit - maxHeight),
-      left: Math.max(8, Math.min(rect.left, window.innerWidth - rect.width - 8)),
-      width: rect.width,
-      maxHeight,
-    });
-  };
-
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (!isOpen) return undefined;
 
-    updateMenuPosition();
     const closeOnOutsideClick = (event) => {
       if (triggerRef.current?.contains(event.target) || menuRef.current?.contains(event.target)) return;
       setIsOpen(false);
@@ -116,14 +84,10 @@ function CatalogPicker({ label, value, options, catalogItems = [], onChange, onA
       setIsAdding(false);
     };
 
-    window.addEventListener("resize", updateMenuPosition);
-    window.addEventListener("scroll", updateMenuPosition, true);
     document.addEventListener("pointerdown", closeOnOutsideClick);
     document.addEventListener("keydown", closeOnEscape);
 
     return () => {
-      window.removeEventListener("resize", updateMenuPosition);
-      window.removeEventListener("scroll", updateMenuPosition, true);
       document.removeEventListener("pointerdown", closeOnOutsideClick);
       document.removeEventListener("keydown", closeOnEscape);
     };
@@ -190,30 +154,15 @@ function CatalogPicker({ label, value, options, catalogItems = [], onChange, onA
         aria-haspopup="listbox"
         aria-expanded={isOpen}
         disabled={disabled}
-        onClick={() => {
-          if (!isOpen) {
-            const trigger = triggerRef.current;
-            const dialog = trigger?.closest(".mobile-fullscreen-dialog");
-            const footer = dialog?.querySelector("footer");
-            const scrollArea = dialog?.querySelector("[data-catalog-picker-scroll-area]");
-            if (trigger && scrollArea) {
-              const bottomLimit = Math.min(window.innerHeight - 8, (footer?.getBoundingClientRect().top ?? window.innerHeight) - 8);
-              const desiredHeight = Math.min(320, menuRef.current?.scrollHeight || options.length * 60 + 68);
-              const overflow = trigger.getBoundingClientRect().bottom + 8 + desiredHeight - bottomLimit;
-              if (overflow > 0) scrollArea.scrollTop += overflow;
-            }
-            setMenuPosition(null);
-          }
-          setIsOpen((open) => !open);
-        }}
+        onClick={() => setIsOpen((open) => !open)}
         className={`flex min-h-12 w-full items-center justify-between gap-3 rounded-xl border px-4 py-3 text-left text-sm outline-none transition focus:ring-2 disabled:cursor-not-allowed disabled:opacity-50 ${darkMode ? "border-slate-700 bg-slate-800 text-slate-100 hover:border-slate-500 focus:border-red-400 focus:ring-red-400/20" : "border-rose-200 bg-[#fffafa] text-slate-900 hover:border-rose-300 focus:border-red-700 focus:ring-red-100"}`}
       >
         <span className={value ? "truncate" : "truncate text-slate-400"}>{value ? formatOptionLabel(value) : placeholder}</span>
         <ChevronDown size={16} className={`shrink-0 text-slate-400 transition ${isOpen ? "rotate-180" : ""}`} />
       </button>
 
-      {isOpen && !disabled && menuPosition && createPortal(
-        <div ref={menuRef} style={{ ...menuPosition, display: "flex", flexDirection: "column" }} className={`z-[100] overflow-hidden rounded-xl border shadow-xl ${darkMode ? "border-slate-700 bg-slate-900 text-slate-100" : "border-red-700 bg-white text-slate-900"}`}>
+      {isOpen && !disabled && (
+        <div ref={menuRef} className={`mt-2 flex max-h-80 w-full flex-col overflow-hidden rounded-xl border shadow-xl ${darkMode ? "border-slate-700 bg-slate-900 text-slate-100" : "border-red-700 bg-white text-slate-900"}`}>
           <div className="min-h-0 max-h-56 flex-1 overflow-y-auto py-1" role="listbox" aria-label={label}>
             {options.map((option) => {
               const entry = catalogItems.find((item) => item.name === option);
@@ -292,8 +241,7 @@ function CatalogPicker({ label, value, options, catalogItems = [], onChange, onA
               </button>
             )}
           </div>
-        </div>,
-        document.body,
+        </div>
       )}
     </div>
   );

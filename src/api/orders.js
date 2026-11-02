@@ -119,6 +119,27 @@ export const updateProtectedProjectNotes = (orderId, payload) =>
 export const addProgressActivityNote = (orderId, payload) =>
   apiFetch(`/orders/admin/${orderId}/activity-notes`, { method: "POST", body: JSON.stringify(payload) });
 
+export const getInstallationBilling = (orderId) =>
+  apiFetch(`/orders/${encodeURIComponent(orderId)}/installation-billing`, { cache: "no-store" });
+export const updateInstallationStatus = (orderId, payload) =>
+  apiFetch(`/orders/admin/${encodeURIComponent(orderId)}/installation-status`, { method: "PUT", body: JSON.stringify(payload) });
+export const createInstallationIssue = (orderId, payload) =>
+  apiFetch(`/orders/admin/${encodeURIComponent(orderId)}/installation-issues`, { method: "POST", body: JSON.stringify(payload) });
+export const updateInstallationIssue = (orderId, issueId, payload) =>
+  apiFetch(`/orders/admin/${encodeURIComponent(orderId)}/installation-issues/${encodeURIComponent(issueId)}`, { method: "PUT", body: JSON.stringify(payload) });
+export const createExtraCharge = (orderId, payload) =>
+  apiFetch(`/orders/admin/${encodeURIComponent(orderId)}/extra-charges`, { method: "POST", body: JSON.stringify(payload) });
+export const submitExtraCharge = (orderId, chargeId) =>
+  apiFetch(`/orders/admin/${encodeURIComponent(orderId)}/extra-charges/${encodeURIComponent(chargeId)}/submit`, { method: "PUT", body: "{}" });
+export const reviewExtraCharge = (orderId, chargeId, payload) =>
+  apiFetch(`/orders/admin/${encodeURIComponent(orderId)}/extra-charges/${encodeURIComponent(chargeId)}/review`, { method: "PUT", body: JSON.stringify(payload) });
+export const issueExtraChargeReceipt = (orderId, chargeId) =>
+  apiFetch(`/orders/admin/${encodeURIComponent(orderId)}/extra-charges/${encodeURIComponent(chargeId)}/receipt`, { method: "POST", body: "{}" });
+export const recordExtraChargePayment = (orderId, chargeId, payload) =>
+  apiFetch(`/orders/admin/${encodeURIComponent(orderId)}/extra-charges/${encodeURIComponent(chargeId)}/payments`, { method: "POST", body: JSON.stringify(payload) });
+export const verifyExtraChargePayment = (orderId, chargeId, paymentId) =>
+  apiFetch(`/orders/admin/${encodeURIComponent(orderId)}/extra-charges/${encodeURIComponent(chargeId)}/payments/${encodeURIComponent(paymentId)}/verify`, { method: "PUT", body: "{}" });
+
 export const respondToContract = (orderId, payload) =>
   apiFetch(`/orders/${orderId}/contract`, {
     method: "PUT",

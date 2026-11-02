@@ -6,6 +6,7 @@ import { getAdminPaymentStatusLabel, getContractSignoffBadgeClassName, getPaymen
 import { getOrderRepairHistory } from "@/api/repairs";
 import { subscribeToRealtime } from "@/lib/realtimeEvents";
 import MediaPreviewModal from "@/components/MediaPreviewModal";
+import InstallationBillingPanel from "@/components/InstallationBillingPanel";
 
 const formatScheduleTime = (value) => {
   const match = String(value || "").match(/^(\d{2}):(\d{2})$/);
@@ -417,6 +418,7 @@ function TransactionDetailsModal({ order, onClose, onViewContract, scrollToWarra
               </section>
             </>
           )}
+          <InstallationBillingPanel order={order} darkMode={darkMode} />
         </div>
 
         <div className="flex shrink-0 flex-col-reverse gap-2 border-t border-slate-200 bg-white px-4 py-3 sm:flex-row sm:justify-end">
