@@ -20,6 +20,8 @@ const formatMeasurement = (value) => {
   return Number.isFinite(number) ? number.toLocaleString("en-PH", { maximumFractionDigits: 2 }) : "";
 };
 
+const capitalizeWords = (value) => String(value ?? "").trim().replace(/\b\p{L}/gu, (letter) => letter.toUpperCase());
+
 export const getProductDimensionsLabel = (product = {}) => {
   const width = Number(product.width);
   const height = Number(product.height);
@@ -52,7 +54,7 @@ export const getProductSpecifications = (product = {}) => {
   };
 
   add("Type", product.product_type || product.type);
-  add("Category", product.category);
+  add("Category", capitalizeWords(product.category));
   add("Variant", product.variant);
 
   const width = Number(product.width);
