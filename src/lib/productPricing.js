@@ -98,7 +98,7 @@ const getPieceOptionPricing = (product = {}, item = {}) => {
   const options = Array.isArray(product.piece_options)
     ? product.piece_options
     : Array.isArray(item.piece_options) ? item.piece_options : [];
-  const optionName = item.piece_option || product.piece_option || options[0]?.name || "";
+  const optionName = item.piece_option ?? "";
   const selectedOption = options.find((option) => String(option.name).toLowerCase() === String(optionName).toLowerCase()) || null;
   return {
     options,
@@ -113,13 +113,13 @@ const getAreaOptionPricing = (product = {}, item = {}) => {
   const options = productOptions.length
     ? productOptions
     : Array.isArray(item.area_options) ? item.area_options : [];
-  const optionName = item.area_option || product.area_option || options[0]?.name || "";
+  const optionName = item.area_option ?? product.area_option ?? "";
   const selectedOption = options.find((option) => String(option.name).toLowerCase() === String(optionName).toLowerCase()) || null;
   return {
     options,
     optionName: selectedOption?.name || "",
     selectedOption,
-    areaRate: toNonNegativeNumber(selectedOption?.price_per_sqft),
+    optionPrice: toNonNegativeNumber(selectedOption?.price_per_sqft),
   };
 };
 
@@ -176,15 +176,16 @@ export const getProductLineTotal = (product = {}, item = {}, options = {}) => {
   const bladePricing = ["blade", "per_blade"].includes(method) ? getBladePricing(product, item) : null;
   const pieceOptionPricing = ["per_piece", "per_set", "piece", "set"].includes(method) ? getPieceOptionPricing(product, item) : null;
   const areaOptionPricing = ["sqft", "per_sqft"].includes(method) ? getAreaOptionPricing(product, item) : null;
-  const productPriceOverride = toNonNegativeNumber(product.estimated_price_override ?? item.estimated_price_override);
+  const configuredProductPriceOverride = toNonNegativeNumber(product.estimated_price_override ?? item.estimated_price_override);
+  const isAreaPricing = method === "sqft" || method === "per_sqft";
+  const productPriceOverride = configuredProductPriceOverride;
   const overrideCoreSubtotal = productPriceOverride > 0
     ? getProductOverrideBaseSubtotal(product, item)
     : 0;
-  const isAreaPricing = method === "sqft" || method === "per_sqft";
   const overridePrice = !isAreaPricing && !["per_meter", "meter", "blade", "per_blade"].includes(method)
     ? overrideCoreSubtotal
     : 0;
-  const configuredAreaRate = areaOptionPricing?.areaRate || toNonNegativeNumber(product.price_per_sqft ?? item.price_per_sqft);
+  const configuredAreaRate = toNonNegativeNumber(product.price_per_sqft ?? item.price_per_sqft);
   const lengthPriceOverride = ["per_meter", "meter"].includes(method) ? overrideCoreSubtotal : 0;
 
   const unit = item.measurement_unit || item.measurementUnit || item.dimensions?.unit || product.measurement_unit || "in";
@@ -216,9 +217,14 @@ export const getProductLineTotal = (product = {}, item = {}, options = {}) => {
   if (method === "sqft" || method === "per_sqft") {
     if (overrideCoreSubtotal > 0) {
       const areaRatio = standardArea > 0 && measuredArea > 0 ? measuredArea / standardArea : 1;
-      subtotal = overrideCoreSubtotal * areaRatio * quantity;
-    } else if (configuredAreaRate > 0 && width > 0 && height > 0) {
-      subtotal = measuredArea * configuredAreaRate * quantity;
+      const overrideSubtotal = overrideCoreSubtotal * areaRatio * quantity;
+      const areaOptionSubtotal = (areaOptionPricing?.optionPrice || 0) * quantity;
+      subtotal = overrideSubtotal + areaOptionSubtotal;
+    } else {
+      const areaBaseSubtotal = configuredAreaRate > 0 && width > 0 && height > 0
+        ? measuredArea * configuredAreaRate * quantity
+        : 0;
+      subtotal = areaBaseSubtotal + (areaOptionPricing?.optionPrice || 0) * quantity;
     }
   }
 
@@ -243,8 +249,8 @@ export const getProductLineTotal = (product = {}, item = {}, options = {}) => {
     subtotal = doorBreakdown ? doorBreakdown.final_item_price : fixedPrice * quantity;
   }
 
-  if (!doorBreakdown && productPriceOverride <= 0 && pieceOptionPricing?.pieceRate > 0) {
-    subtotal = pieceOptionPricing.pieceRate * quantity;
+  if (!doorBreakdown && pieceOptionPricing?.pieceRate > 0) {
+    subtotal += pieceOptionPricing.pieceRate * quantity;
   }
 
   if (subtotal <= 0 && productPriceOverride <= 0) {
@@ -312,7 +318,7 @@ export const getDefaultProductLineTotal = (product = {}) => {
     height: Number(product.height) || 0,
     measurement_unit: product.measurement_unit || "in",
     blade_glass_type: product.default_blade_glass_type || product.blade_glass_types?.[0]?.name || "",
-    piece_option: product.piece_options?.[0]?.name || "",
+    piece_option: "",
     area_option: product.area_options?.[0]?.name || "",
     sale_mode: defaultSaleMode,
     frame_type: defaultFrame?.name || product.default_frame_type || "",
@@ -331,10 +337,15 @@ export const getProductLineBreakdown = (product = {}, item = {}) => {
   const itemCharges = Array.isArray(item.extra_charges) ? item.extra_charges : [];
   const quantity = getQuantity(item);
   const bladePricing = ["blade", "per_blade"].includes(getPricingMethod(product, item)) ? getBladePricing(product, item) : null;
+  const method = getPricingMethod(product, item);
   const unit = item.measurement_unit || item.measurementUnit || item.dimensions?.unit || product.measurement_unit || "in";
   const width = Number(item.width ?? item.dimensions?.width) || 0;
   const height = Number(item.height ?? item.dimensions?.height) || 0;
   const area = width > 0 && height > 0 ? toSquareFeet(width, height, unit) : 0;
+  const areaOptionPricing = ["sqft", "per_sqft"].includes(method) ? getAreaOptionPricing(product, item) : null;
+  const areaOptionTotal = areaOptionPricing?.optionPrice > 0
+    ? areaOptionPricing.optionPrice * quantity
+    : 0;
   const extraCharges = configuredCharges.flatMap((charge, index) => {
     const selection = itemCharges[index] || {};
     if (charge?.is_active === false) return [];
@@ -355,6 +366,24 @@ export const getProductLineBreakdown = (product = {}, item = {}) => {
           : amount * quantity;
     return [{ name: charge.name || charge.label || `Extra charge ${index + 1}`, total: Math.max(0, Math.round(chargeTotal * 100) / 100) }];
   });
+  if (areaOptionTotal > 0) {
+    extraCharges.unshift({
+      name: `Variant${areaOptionPricing.optionName ? ` · ${areaOptionPricing.optionName}` : ""}`,
+      total: Math.round(areaOptionTotal * 100) / 100,
+    });
+  }
+  const pieceOptionPricing = ["per_piece", "per_set", "piece", "set"].includes(method)
+    ? getPieceOptionPricing(product, item)
+    : null;
+  const pieceOptionTotal = pieceOptionPricing?.pieceRate > 0
+    ? pieceOptionPricing.pieceRate * quantity
+    : 0;
+  if (pieceOptionTotal > 0) {
+    extraCharges.unshift({
+      name: `Option${pieceOptionPricing.optionName ? ` · ${pieceOptionPricing.optionName}` : ""}`,
+      total: Math.round(pieceOptionTotal * 100) / 100,
+    });
+  }
 
   return {
     baseTotal,
@@ -468,7 +497,8 @@ export const buildProductPriceSnapshot = (product, item) => {
       ? item.extra_charges[index].is_selected
       : charge.is_selected,
   }));
-  const overridePrice = toNonNegativeNumber(product.estimated_price_override ?? item.estimated_price_override);
+  const configuredOverridePrice = toNonNegativeNumber(product.estimated_price_override ?? item.estimated_price_override);
+  const overridePrice = configuredOverridePrice;
   const overrideBaseSubtotal = overridePrice > 0
     ? getProductOverrideBaseSubtotal(product, item)
     : 0;
@@ -480,33 +510,34 @@ export const buildProductPriceSnapshot = (product, item) => {
     product.measurement_unit || product.unit || "m",
   );
   const doorBreakdown = getFinishedDoorMeasurementBreakdown(product, item);
+  const isPiecePricing = ["per_piece", "per_set", "piece", "set"].includes(method);
   const unitPrice = doorBreakdown
     ? doorBreakdown.standard_price_per_piece
-    : pieceOptionPricing?.pieceRate > 0
-    ? pieceOptionPricing.pieceRate
-    : overridePrice > 0
-    ? overridePrice
-    : ["sqft", "per_sqft"].includes(method)
-    ? areaOptionPricing?.areaRate || toNonNegativeNumber(product.price_per_sqft)
+    : isPiecePricing
+      ? overridePrice || toNonNegativeNumber(product.base_price) || toNonNegativeNumber(product.unit_price) || pieceOptionPricing?.pieceRate || toNonNegativeNumber(product.estimated_price)
+      : overridePrice > 0
+        ? overridePrice
+        : ["sqft", "per_sqft"].includes(method)
+          ? toNonNegativeNumber(product.price_per_sqft)
       : ["blade", "per_blade"].includes(method)
-      ? bladePricing.bladeRate
-      : ["per_meter", "meter"].includes(method)
-        ? toNonNegativeNumber(product.price_per_meter ?? product.unit_price)
-      : toNonNegativeNumber(product.base_price || product.estimated_price || product.unit_price);
+          ? bladePricing.bladeRate
+          : ["per_meter", "meter"].includes(method)
+            ? toNonNegativeNumber(product.price_per_meter ?? product.unit_price)
+            : toNonNegativeNumber(product.base_price || product.estimated_price || product.unit_price);
 
   return {
     pricing_method: method,
     unit_price: unitPrice,
-    price_per_sqft: overridePrice > 0 && ["sqft", "per_sqft"].includes(method)
-      ? standardArea > 0 ? overrideBaseSubtotal / standardArea : overrideBaseSubtotal
-      : areaOptionPricing?.areaRate || toNonNegativeNumber(product.price_per_sqft),
+    price_per_sqft: ["sqft", "per_sqft"].includes(method)
+      ? (overridePrice > 0 && standardArea > 0 ? overrideBaseSubtotal / standardArea : toNonNegativeNumber(product.price_per_sqft))
+      : toNonNegativeNumber(product.price_per_sqft),
     price_per_blade: overridePrice > 0 && ["blade", "per_blade"].includes(method)
       ? bladePricing.bladeRate
       : toNonNegativeNumber(product.price_per_blade),
     base_price: doorBreakdown ? doorBreakdown.standard_price_per_piece : toNonNegativeNumber(product.base_price),
     blade_count: toNonNegativeNumber(item.blade_count ?? product.blade_count),
     blade_glass_type: item.blade_glass_type || product.default_blade_glass_type || "",
-    piece_option: pieceOptionPricing?.optionName || item.piece_option || product.piece_option || "",
+    piece_option: pieceOptionPricing?.optionName || item.piece_option || "",
     area_option: areaOptionPricing?.optionName || item.area_option || product.area_option || "",
     sale_mode: item.sale_mode || product.default_sale_mode || "blades_only",
     frame_type: item.frame_type || product.default_frame_type || "",

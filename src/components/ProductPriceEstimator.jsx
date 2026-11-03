@@ -21,8 +21,6 @@ export const isAreaPricingProduct = (product) =>
 
 export const getDefaultProductEstimatorForm = (product = {}) => {
   const glassTypes = Array.isArray(product.blade_glass_types) ? product.blade_glass_types : [];
-  const pieceOptions = Array.isArray(product.piece_options) ? product.piece_options : [];
-  const areaOptions = Array.isArray(product.area_options) ? product.area_options : [];
   const frameTypes = Array.isArray(product.blade_frame_types) ? product.blade_frame_types : [];
   const defaultFrame = frameTypes.find((frame) => frame.name === product.default_frame_type) || frameTypes[0];
   const sellBladesOnly = product.sell_blades_only !== false;
@@ -38,8 +36,8 @@ export const getDefaultProductEstimatorForm = (product = {}) => {
     width: isMeterPricingProduct(product) ? String(product.width || "") : "0",
     height: "0",
     blade_glass_type: product.default_blade_glass_type || glassTypes[0]?.name || "",
-    piece_option: pieceOptions[0]?.name || "",
-    area_option: areaOptions[0]?.name || "",
+    piece_option: "",
+    area_option: "",
     sale_mode: saleMode,
     frame_type: defaultFrame?.name || "",
     frame_blade_count: Number(defaultFrame?.blade_count) || 0,
@@ -75,14 +73,9 @@ const getProductEstimateRate = (product, form) => {
     return overrideBaseSubtotal;
   }
   if (isPiecePricingProduct(product)) {
-    const selectedPieceOption = (product?.piece_options || []).find((option) => option.name === form.piece_option)
-      || product?.piece_options?.[0];
-    if (Number(selectedPieceOption?.price_per_piece) > 0) return Number(selectedPieceOption.price_per_piece);
+    return Number(product?.estimated_price_override || product?.base_price || product?.unit_price || product?.estimated_price) || undefined;
   }
   if (isAreaPricingProduct(product)) {
-    const selectedAreaOption = (product?.area_options || []).find((option) => option.name === form.area_option)
-      || product?.area_options?.[0];
-    if (Number(selectedAreaOption?.price_per_sqft) > 0) return Number(selectedAreaOption.price_per_sqft);
     return Number(product?.price_per_sqft) || undefined;
   }
   if (["per_meter", "meter"].includes(pricingMethod) || legacyUnit === "per_meter") return Number(product?.unit_price) || undefined;
@@ -122,8 +115,8 @@ export const getProductEstimatorState = (product, form = {}) => {
   const areaOptions = Array.isArray(product.area_options) ? product.area_options : [];
   const frameTypes = Array.isArray(product.blade_frame_types) ? product.blade_frame_types : [];
   const selectedGlass = glassTypes.find((glass) => glass.name === form.blade_glass_type) || glassTypes[0] || null;
-  const selectedPieceOption = pieceOptions.find((option) => option.name === form.piece_option) || pieceOptions[0] || null;
-  const selectedAreaOption = areaOptions.find((option) => option.name === form.area_option) || areaOptions[0] || null;
+  const selectedPieceOption = pieceOptions.find((option) => option.name === form.piece_option) || null;
+  const selectedAreaOption = areaOptions.find((option) => option.name === form.area_option) || null;
   const requestedFrameBladeCount = Number(form.frame_blade_count) || 0;
   const selectedFrame = frameTypes.find((frame) => frame.name === form.frame_type
     && (!requestedFrameBladeCount || Number(frame.blade_count) === requestedFrameBladeCount))
@@ -205,10 +198,13 @@ export const getProductEstimatorState = (product, form = {}) => {
       ? Number(product.estimated_price_override) > 0
         ? getBladePriceOverrideRate(product)
         : Number(selectedGlass?.price_per_blade ?? product.price_per_blade) || 0
-      : Number(product.estimated_price_override) > 0 || isMeterEstimator || isPieceEstimator
-        ? Number(getProductEstimateRate(product, form)) || 0
-        : isAreaEstimator ? Number(selectedAreaOption?.price_per_sqft) || Number(product.price_per_sqft) || 0
-        : rawResult?.rate || 0,
+      : isAreaEstimator
+        ? Number(product.estimated_price_override) > 0
+          ? getProductEstimateRate(product, form)
+          : Number(product.price_per_sqft) || 0
+        : Number(product.estimated_price_override) > 0 || isMeterEstimator || isPieceEstimator
+          ? Number(getProductEstimateRate(product, form)) || 0
+          : rawResult?.rate || 0,
     areaDisplay: isBladeEstimator
       ? `${bladeCount} blade${bladeCount === 1 ? "" : "s"}`
       : isMeterEstimator ? `${width} ${item.measurement_unit}` : isPieceEstimator ? `${quantity} piece${quantity === 1 ? "" : "s"}` : rawResult?.areaDisplay,
@@ -232,7 +228,7 @@ export const getProductEstimatorState = (product, form = {}) => {
       : isPieceEstimator
         ? (!pieceOptions.length || Boolean(selectedPieceOption && Number(selectedPieceOption.price_per_piece) > 0)) && Number(result.estimated_price) > 0
       : isAreaEstimator
-        ? (!areaOptions.length || Boolean(selectedAreaOption && (Number(selectedAreaOption.price_per_sqft) > 0 || Number(product.price_per_sqft) > 0))) && Number(result.estimated_price) > 0
+        ? (!areaOptions.length || Boolean(selectedAreaOption && (Number(selectedAreaOption.price_per_sqft) > 0 || Number(product.price_per_sqft) > 0 || Number(product.estimated_price_override) > 0))) && Number(result.estimated_price) > 0
       : width > 0 && height > 0 && Number(result.estimated_price) > 0);
   return {
     isBladeEstimator,
@@ -374,19 +370,19 @@ function ProductPriceEstimator({ product, form, onFormChange, darkMode = false, 
       {isPieceEstimator && pieceOptions.length > 0 && (
         <label className={`block ${useAreaModalLayout ? "mx-[18px] min-[760px]:col-start-1" : "mt-4"}`}>
           <span className={labelClass}>Option</span>
-          <CustomerDropdown ariaLabel="Per piece option" darkMode={darkMode} value={form.piece_option || selectedPieceOption?.name || ""} onChange={(event) => updateForm({ piece_option: event.target.value })} className={fieldClass}>
+          <CustomerDropdown ariaLabel="Per piece option" darkMode={darkMode} value={form.piece_option || ""} onChange={(event) => updateForm({ piece_option: event.target.value })} className={fieldClass}>
             <option value="">Choose an option</option>
-            {pieceOptions.map((option) => <option key={option.name} value={option.name}>{option.name} - {formatCurrency(option.price_per_piece)} / piece</option>)}
+            {pieceOptions.map((option) => <option key={option.name} value={option.name}>{option.name} - +{formatCurrency(option.price_per_piece)} / piece</option>)}
           </CustomerDropdown>
         </label>
       )}
 
       {isAreaEstimator && areaOptions.length > 0 && (
         <label className={`block ${useAreaModalLayout ? "mx-[18px] min-[760px]:col-start-1" : "mt-4"}`}>
-          <span className={labelClass}>Area option</span>
-          <CustomerDropdown ariaLabel="Per area option" darkMode={darkMode} value={form.area_option || selectedAreaOption?.name || ""} onChange={(event) => updateForm({ area_option: event.target.value })} className={fieldClass}>
+          <span className={labelClass}>Variant</span>
+          <CustomerDropdown ariaLabel="Variant option" darkMode={darkMode} value={form.area_option || selectedAreaOption?.name || ""} onChange={(event) => updateForm({ area_option: event.target.value })} className={fieldClass}>
             <option value="">Choose an option</option>
-            {areaOptions.map((option) => <option key={option.name} value={option.name}>{option.name} - {formatCurrency(Number(option.price_per_sqft) || Number(product.price_per_sqft) || 0)} / sq ft</option>)}
+            {areaOptions.map((option) => <option key={option.name} value={option.name}>{option.name} - {formatCurrency(Number(option.price_per_sqft) || 0)}</option>)}
           </CustomerDropdown>
         </label>
       )}

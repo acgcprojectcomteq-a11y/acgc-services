@@ -518,7 +518,7 @@ function ProductFormModal({
     quantity: 1,
     customized: true,
     blade_glass_type: defaultGlassType,
-    piece_option: (newProduct.piece_options || [])[0]?.name || "",
+    piece_option: "",
     piece_options: newProduct.piece_options || [],
     area_option: areaOptions[0]?.name || "",
     area_options: areaOptions,
@@ -616,7 +616,7 @@ function ProductFormModal({
     && (!String(option.price_per_sqft ?? "").trim()
       || (Number.isFinite(Number(option.price_per_sqft)) && Number(option.price_per_sqft) > 0))
   )) && new Set(areaOptions.map((option) => String(option.name || "").trim().toLowerCase())).size === areaOptions.length;
-  const areaOptionValidationMessage = "Each area option needs a name, and any entered price must be greater than zero.";
+  const areaOptionValidationMessage = "Each variant needs a name, and any entered price must be greater than zero.";
   const hasAreaOptionFieldError = modalError === areaOptionValidationMessage
     || modalError === "Area option names must be unique.";
   const getAreaOptionNameError = (index) => {
@@ -965,19 +965,19 @@ function ProductFormModal({
                   <p className={`mt-3 text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Customers and inspectors can enter a different size for a live estimate.</p>
                   <div className="mt-5">
                     {sectionHeading("Product Attributes and Pricing")}
-                    <p className={`-mt-2 mb-3 text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Customers and inspectors can choose an area option. Its price is optional; when blank, the default price per sq ft is used.</p>
+                    <p className={`-mt-2 mb-3 text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Customers and inspectors can choose a variant. If a price is set, that exact amount is added once per item and is not multiplied by the measured area.</p>
                     <div className={`space-y-2 rounded-xl border p-3 ${darkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-white"}`}>
                       {areaOptions.map((option, index) => (
                         <div key={`area-option-${index}`} className="grid items-start gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(140px,0.55fr)_auto]">
                           <div className="min-w-0">
-                            <input aria-label={`Per area option ${index + 1}`} aria-invalid={Boolean(getAreaOptionNameError(index))} aria-describedby={getAreaOptionNameError(index) ? `area-option-name-error-${index}` : undefined} value={option.name || ""} onChange={(event) => setNewProduct((product) => ({ ...product, area_options: (product.area_options || []).map((item, itemIndex) => itemIndex === index ? { ...item, name: event.target.value } : item) }))} placeholder="Option name (e.g. Standard, Premium)" className={`${fieldClass} ${getAreaOptionNameError(index) ? "border-red-500 focus:border-red-500 focus:ring-red-500/20" : ""}`} />
+                            <input aria-label={`Variant name ${index + 1}`} aria-invalid={Boolean(getAreaOptionNameError(index))} aria-describedby={getAreaOptionNameError(index) ? `area-option-name-error-${index}` : undefined} value={option.name || ""} onChange={(event) => setNewProduct((product) => ({ ...product, area_options: (product.area_options || []).map((item, itemIndex) => itemIndex === index ? { ...item, name: event.target.value } : item) }))} placeholder="Variant name (e.g. Standard, Premium)" className={`${fieldClass} ${getAreaOptionNameError(index) ? "border-red-500 focus:border-red-500 focus:ring-red-500/20" : ""}`} />
                             {getAreaOptionNameError(index) && <p id={`area-option-name-error-${index}`} className="mt-1 text-xs font-medium text-red-600">{getAreaOptionNameError(index)}</p>}
                           </div>
                           <div className="min-w-0">
-                            <input aria-label={`Price per sq ft for option ${index + 1}`} aria-invalid={Boolean(getAreaOptionPriceError(index))} aria-describedby={getAreaOptionPriceError(index) ? `area-option-price-error-${index}` : undefined} type="number" min="0.01" step="0.01" value={option.price_per_sqft ?? ""} onChange={(event) => setNewProduct((product) => ({ ...product, area_options: (product.area_options || []).map((item, itemIndex) => itemIndex === index ? { ...item, price_per_sqft: event.target.value } : item) }))} placeholder="PHP per sq ft" className={`${fieldClass} ${getAreaOptionPriceError(index) ? "border-red-500 focus:border-red-500 focus:ring-red-500/20" : ""}`} />
+                            <input aria-label={`Price for variant ${index + 1}`} aria-invalid={Boolean(getAreaOptionPriceError(index))} aria-describedby={getAreaOptionPriceError(index) ? `area-option-price-error-${index}` : undefined} type="number" min="0.01" step="0.01" value={option.price_per_sqft ?? ""} onChange={(event) => setNewProduct((product) => ({ ...product, area_options: (product.area_options || []).map((item, itemIndex) => itemIndex === index ? { ...item, price_per_sqft: event.target.value } : item) }))} placeholder="Fixed PHP amount" className={`${fieldClass} ${getAreaOptionPriceError(index) ? "border-red-500 focus:border-red-500 focus:ring-red-500/20" : ""}`} />
                             {getAreaOptionPriceError(index) && <p id={`area-option-price-error-${index}`} className="mt-1 text-xs font-medium text-red-600">{getAreaOptionPriceError(index)}</p>}
                           </div>
-                          <button type="button" aria-label={`Remove per area option ${index + 1}`} onClick={() => setNewProduct((product) => ({ ...product, area_options: (product.area_options || []).filter((_, itemIndex) => itemIndex !== index) }))} className={`inline-flex h-12 w-12 items-center justify-center rounded-xl border ${darkMode ? "border-slate-700 text-red-300 hover:bg-slate-800" : "border-slate-200 text-red-700 hover:bg-rose-50"}`}><Trash2 size={16} /></button>
+                          <button type="button" aria-label={`Remove variant ${index + 1}`} onClick={() => setNewProduct((product) => ({ ...product, area_options: (product.area_options || []).filter((_, itemIndex) => itemIndex !== index) }))} className={`inline-flex h-12 w-12 items-center justify-center rounded-xl border ${darkMode ? "border-slate-700 text-red-300 hover:bg-slate-800" : "border-slate-200 text-red-700 hover:bg-rose-50"}`}><Trash2 size={16} /></button>
                         </div>
                       ))}
                       <button type="button" onClick={() => updateField("area_options", [...areaOptions, { name: "", price_per_sqft: "" }])} className={`inline-flex items-center gap-2 rounded-lg border border-dashed px-3 py-2 text-sm font-semibold ${darkMode ? "border-slate-600 text-red-300 hover:bg-slate-800" : "border-red-300 text-red-800 hover:bg-rose-50"}`}><Plus size={15} />Add option</button>
@@ -1145,7 +1145,7 @@ function ProductFormModal({
               {pricingMethodValue === "per_piece" && (
                 <div>
                   {sectionHeading("Product Attributes and Pricing")}
-                  <p className={`-mt-2 mb-3 text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Add general options for this product and set a price per piece for each. Customers and inspectors can choose an option before estimating.</p>
+                  <p className={`-mt-2 mb-3 text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Add optional per-piece charges, such as color or finish. The selected option is added to the product's base price.</p>
                   <div className={`space-y-2 rounded-xl border p-3 ${darkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-white"}`}>
                     {(newProduct.piece_options || []).map((option, index) => (
                       <div key={`piece-option-${index}`} className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(140px,0.55fr)_auto]">
@@ -1461,6 +1461,7 @@ function Products() {
 
     if (pricingMethod === "sqft") {
       if (sqftPrice > 0) return `₱${sqftPrice.toLocaleString()} / sq ft`;
+      if (Number(product.area_options?.[0]?.price_per_sqft) > 0) return `Variant from ₱${Number(product.area_options[0].price_per_sqft).toLocaleString()} / item`;
       if (unitPrice > 0) return `₱${unitPrice.toLocaleString()} / sq ft`;
       return "Contact us / sq ft";
     }
@@ -1490,6 +1491,14 @@ function Products() {
   };
 
   const getProductEstimatedCost = (product) => {
+    if (["per_piece", "piece", "per_set", "set"].includes(String(product.pricing_method || product.unit || "").toLowerCase())) {
+      return Number(product.estimated_price_override)
+        || Number(product.base_price)
+        || Number(product.unit_price)
+        || Number(product.estimated_price)
+        || 0;
+    }
+
     if (product.pricing_method === "blade" || PRICING_METHOD[product.product_name] === "blade") {
       return getDefaultProductLineTotal(product);
     }
@@ -1982,7 +1991,7 @@ function Products() {
       measurement_unit: newProduct.unit,
       customized: true,
       blade_glass_type: newProduct.default_blade_glass_type || newProduct.blade_glass_types?.[0]?.name || "",
-      piece_option: newProduct.piece_options?.[0]?.name || "",
+      piece_option: "",
       piece_options: newProduct.piece_options || [],
       area_option: newProduct.area_options?.[0]?.name || "",
       area_options: newProduct.area_options || [],
@@ -2512,7 +2521,9 @@ function Products() {
         sku: "",
         unit_price: pricingMethod === "per_meter"
           ? Number(newProduct.unit_price) || 0
-          : Number(newProduct.estimated_price_override) || (pricingMethod === "per_piece" ? Number(newProduct.piece_options?.[0]?.price_per_piece) : 0) || (pricingMethod === "sqft" ? Number(newProduct.price_per_sqft) || Number(newProduct.area_options?.[0]?.price_per_sqft) : 0) || Number(newProduct.estimated_price) || Number(newProduct.finished_door_pricing?.standard_price_per_piece) || Number(newProduct.base_price) || Number(newProduct.price_per_sqft) || Number(newProduct.price_per_blade) || 0,
+          : pricingMethod === "per_piece"
+            ? Number(newProduct.estimated_price_override) || (finishedDoorEnabled ? Number(newProduct.finished_door_pricing?.standard_price_per_piece) : 0) || Number(newProduct.base_price) || Number(newProduct.unit_price) || Number(newProduct.estimated_price) || 0
+            : Number(newProduct.estimated_price_override) || (pricingMethod === "sqft" ? Number(newProduct.price_per_sqft) : 0) || Number(newProduct.estimated_price) || Number(newProduct.finished_door_pricing?.standard_price_per_piece) || Number(newProduct.base_price) || Number(newProduct.price_per_sqft) || Number(newProduct.price_per_blade) || 0,
         unit: pricingMethod === "sqft" ? "per_sqft" : pricingMethod === "blade" ? "per_blade" : pricingMethod === "per_meter" ? "per_meter" : "per_piece",
         measurement_unit: newProduct.unit || "in",
         image_url: finalImages.main || "",

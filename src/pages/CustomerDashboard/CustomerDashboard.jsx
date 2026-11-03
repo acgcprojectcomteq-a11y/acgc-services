@@ -2370,8 +2370,8 @@ function CustomerDashboard() {
       area: Number(options.area) || 0,
       notes: options.notes || "",
       blade_glass_type: options.blade_glass_type || product?.blade_glass_type || product?.default_blade_glass_type || "",
-      piece_option: options.piece_option || product?.piece_option || product?.piece_options?.[0]?.name || "",
-      area_option: options.area_option || product?.area_option || product?.area_options?.[0]?.name || "",
+      piece_option: options.piece_option ?? "",
+      area_option: options.area_option ?? product?.area_option ?? "",
       sale_mode: options.sale_mode || product?.sale_mode || product?.default_sale_mode || "blades_only",
       frame_type: options.frame_type || product?.frame_type || product?.default_frame_type || "",
       custom_frame_size: Boolean(options.custom_frame_size ?? product?.custom_frame_size),
@@ -2404,8 +2404,8 @@ function CustomerDashboard() {
       : Number(product?.minimum_blades) || Number(product?.blade_count) || 1;
     return {
       blade_glass_type: product?.default_blade_glass_type || glassTypes[0]?.name || "",
-      piece_option: product?.piece_options?.[0]?.name || "",
-      area_option: product?.area_options?.[0]?.name || "",
+      piece_option: "",
+      area_option: "",
       sale_mode: defaultSaleMode === "frame" && !product?.sell_with_frame ? "blades_only" : defaultSaleMode,
       frame_type: defaultFrame?.name || "",
       custom_frame_size: defaultSaleMode === "frame" && frameTypes.length === 0 && Boolean(product?.allow_custom_frame_size),
@@ -2453,7 +2453,7 @@ function CustomerDashboard() {
       customized: Boolean(selection.customized),
       is_estimate: pendingAction.actionType === "estimate",
       blade_glass_type: selection.blade_glass_type || bladeDefaults.blade_glass_type,
-      piece_option: selection.piece_option || bladeDefaults.piece_option,
+      piece_option: selection.piece_option ?? bladeDefaults.piece_option,
       area_option: selection.area_option || bladeDefaults.area_option,
       sale_mode: selection.sale_mode || bladeDefaults.sale_mode,
       frame_type: selection.frame_type || bladeDefaults.frame_type,
@@ -2545,9 +2545,7 @@ function CustomerDashboard() {
             height: String(current.height ?? selection.height ?? product.height ?? ""),
             quantity: Math.max(1, Number(current.quantity) || 1),
             blade_glass_type: isGlassAvailable ? current.blade_glass_type : selection.blade_glass_type || bladeDefaults.blade_glass_type,
-            piece_option: product.piece_options?.some((option) => option.name === current.piece_option)
-              ? current.piece_option
-              : selection.piece_option || bladeDefaults.piece_option,
+            piece_option: selection.piece_option ?? bladeDefaults.piece_option,
             area_option: product.area_options?.some((option) => option.name === current.area_option)
               ? current.area_option
               : selection.area_option || bladeDefaults.area_option,
@@ -3444,8 +3442,8 @@ function CustomerDashboard() {
       return;
     }
     const orderNowProductWithSelection = selectedProduct?._id === product?._id
-      ? { ...product, piece_option: productEstimatorForm.piece_option || product.piece_options?.[0]?.name || "", area_option: productEstimatorForm.area_option || product.area_options?.[0]?.name || "" }
-      : { ...product, piece_option: product.piece_options?.[0]?.name || "", area_option: product.area_options?.[0]?.name || "" };
+      ? { ...product, piece_option: productEstimatorForm.piece_option || "", area_option: productEstimatorForm.area_option || "" }
+      : { ...product, piece_option: "", area_option: "" };
     setOrderNowProduct(orderNowProductWithSelection);
     setOrderNowQuantity(1);
     setOrderNowExtraCharges(
@@ -4354,6 +4352,10 @@ function CustomerDashboard() {
       const defaultPrice = getDefaultProductLineTotal(product);
       return defaultPrice > 0 ? formatCurrency(defaultPrice) : "Contact us";
     }
+    if (["per_piece", "piece", "per_set", "set"].includes(String(product.pricing_method || product.unit || "").toLowerCase())) {
+      const basePrice = Number(product.estimated_price_override || product.base_price || product.unit_price || product.estimated_price) || 0;
+      return basePrice > 0 ? formatCurrency(basePrice) : "Contact us";
+    }
     const override = Number(product.estimated_price_override) || 0;
     if (override > 0) {
       const defaultPrice = getProductLineTotal(product, {
@@ -4387,15 +4389,10 @@ function CustomerDashboard() {
       return Number(product?.unit_price) || undefined;
     }
     if (pricingMethod === "per_piece" || (!pricingMethod && ["per_piece", "per_set"].includes(legacyUnit))) {
-      const selectedOption = (product?.piece_options || []).find((option) => option.name === selections.piece_option)
-        || product?.piece_options?.[0];
-      if (Number(selectedOption?.price_per_piece) > 0) return Number(selectedOption.price_per_piece);
-      return Number(product?.base_price || product?.unit_price) || undefined;
+      return Number(product?.estimated_price_override || product?.base_price || product?.unit_price || product?.estimated_price) || undefined;
     }
     if (pricingMethod === "sqft" || (!pricingMethod && legacyUnit === "per_sqft")) {
-      const selectedAreaOption = (product?.area_options || []).find((option) => option.name === selections.area_option)
-        || product?.area_options?.[0];
-      return Number(selectedAreaOption?.price_per_sqft || product?.price_per_sqft) || undefined;
+      return Number(product?.price_per_sqft) || undefined;
     }
     if (pricingMethod === "blade" || (!pricingMethod && legacyUnit === "per_blade")) {
       return Number(product?.price_per_blade) || undefined;
@@ -4404,7 +4401,7 @@ function CustomerDashboard() {
   };
 
   const getProductUnitRate = (product) => {
-    const pricePerSqft = Number(product.price_per_sqft) || Number(product.area_options?.[0]?.price_per_sqft) || 0;
+    const pricePerSqft = Number(product.price_per_sqft) || 0;
     const pricePerBlade = Number(product.price_per_blade) || 0;
     const unitPrice = Number(product.unit_price) || 0;
     const unitKey = product.unit || product.pricing_method || "unit";
@@ -4424,6 +4421,9 @@ function CustomerDashboard() {
 
     if (product.pricing_method === "sqft" && pricePerSqft > 0) {
       return `₱${pricePerSqft.toLocaleString()} / ${label}`;
+    }
+    if (product.pricing_method === "sqft" && Number(product.area_options?.[0]?.price_per_sqft) > 0) {
+      return `Variant from ₱${Number(product.area_options[0].price_per_sqft).toLocaleString()} / item`;
     }
     if (product.pricing_method === "blade" && pricePerBlade > 0) {
       if (product.show_price_per_blade === false) return `Starting from ${getProductPrice(product)}`;
@@ -5208,8 +5208,8 @@ function CustomerDashboard() {
   const productAreaOptions = Array.isArray(selectedProduct?.area_options) ? selectedProduct.area_options : [];
   const productBladeFrameTypes = Array.isArray(selectedProduct?.blade_frame_types) ? selectedProduct.blade_frame_types : [];
   const selectedBladeGlass = productBladeGlassTypes.find((glass) => glass.name === productEstimatorForm.blade_glass_type);
-  const selectedPieceOption = productPieceOptions.find((option) => option.name === productEstimatorForm.piece_option) || productPieceOptions[0];
-  const selectedAreaOption = productAreaOptions.find((option) => option.name === productEstimatorForm.area_option) || productAreaOptions[0];
+  const selectedPieceOption = productPieceOptions.find((option) => option.name === productEstimatorForm.piece_option) || null;
+  const selectedAreaOption = productAreaOptions.find((option) => option.name === productEstimatorForm.area_option) || null;
   const selectedBladeFrame = productBladeFrameTypes.find((frame) => frame.name === productEstimatorForm.frame_type);
   const estimatorBladeCount = productEstimatorForm.sale_mode === "frame"
     ? Number(selectedBladeFrame?.blade_count) || Number(productEstimatorForm.blade_count) || 0
@@ -5251,10 +5251,10 @@ function CustomerDashboard() {
         }),
         rate: isBladeEstimator
           ? Number(selectedBladeGlass?.price_per_blade) || 0
-          : isPieceEstimator && Number(selectedPieceOption?.price_per_piece) > 0
-            ? Number(selectedPieceOption.price_per_piece)
+          : isPieceEstimator
+            ? Number(selectedProduct.estimated_price_override || selectedProduct.base_price || selectedProduct.unit_price || selectedProduct.estimated_price) || 0
             : isMeterEstimator || isPieceEstimator ? Number(selectedProduct.unit_price || selectedProduct.base_price) || 0
-              : isAreaEstimator ? Number(selectedAreaOption?.price_per_sqft) || Number(selectedProduct.price_per_sqft) || 0
+              : isAreaEstimator ? Number(selectedProduct.price_per_sqft) || 0
                 : rawProductEstimatorResult?.rate || 0,
         areaDisplay: isBladeEstimator
           ? `${estimatorBladeCount} blade(s)`
@@ -5281,7 +5281,7 @@ function CustomerDashboard() {
       : isPieceEstimator
         ? (!productPieceOptions.length || Number(selectedPieceOption?.price_per_piece) > 0) && Number(productEstimatorResult?.estimated_price) > 0
       : productAreaOptions.length > 0
-        ? Boolean(selectedAreaOption && Number(selectedAreaOption.price_per_sqft) > 0) && Number(productEstimatorResult?.estimated_price) > 0
+        ? Boolean(selectedAreaOption && (Number(selectedAreaOption.price_per_sqft) > 0 || Number(selectedProduct.price_per_sqft) > 0 || Number(selectedProduct.estimated_price_override) > 0)) && Number(productEstimatorResult?.estimated_price) > 0
       : productEstimatorWidth > 0 && productEstimatorHeight > 0 && Number(productEstimatorResult?.estimated_price) > 0);
   const productEstimatorBladeCountError = productEstimatorState?.bladeCountError || "";
   const productEstimatorInputsInvalid = Boolean(productEstimatorDimensionError || productEstimatorQuantityError || productEstimatorBladeCountError);
@@ -5367,6 +5367,41 @@ function CustomerDashboard() {
   const confirmAdditionalCharges = deliveryConfirmMode === "orderNow" ? orderNowAdditionalCharges : estimateCustomizationFee;
   const confirmInstallationFee = deliveryConfirmMode === "orderNow" ? orderNowInstallationFee : estimateInstallationFee;
   const confirmGrandTotal = deliveryConfirmMode === "orderNow" ? orderNowGrandTotal : estimateGrandTotal;
+  const isConfirmAreaProduct = ["sqft", "per_sqft"].includes(String(confirmProduct?.pricing_method || confirmProduct?.unit || "").toLowerCase());
+  const isConfirmPieceProduct = ["per_piece", "piece", "per_set", "set"].includes(String(confirmProduct?.pricing_method || confirmProduct?.unit || "").toLowerCase());
+  const confirmAreaOptionName = deliveryConfirmMode === "orderNow" ? orderNowProduct?.area_option : estimateForm.area_option;
+  const confirmAreaOptions = Array.isArray(confirmProduct?.area_options) ? confirmProduct.area_options : [];
+  const confirmAreaOption = confirmAreaOptions.find((option) => option.name === confirmAreaOptionName) || null;
+  const confirmPieceOptionName = deliveryConfirmMode === "orderNow" ? orderNowProduct?.piece_option : estimateForm.piece_option;
+  const confirmPieceOptions = Array.isArray(confirmProduct?.piece_options) ? confirmProduct.piece_options : [];
+  const confirmPieceOption = confirmPieceOptions.find((option) => option.name === confirmPieceOptionName) || null;
+  const confirmAreaPricingItem = {
+    width: deliveryConfirmMode === "orderNow" ? Number(orderNowDimensions?.width) || 0 : estimateWidth,
+    height: deliveryConfirmMode === "orderNow" ? Number(orderNowDimensions?.height) || 0 : estimateHeight,
+    measurement_unit: deliveryConfirmMode === "orderNow" ? orderNowDimensions?.unit || "in" : estimateForm.unit,
+    quantity: confirmQuantity,
+    customized: false,
+    area_option: confirmAreaOptionName || "",
+    area_options: confirmAreaOptions,
+    piece_option: confirmPieceOptionName || "",
+    piece_options: confirmPieceOptions,
+    extra_charges: deliveryConfirmMode === "orderNow" ? orderNowExtraCharges : estimateForm.extra_charges,
+  };
+  const confirmAreaPriceBreakdown = (isConfirmAreaProduct || isConfirmPieceProduct) && confirmProduct
+    ? getProductLineBreakdown(confirmProduct, confirmAreaPricingItem)
+    : null;
+  const confirmAreaOptionAmount = (Number(confirmAreaOption?.price_per_sqft) || 0) * confirmQuantity;
+  const confirmPieceOptionAmount = (Number(confirmPieceOption?.price_per_piece) || 0) * confirmQuantity;
+  const confirmSelectedOptionAmount = isConfirmAreaProduct ? confirmAreaOptionAmount : isConfirmPieceProduct ? confirmPieceOptionAmount : 0;
+  const confirmBaseProductAmount = confirmAreaPriceBreakdown
+    ? Math.max(0, confirmAreaPriceBreakdown.baseTotal - confirmSelectedOptionAmount)
+    : 0;
+  const confirmAreaAdditionalChargeRows = confirmAreaPriceBreakdown?.extraCharges.filter((charge) => !charge.name.startsWith("Variant") && !charge.name.startsWith("Option")) || [];
+  const confirmUnitPrice = (isConfirmAreaProduct || isConfirmPieceProduct) && confirmAreaPriceBreakdown
+    ? confirmAreaPriceBreakdown.baseTotal / confirmQuantity
+    : deliveryConfirmMode === "orderNow"
+      ? Number(orderNowProduct?.unit_price || orderNowProduct?.price_per_sqft || 0)
+      : estimateUnitRate;
   const isConfirmBladeProduct = ["blade", "per_blade"].includes(String(confirmProduct?.pricing_method || "").toLowerCase());
   const confirmBladeSelections = deliveryConfirmMode === "orderNow"
     ? { ...getDefaultBladeSelections(confirmProduct || {}), extra_charges: orderNowExtraCharges }
@@ -6709,18 +6744,18 @@ function CustomerDashboard() {
                           {isPieceEstimator && productPieceOptions.length > 0 && (
                             <label className="mt-4 block">
                               <span className={`mb-1 block text-[10px] font-bold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Option</span>
-                              <CustomerDropdown ariaLabel="Per piece option" darkMode={darkMode} value={productEstimatorForm.piece_option || selectedPieceOption?.name || ""} onChange={(event) => setProductEstimatorForm((current) => ({ ...current, piece_option: event.target.value }))} className="h-10 rounded-lg px-3">
+                              <CustomerDropdown ariaLabel="Per piece option" darkMode={darkMode} value={productEstimatorForm.piece_option || ""} onChange={(event) => setProductEstimatorForm((current) => ({ ...current, piece_option: event.target.value }))} className="h-10 rounded-lg px-3">
                                 <option value="">Choose an option</option>
-                                {productPieceOptions.map((option) => <option key={option.name} value={option.name}>{option.name} · {formatCurrency(option.price_per_piece)} / piece</option>)}
+                                {productPieceOptions.map((option) => <option key={option.name} value={option.name}>{option.name} · +{formatCurrency(option.price_per_piece)} / piece</option>)}
                               </CustomerDropdown>
                             </label>
                           )}
                           {productAreaOptions.length > 0 && (
                             <label className="mt-4 block">
-                              <span className={`mb-1 block text-[10px] font-bold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Area option</span>
-                              <CustomerDropdown ariaLabel="Per area option" darkMode={darkMode} value={productEstimatorForm.area_option || selectedAreaOption?.name || ""} onChange={(event) => setProductEstimatorForm((current) => ({ ...current, area_option: event.target.value }))} className="h-10 rounded-lg px-3">
+                              <span className={`mb-1 block text-[10px] font-bold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-slate-500"}`}>Variant</span>
+                              <CustomerDropdown ariaLabel="Variant option" darkMode={darkMode} value={productEstimatorForm.area_option || selectedAreaOption?.name || ""} onChange={(event) => setProductEstimatorForm((current) => ({ ...current, area_option: event.target.value }))} className="h-10 rounded-lg px-3">
                                 <option value="">Choose an option</option>
-                                {productAreaOptions.map((option) => <option key={option.name} value={option.name}>{option.name} · {formatCurrency(Number(option.price_per_sqft) || Number(selectedProduct.price_per_sqft) || 0)} / sq ft</option>)}
+                                {productAreaOptions.map((option) => <option key={option.name} value={option.name}>{option.name} · {formatCurrency(Number(option.price_per_sqft) || 0)}</option>)}
                               </CustomerDropdown>
                             </label>
                           )}
@@ -6825,6 +6860,18 @@ function CustomerDashboard() {
                                     : "Contact us"}
                                 </span>
                               </div>}
+                              {isAreaEstimator && Number(selectedAreaOption?.price_per_sqft) > 0 && (
+                                <div className="flex items-center justify-between gap-3">
+                                  <span>Variant · {selectedAreaOption.name}</span>
+                                  <span className={`font-bold ${darkMode ? "text-white" : "text-slate-900"}`}>{formatCurrency(selectedAreaOption.price_per_sqft)}</span>
+                                </div>
+                              )}
+                              {isPieceEstimator && Number(selectedPieceOption?.price_per_piece) > 0 && (
+                                <div className="flex items-center justify-between gap-3">
+                                  <span>Option · {selectedPieceOption.name}</span>
+                                  <span className={`font-bold ${darkMode ? "text-white" : "text-slate-900"}`}>{formatCurrency(Number(selectedPieceOption.price_per_piece) * Math.max(1, Number(productEstimatorForm.quantity) || 1))}</span>
+                                </div>
+                              )}
                               <div className={`flex items-center justify-between gap-3 rounded-xl border px-3 py-3 ${darkMode ? "border-red-900 bg-slate-800 text-red-300" : "border-red-100 bg-white text-red-800"}`}>
                                 <span className="font-bold">Estimated Total</span>
                                 <span className="text-base font-black">
@@ -7549,7 +7596,7 @@ function CustomerDashboard() {
                                   </div>
                                   <div>
                                     <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Unit Price</p>
-                                    <p className={`mt-2 font-semibold ${darkMode ? "text-white" : "text-gray-900"}`}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(deliveryConfirmMode === "orderNow" ? Number(orderNowProduct?.unit_price || orderNowProduct?.price_per_sqft || 0) : estimateUnitRate)}</span></p>
+                                    <p className={`mt-2 font-semibold ${darkMode ? "text-white" : "text-gray-900"}`}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(confirmUnitPrice)}</span></p>
                                   </div>
                                   <div>
                                     <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Width</p>
@@ -7603,10 +7650,53 @@ function CustomerDashboard() {
                                   )}
                                 </>
                               ) : (
-                                <div className="flex items-center justify-between">
-                                  <span>Subtotal</span>
-                                  <span className={`font-semibold ${darkMode ? "text-white" : "text-gray-900"}`}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(confirmSubtotal)}</span></span>
-                                </div>
+                                (isConfirmAreaProduct || isConfirmPieceProduct) && confirmAreaPriceBreakdown ? (
+                                  <>
+                                    <div className="flex items-center justify-between gap-3">
+                                      <span>Product base price</span>
+                                      <span className={`font-semibold ${darkMode ? "text-white" : "text-gray-900"}`}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(confirmBaseProductAmount)}</span></span>
+                                    </div>
+                                    {confirmAreaOption && (
+                                      <div className="flex items-center justify-between gap-3">
+                                        <span>Variant · {confirmAreaOption.name}</span>
+                                        <span className={`font-semibold ${darkMode ? "text-white" : "text-gray-900"}`}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(confirmAreaOptionAmount)}</span></span>
+                                      </div>
+                                    )}
+                                    {confirmPieceOption && (
+                                      <div className="flex items-center justify-between gap-3">
+                                        <span>Option · {confirmPieceOption.name}</span>
+                                        <span className={`font-semibold ${darkMode ? "text-white" : "text-gray-900"}`}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(confirmPieceOptionAmount)}</span></span>
+                                      </div>
+                                    )}
+                                    {confirmAreaAdditionalChargeRows.map((charge, index) => (
+                                      <div key={`${index}-${charge.name}`} className="flex items-center justify-between gap-3">
+                                        <span>{charge.name}</span>
+                                        <span className={`font-semibold ${darkMode ? "text-white" : "text-gray-900"}`}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(charge.total)}</span></span>
+                                      </div>
+                                    ))}
+                                    <div className="flex items-center justify-between gap-3 border-t border-dashed pt-3">
+                                      <span>Subtotal</span>
+                                      <span className={`font-semibold ${darkMode ? "text-white" : "text-gray-900"}`}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(confirmSubtotal)}</span></span>
+                                    </div>
+                                    {confirmAdditionalCharges > 0 && (
+                                      <div className="flex items-center justify-between gap-3">
+                                        <span>Customization</span>
+                                        <span className={`font-semibold ${darkMode ? "text-white" : "text-gray-900"}`}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(confirmAdditionalCharges)}</span></span>
+                                      </div>
+                                    )}
+                                    {confirmInstallationFee > 0 && (
+                                      <div className="flex items-center justify-between gap-3">
+                                        <span>Installation</span>
+                                        <span className={`font-semibold ${darkMode ? "text-white" : "text-gray-900"}`}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(confirmInstallationFee)}</span></span>
+                                      </div>
+                                    )}
+                                  </>
+                                ) : (
+                                  <div className="flex items-center justify-between">
+                                    <span>Subtotal</span>
+                                    <span className={`font-semibold ${darkMode ? "text-white" : "text-gray-900"}`}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(confirmSubtotal)}</span></span>
+                                  </div>
+                                )
                               )}
                               
                               <div className={`mt-3 flex items-center justify-between border-t border-dashed pt-3 text-lg font-bold ${darkMode ? "border-slate-700 text-white" : "border-gray-300 text-gray-900"}`}>

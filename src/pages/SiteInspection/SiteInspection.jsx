@@ -741,7 +741,7 @@ export const validateInspectionMeasurementRows = (items = []) => {
     const areaOptions = Array.isArray(item.area_options) ? item.area_options : [];
     if (["sqft", "per_sqft"].includes(String(item.pricing_method || "").toLowerCase()) && areaOptions.length
       && !areaOptions.some((option) => option.name === item.area_option
-        && (Number(option.price_per_sqft) > 0 || Number(item.price_per_sqft) > 0))) {
+        && (Number(option.price_per_sqft) > 0 || Number(item.price_per_sqft) > 0 || Number(item.estimated_price_override) > 0))) {
       rowErrors.area_option = "Select an area option.";
     }
     return rowErrors;
@@ -892,19 +892,15 @@ export const resolveInspectionProductPrice = (product = null, fallbackItem = {})
   const defaultSaleMode = product?.default_sale_mode || fallbackItem.default_sale_mode || (sellBladesOnly ? "blades_only" : "frame");
   const defaultFrame = bladeFrameTypes.find((frame) => frame.name === (product?.default_frame_type || fallbackItem.default_frame_type)) || bladeFrameTypes[0];
   const saleMode = hasSameSelectedProduct ? fallbackItem.sale_mode || defaultSaleMode : defaultSaleMode;
-  const pieceOption = hasSameSelectedProduct ? fallbackItem.piece_option || pieceOptions[0]?.name || "" : pieceOptions[0]?.name || "";
-  const selectedPieceOption = pieceOptions.find((option) => option.name === pieceOption) || pieceOptions[0];
-  const areaOption = hasSameSelectedProduct ? fallbackItem.area_option || areaOptions[0]?.name || "" : areaOptions[0]?.name || "";
-  const selectedAreaOption = areaOptions.find((option) => option.name === areaOption) || areaOptions[0];
-  const selectedAreaRate = Number(selectedAreaOption?.price_per_sqft) || pricePerSqft;
+  const pieceOption = hasSameSelectedProduct ? fallbackItem.piece_option || "" : "";
+  const areaOption = hasSameSelectedProduct ? fallbackItem.area_option || "" : "";
+  const selectedAreaRate = pricePerSqft;
   const selectedFrame = bladeFrameTypes.find((frame) => frame.name === (hasSameSelectedProduct ? fallbackItem.frame_type : defaultFrame?.name)) || defaultFrame;
   const bladeSelectionDefaults = {
     blade_glass_types: bladeGlassTypes,
     piece_options: pieceOptions,
     area_options: areaOptions,
-    piece_option: hasSameSelectedProduct
-      ? fallbackItem.piece_option || pieceOptions[0]?.name || ""
-      : pieceOptions[0]?.name || "",
+    piece_option: pieceOption,
     area_option: areaOption,
     sell_blades_only: sellBladesOnly,
     sell_with_frame: sellWithFrame,
@@ -988,7 +984,7 @@ export const resolveInspectionProductPrice = (product = null, fallbackItem = {})
       return {
         ...pricingDetails,
         pricing_method: "per_piece",
-        unit_price: Number(selectedPieceOption?.price_per_piece) || unitPrice || basePrice || estimatedPrice || fallbackUnitPrice,
+        unit_price: Number(product?.estimated_price_override ?? fallbackItem?.estimated_price_override) || basePrice || unitPrice || estimatedPrice || fallbackUnitPrice,
         price_per_sqft: pricePerSqft,
         price_per_blade: pricePerBlade,
         base_price: basePrice,
@@ -1636,9 +1632,9 @@ function SiteInspection() {
       price_per_blade: selectedProduct ? Number(selectedProduct.price_per_blade) || 0 : Number(item.price_per_blade) || 0,
       blade_glass_types: selectedProduct?.blade_glass_types || item.blade_glass_types || [],
       piece_options: selectedProduct?.piece_options || item.piece_options || [],
-      piece_option: item.piece_option || selectedProduct?.piece_options?.[0]?.name || "",
+      piece_option: item.piece_option || "",
       area_options: selectedProduct?.area_options || item.area_options || [],
-      area_option: item.area_option || selectedProduct?.area_options?.[0]?.name || "",
+      area_option: item.area_option || "",
       sell_blades_only: selectedProduct ? selectedProduct.sell_blades_only !== false : item.sell_blades_only !== false,
       sell_with_frame: selectedProduct ? Boolean(selectedProduct.sell_with_frame) : Boolean(item.sell_with_frame),
       blade_frame_types: selectedProduct?.blade_frame_types || item.blade_frame_types || [],
@@ -2066,9 +2062,9 @@ function SiteInspection() {
       <div className={`w-full rounded-lg border p-2 ${darkMode ? "border-slate-700 bg-slate-900/70" : "border-slate-200 bg-slate-50"}`}>
         <label className="block">
           <span className={labelClass}>Per piece option</span>
-          <CustomerDropdown darkMode={darkMode} aria-label={`Per piece option for measurement ${rowIndex + 1}`} value={item.piece_option || pieceOptions[0]?.name || ""} onChange={(event) => onFieldChange(item.id, "piece_option", event.target.value)} className={fieldClass}>
+          <CustomerDropdown darkMode={darkMode} aria-label={`Per piece option for measurement ${rowIndex + 1}`} value={item.piece_option || ""} onChange={(event) => onFieldChange(item.id, "piece_option", event.target.value)} className={fieldClass}>
             <option value="">Select an option</option>
-            {pieceOptions.map((option) => <option key={option.name} value={option.name}>{option.name} · {hidePaymentAmounts ? "••••••" : `₱${Number(option.price_per_piece || 0).toLocaleString()}`}/piece</option>)}
+            {pieceOptions.map((option) => <option key={option.name} value={option.name}>{option.name} · +{hidePaymentAmounts ? "••••••" : `₱${Number(option.price_per_piece || 0).toLocaleString()}`}/piece</option>)}
           </CustomerDropdown>
         </label>
       </div>
@@ -2089,10 +2085,10 @@ function SiteInspection() {
     return (
       <div className={`w-full rounded-lg border p-2 ${darkMode ? "border-slate-700 bg-slate-900/70" : "border-slate-200 bg-slate-50"}`}>
         <label className="block">
-          <span className={labelClass}>Per area option</span>
-          <CustomerDropdown darkMode={darkMode} aria-label={`Per area option for measurement ${rowIndex + 1}`} value={item.area_option || areaOptions[0]?.name || ""} onChange={(event) => onFieldChange(item.id, "area_option", event.target.value)} className={fieldClass}>
+          <span className={labelClass}>Variant</span>
+          <CustomerDropdown darkMode={darkMode} aria-label={`Variant for measurement ${rowIndex + 1}`} value={item.area_option || ""} onChange={(event) => onFieldChange(item.id, "area_option", event.target.value)} className={fieldClass}>
             <option value="">Select an option</option>
-            {areaOptions.map((option) => <option key={option.name} value={option.name}>{option.name} · {hidePaymentAmounts ? "••••••" : `₱${(Number(option.price_per_sqft) || Number(item.price_per_sqft) || 0).toLocaleString()}`}/sq ft</option>)}
+            {areaOptions.map((option) => <option key={option.name} value={option.name}>{option.name} · {hidePaymentAmounts ? "••••••" : `₱${(Number(option.price_per_sqft) || 0).toLocaleString()}`}</option>)}
           </CustomerDropdown>
         </label>
       </div>
@@ -2482,10 +2478,12 @@ function SiteInspection() {
       case "sqft":
         {
           const areaOptions = Array.isArray(product.area_options) ? product.area_options : item.area_options || [];
-          const option = areaOptions.find((entry) => entry.name === item.area_option) || areaOptions[0];
-          const selectedRate = Number(option?.price_per_sqft) || perSqft;
-          const rate = estimatedOverride > 0 && standardArea > 0 ? estimatedOverride / standardArea : estimatedOverride || selectedRate;
-          return `${option?.name ? `${option.name}: ` : ""}₱${rate.toLocaleString(undefined, { maximumFractionDigits: 2 })} / sq.ft`;
+          const option = areaOptions.find((entry) => entry.name === item.area_option);
+          const baseRate = estimatedOverride > 0 && standardArea > 0 ? estimatedOverride / standardArea : estimatedOverride || perSqft;
+          const baseLabel = baseRate > 0 ? `₱${baseRate.toLocaleString(undefined, { maximumFractionDigits: 2 })} / sq.ft` : "";
+          const optionPrice = Number(option?.price_per_sqft) || 0;
+          const optionLabel = optionPrice > 0 ? `${option?.name ? `${option.name}: ` : ""}₱${optionPrice.toLocaleString()} / item` : "";
+          return [baseLabel, optionLabel].filter(Boolean).join(" + ") || "Contact us";
         }
       case "blade":
         return `₱${perBlade.toLocaleString()} / blade`;
@@ -2497,7 +2495,10 @@ function SiteInspection() {
       case "per_piece":
         {
           const pieceOptions = Array.isArray(product.piece_options) ? product.piece_options : item.piece_options || [];
-          const option = pieceOptions.find((entry) => entry.name === item.piece_option) || pieceOptions[0];
+          const option = pieceOptions.find((entry) => entry.name === item.piece_option) || null;
+          const baseRate = estimatedOverride || base || unitPrice || 0;
+          const optionRate = Number(option?.price_per_piece) || 0;
+          if (option && optionRate > 0) return `Base ₱${baseRate.toLocaleString()} + ${option.name} ₱${optionRate.toLocaleString()} / pc`;
           const pieceRate = estimatedOverride || Number(option?.price_per_piece) || unitPrice;
           return option ? `${option.name}: ₱${pieceRate.toLocaleString()} / pc` : `₱${pieceRate.toLocaleString()} / pc`;
         }

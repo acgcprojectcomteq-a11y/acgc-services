@@ -230,8 +230,8 @@ function LandingPage() {
 
     return {
       blade_glass_type: product?.default_blade_glass_type || glassTypes[0]?.name || "",
-      piece_option: product?.piece_options?.[0]?.name || "",
-      area_option: product?.area_options?.[0]?.name || "",
+      piece_option: "",
+      area_option: "",
       sale_mode: saleMode,
       frame_type: defaultFrame?.name || "",
       custom_frame_size: saleMode === "frame" && frameTypes.length === 0 && Boolean(product?.allow_custom_frame_size),
@@ -453,8 +453,8 @@ function LandingPage() {
       customized: dimensions.customized,
       notes: options.notes || "",
       blade_glass_type: options.blade_glass_type || product.default_blade_glass_type || "",
-      piece_option: options.piece_option || product.piece_options?.[0]?.name || "",
-      area_option: options.area_option || product.area_options?.[0]?.name || "",
+      piece_option: options.piece_option ?? "",
+      area_option: options.area_option ?? "",
       sale_mode: options.sale_mode || product.default_sale_mode || "blades_only",
       frame_type: options.frame_type || product.default_frame_type || "",
       frame_blade_count: Number(options.frame_blade_count) || 0,
@@ -628,6 +628,12 @@ function LandingPage() {
         ? `₱${defaultPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
         : "Contact us";
     }
+    if (["per_piece", "piece", "per_set", "set"].includes(String(product.pricing_method || product.unit || "").toLowerCase())) {
+      const basePrice = Number(product.estimated_price_override || product.base_price || product.unit_price || product.estimated_price) || 0;
+      return basePrice > 0
+        ? `₱${basePrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        : "Contact us";
+    }
     const override = Number(product.estimated_price_override) || 0;
     if (override > 0) {
       const defaultPrice = getProductLineTotal(product, getProductDefaultDimensions(product));
@@ -651,7 +657,7 @@ function LandingPage() {
   };
 
   const getProductUnitRate = (product) => {
-    const pricePerSqft = Number(product.price_per_sqft) || Number(product.area_options?.[0]?.price_per_sqft) || 0;
+    const pricePerSqft = Number(product.price_per_sqft) || 0;
     const pricePerBlade = Number(product.price_per_blade) || 0;
     const unitPrice = Number(product.unit_price) || 0;
     const unitKey = product.unit || product.pricing_method || "unit";
@@ -681,6 +687,9 @@ function LandingPage() {
     if ((product.pricing_method === "sqft" || label === "sq ft") && pricePerSqft > 0) {
       return `₱${pricePerSqft.toLocaleString()} / ${label}`;
     }
+    if (product.pricing_method === "sqft" && Number(product.area_options?.[0]?.price_per_sqft) > 0) {
+      return `Variant from ₱${Number(product.area_options[0].price_per_sqft).toLocaleString()} / item`;
+    }
     if ((product.pricing_method === "blade" || label === "blade") && pricePerBlade > 0) {
       return `₱${pricePerBlade.toLocaleString()} / ${label}`;
     }
@@ -692,14 +701,10 @@ function LandingPage() {
     const pricingMethod = String(product?.pricing_method || "").toLowerCase();
     const legacyUnit = String(product?.unit || "").toLowerCase();
     if (["per_piece", "piece", "per_set", "set"].includes(pricingMethod || legacyUnit)) {
-      const selectedPieceOption = (product?.piece_options || []).find((option) => option.name === selections.piece_option)
-        || product?.piece_options?.[0];
-      return Number(selectedPieceOption?.price_per_piece || product?.base_price || product?.unit_price) || undefined;
+      return Number(product?.estimated_price_override || product?.base_price || product?.unit_price || product?.estimated_price) || undefined;
     }
     if (pricingMethod === "sqft" || (!pricingMethod && ["per_sqft", "sqft"].includes(legacyUnit))) {
-      const selectedAreaOption = (product?.area_options || []).find((option) => option.name === selections.area_option)
-        || product?.area_options?.[0];
-      return Number(selectedAreaOption?.price_per_sqft || product?.price_per_sqft) || undefined;
+      return Number(product?.price_per_sqft) || undefined;
     }
     if (isBladeProduct(product)) {
       const selectedGlass = (product?.blade_glass_types || []).find(
@@ -855,8 +860,8 @@ function LandingPage() {
       customized: actionType === "estimate" || hasCustomDimensions,
       variant: actionProduct.variant || actionProduct.color || "",
       blade_glass_type: actionConfiguration.blade_glass_type || "",
-      piece_option: actionConfiguration.piece_option || actionProduct.piece_options?.[0]?.name || "",
-      area_option: actionConfiguration.area_option || actionProduct.area_options?.[0]?.name || "",
+      piece_option: actionConfiguration.piece_option ?? "",
+      area_option: actionConfiguration.area_option ?? "",
       sale_mode: actionConfiguration.sale_mode || "blades_only",
       frame_type: actionConfiguration.frame_type || "",
       custom_frame_size: Boolean(actionConfiguration.custom_frame_size),

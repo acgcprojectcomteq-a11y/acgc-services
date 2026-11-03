@@ -867,8 +867,8 @@ const repriceInspectionItems = async (items) => {
     const areaOptions = Array.isArray(product.area_options) ? product.area_options : [];
     if (["sqft", "per_sqft"].includes(pricingMethod) && areaOptions.length
       && !areaOptions.some((option) => option.name === item.area_option
-        && (Number(option.price_per_sqft) > 0 || Number(product.price_per_sqft) > 0))) {
-      const error = new Error(`Measurement ${index + 1}: select a valid per-area option.`);
+        && (Number(option.price_per_sqft) > 0 || Number(product.price_per_sqft) > 0 || Number(product.estimated_price_override) > 0))) {
+      const error = new Error(`Measurement ${index + 1}: select a valid variant.`);
       error.statusCode = 400;
       throw error;
     }
@@ -1095,13 +1095,13 @@ export const createOrder = async (req, res) => {
       return ["sqft", "per_sqft"].includes(pricingMethod)
         && areaOptions.length > 0
         && !areaOptions.some((option) => option.name === item.area_option
-          && (Number(option.price_per_sqft) > 0 || Number(product?.price_per_sqft) > 0));
+          && (Number(option.price_per_sqft) > 0 || Number(product?.price_per_sqft) > 0 || Number(product?.estimated_price_override) > 0));
     });
 
     if (hasInvalidAreaOption) {
       return res.status(400).json({
         success: false,
-        message: "Please select a valid per-area option before submitting your order.",
+        message: "Please select a valid variant before submitting your order.",
       });
     }
 
