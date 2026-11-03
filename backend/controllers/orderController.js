@@ -25,6 +25,7 @@ import {
   isProgressStageCompleted,
 } from "../services/installationNotifications.js";
 import { buildProductPriceSnapshot, getMeasuredProductLineTotal } from "../../src/lib/productPricing.js";
+import { toSquareFeet } from "../../src/lib/estimator.js";
 import { calculateRequiredDownpayment, getFinalProjectCost, isProjectPriceLocked } from "../../src/lib/orderPricing.js";
 import { getInstallationDateError } from "../../src/lib/installationSchedule.js";
 import { getStreetAddressError, normalizeFullAddress } from "../utils/fullAddressValidation.js";
@@ -592,6 +593,70 @@ const normalizeProductId = (productId) => {
   return String(productId);
 };
 
+const getInspectionItemPricingSignature = (item = {}, { includeProductCharges = true } = {}) => {
+  const dimensions = item.dimensions || {};
+  const extraCharges = (Array.isArray(item.extra_charges) ? item.extra_charges : [])
+    .map((charge) => ({
+      key: String(charge?._id || charge?.name || charge?.label || ""),
+      selected: charge?.is_optional === true ? charge?.is_selected === true : charge?.is_active !== false,
+      amount: Number(charge?.amount) || 0,
+    }))
+    .sort((left, right) => left.key.localeCompare(right.key));
+  const productCharges = (Array.isArray(item.additional_project_charges) ? item.additional_project_charges : [])
+    .map((charge) => ({
+      name: String(charge?.name || "").trim(),
+      amount: Number(charge?.amount) || 0,
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name));
+  const doorMeasurement = item.door_measurement && typeof item.door_measurement === "object"
+    ? {
+      mode: item.door_measurement.mode === "custom" ? "custom" : "standard",
+      actual_measurement_cm: Number(item.door_measurement.actual_measurement_cm) || 0,
+    }
+    : null;
+
+  return JSON.stringify({
+    product_id: normalizeProductId(item.product_id || item._id),
+    quantity: Number(item.quantity ?? item.qty ?? dimensions.quantity) || 1,
+    width: Number(item.width ?? dimensions.width) || 0,
+    height: Number(item.height ?? dimensions.height) || 0,
+    measurement_unit: item.measurement_unit || item.measurementUnit || dimensions.unit || "in",
+    blade_glass_type: item.blade_glass_type || "",
+    piece_option: item.piece_option || "",
+    area_option: item.area_option || "",
+    sale_mode: item.sale_mode || "",
+    frame_type: item.frame_type || "",
+    frame_price: Number(item.frame_price) || 0,
+    custom_frame_size: Boolean(item.custom_frame_size),
+    blade_count: Number(item.blade_count) || 0,
+    estimation_mode: item.estimation_mode === "manual" ? "manual" : "auto",
+    manual_estimated_total: Number(item.manual_estimated_total) || 0,
+    door_measurement: doorMeasurement,
+    extra_charges: extraCharges,
+    ...(includeProductCharges ? { additional_project_charges: productCharges } : {}),
+  });
+};
+
+const areInspectionItemsPricedTheSame = (requestedItems = [], savedItems = []) => (
+  Array.isArray(requestedItems)
+  && Array.isArray(savedItems)
+  && requestedItems.length === savedItems.length
+  && requestedItems.every((item, index) => getInspectionItemPricingSignature(item) === getInspectionItemPricingSignature(savedItems[index]))
+);
+
+const getProjectChargesTotal = (charges = []) => (
+  (Array.isArray(charges) ? charges : []).reduce((sum, charge) => sum + Math.max(0, Number(charge?.amount) || 0), 0)
+);
+
+const getProjectChargePricingSignature = (charges = []) => JSON.stringify(
+  (Array.isArray(charges) ? charges : [])
+    .map((charge) => ({
+      name: String(charge?.name || "").trim(),
+      amount: Number(charge?.amount) || 0,
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name)),
+);
+
 const getOrderItemPricingMethod = (product = {}, item = {}) => {
   const method = String(product.pricing_method || item.pricing_method || "").toLowerCase();
   if (method) return method;
@@ -768,6 +833,23 @@ const getCatalogProductLineTotal = (product = {}, item = {}) => {
   return getMeasuredProductLineTotal(product, item);
 };
 
+const getManualInspectionExtraChargeTotal = (item = {}, manualTotal = 0) => {
+  const quantity = Number(item.quantity ?? item.qty ?? 1) || 1;
+  const area = Math.round((toSquareFeet(
+    Number(item.width ?? item.dimensions?.width) || 0,
+    Number(item.height ?? item.dimensions?.height) || 0,
+    item.measurement_unit || item.measurementUnit || item.dimensions?.unit || "in",
+  ) * quantity) * 100) / 100;
+  return (Array.isArray(item.extra_charges) ? item.extra_charges : []).reduce((sum, charge) => {
+    if (charge?.is_active === false || (charge?.is_optional === true && charge?.is_selected !== true)) return sum;
+    const amount = Math.max(0, Number(charge?.amount) || 0);
+    if (charge?.type === "percentage") return sum + (manualTotal * amount / 100);
+    if (charge?.type === "per_sqft") return sum + area * amount;
+    if (charge?.type === "per_blade") return sum + (Number(item.blade_count) || 0) * amount * quantity;
+    return sum + amount * quantity;
+  }, 0);
+};
+
 const applyCatalogExtraChargeSelections = (product = {}, item = {}, { allowAmountOverrides = false } = {}) => {
   const catalogCharges = Array.isArray(product.extra_charges) ? product.extra_charges : [];
   const requestedCharges = Array.isArray(item.extra_charges) ? item.extra_charges : [];
@@ -881,7 +963,7 @@ const repriceInspectionItems = async (items) => {
       ? Number(pricedItem.manual_estimated_total) || 0
       : 0;
     const lineTotal = itemOverride > 0
-      ? itemOverride
+      ? Math.round((itemOverride + getManualInspectionExtraChargeTotal(pricedItem, itemOverride)) * 100) / 100
       : getCatalogProductLineTotal(product, pricedItem);
 
     return {
@@ -3583,6 +3665,32 @@ export const updateOrderInspection = async (req, res) => {
     if (String(order.status || "").toLowerCase() === "cancelled") {
       return res.status(409).json({ success: false, message: "Cancelled projects cannot receive inspection or installation updates." });
     }
+    const pricingInputsUnchanged = (!Array.isArray(items) || areInspectionItemsPricedTheSame(items, order.items || []))
+      && getProjectChargePricingSignature(project_additional_charges !== undefined ? updateData.project_additional_charges : order.project_additional_charges)
+        === getProjectChargePricingSignature(order.project_additional_charges)
+      && (manual_override === undefined || (Number(manual_override) || 0) === (Number(order.manual_override) || 0));
+    const getExistingItemForRequest = (requestedItem, index) => {
+      const sourceItemId = String(requestedItem?.source_item_id || "").trim();
+      if (sourceItemId) {
+        return (order.items || []).find((savedItem) => String(savedItem?._id || savedItem?.id || "") === sourceItemId) || null;
+      }
+      return order.items?.[index] || null;
+    };
+    if (Array.isArray(updateData.items)) {
+      updateData.items = updateData.items.map((item, index) => {
+        const savedItem = getExistingItemForRequest(items[index], index);
+        const savedLineTotal = Number(savedItem?.line_total) || Number(savedItem?.estimated_price) || 0;
+        const sameBasePricing = savedItem
+          && getInspectionItemPricingSignature(items[index], { includeProductCharges: false })
+            === getInspectionItemPricingSignature(savedItem, { includeProductCharges: false });
+        if (!sameBasePricing || savedLineTotal <= 0) return item;
+        return {
+          ...item,
+          line_total: savedLineTotal,
+          estimated_price: Number(savedItem?.estimated_price) || savedLineTotal,
+        };
+      });
+    }
     if (shipping_address !== undefined) {
       const normalizedShippingAddress = normalizeAddress(shipping_address || "");
       const addressChanged = normalizeFullAddress(normalizedShippingAddress) !== normalizeFullAddress(order.shipping_address);
@@ -3659,7 +3767,7 @@ export const updateOrderInspection = async (req, res) => {
 
     if (Array.isArray(updateData.items)) {
       updateData.items = updateData.items.map((item, index) => {
-        const existingItem = order.items[index];
+        const existingItem = getExistingItemForRequest(items[index], index);
         const itemProductId = String(item.product_id?._id || item.product_id || "");
         const existingProductId = String(existingItem?.product_id?._id || existingItem?.product_id || "");
         const sameProduct = Boolean(existingItem && itemProductId === existingProductId);
@@ -3679,24 +3787,53 @@ export const updateOrderInspection = async (req, res) => {
     const wasDownpaymentReceived = Boolean(order.downpayment_received);
     const currentItems = Array.isArray(updateData.items) ? updateData.items : order.items || [];
     const calculatedItemsEstimate = currentItems.reduce((sum, item) => sum + getItemAmountValue(item), 0);
+    const previousItemsEstimate = (order.items || []).reduce((sum, item) => sum + getItemAmountValue(item), 0);
     if (Array.isArray(updateData.items) && !(calculatedItemsEstimate > 0)) {
       return res.status(400).json({ success: false, message: "Inspection items must have valid configured prices." });
     }
     const nextProjectCharges = Array.isArray(updateData.project_additional_charges) ? updateData.project_additional_charges : order.project_additional_charges || [];
-    const projectChargesTotal = nextProjectCharges.reduce((sum, charge) => sum + Math.max(0, Number(charge.amount) || 0), 0);
-    const updatedEstimatedCost = Array.isArray(updateData.items) || Array.isArray(updateData.project_additional_charges)
-      ? calculatedItemsEstimate + projectChargesTotal
-      : Number(order.estimated_cost) > 0
-        ? Number(order.estimated_cost)
-        : calculatedItemsEstimate;
+    const projectChargesTotal = getProjectChargesTotal(nextProjectCharges);
+    const previousProjectChargesTotal = getProjectChargesTotal(order.project_additional_charges);
+    const previousItemsProjectCost = Math.round((previousItemsEstimate + previousProjectChargesTotal) * 100) / 100;
+    const previousEstimatedCost = Math.max(
+      Number(order.estimated_cost) > 0 ? Number(order.estimated_cost) : 0,
+      previousItemsProjectCost,
+    );
+    const savedBaseProjectCost = getBaseProjectCost(order);
+    const previousBaseProjectCost = Number(order.manual_override) > 0
+      ? savedBaseProjectCost
+      : Math.max(savedBaseProjectCost, previousEstimatedCost);
+    const itemAmountDelta = Array.isArray(updateData.items)
+      ? calculatedItemsEstimate - previousItemsEstimate
+      : 0;
+    const projectChargesDelta = Array.isArray(updateData.project_additional_charges)
+      ? projectChargesTotal - previousProjectChargesTotal
+      : 0;
+    const pricingDelta = Math.round((itemAmountDelta + projectChargesDelta) * 100) / 100;
     const updatedManualOverride = manual_override !== undefined
       ? Math.max(Number(manual_override) || 0, 0)
       : Math.max(Number(order.manual_override) || 0, 0);
-    const updatedTotalAmount = updatedManualOverride > 0
-      ? updatedManualOverride
-      : updatedEstimatedCost > 0
-        ? updatedEstimatedCost
-        : getBaseProjectCost(order);
+    let updatedEstimatedCost;
+    if (pricingInputsUnchanged) {
+      updatedEstimatedCost = previousEstimatedCost;
+    } else if (Number(order.manual_override) > 0 && manual_override !== undefined && updatedManualOverride === 0) {
+      updatedEstimatedCost = calculatedItemsEstimate + projectChargesTotal;
+    } else if (Array.isArray(updateData.items) || Array.isArray(updateData.project_additional_charges)) {
+      updatedEstimatedCost = Math.round(Math.max(0, previousEstimatedCost + pricingDelta) * 100) / 100;
+    } else {
+      updatedEstimatedCost = previousEstimatedCost;
+    }
+    let updatedTotalAmount;
+    if (pricingInputsUnchanged) {
+      updatedTotalAmount = previousBaseProjectCost;
+    } else if (updatedManualOverride > 0) {
+      updatedTotalAmount = updatedManualOverride;
+    } else if (Number(order.manual_override) > 0 && manual_override !== undefined) {
+      updatedTotalAmount = updatedEstimatedCost;
+    } else {
+      const adjustedBaseCost = Math.round((previousBaseProjectCost + pricingDelta) * 100) / 100;
+      updatedTotalAmount = adjustedBaseCost > 0 ? adjustedBaseCost : updatedEstimatedCost;
+    }
     const updatedPaymentTerms = payment_terms !== undefined ? payment_terms : order.payment_terms;
     const configuredRequiredAmount = required_downpayment_amount !== undefined
       ? required_downpayment_amount

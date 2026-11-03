@@ -73,13 +73,15 @@ const getBladePricing = (product = {}, item = {}) => {
   const glassTypes = Array.isArray(product.blade_glass_types) ? product.blade_glass_types : [];
   const frameTypes = Array.isArray(product.blade_frame_types) ? product.blade_frame_types : [];
   const glassName = item.blade_glass_type || product.default_blade_glass_type || glassTypes[0]?.name || "";
-  const glassType = glassTypes.find((glass) => String(glass.name).toLowerCase() === String(glassName).toLowerCase());
+  const glassType = glassTypes.find((glass) => String(glass.name).toLowerCase() === String(glassName).toLowerCase())
+    || glassTypes[0];
   const saleMode = item.sale_mode || product.default_sale_mode || "blades_only";
   const frameName = item.frame_type || product.default_frame_type || "";
   const requestedFrameBladeCount = Number(item.frame_blade_count) || 0;
   const frameType = frameTypes.find((frame) => String(frame.name).toLowerCase() === String(frameName).toLowerCase()
     && (!requestedFrameBladeCount || Number(frame.blade_count) === requestedFrameBladeCount))
-    || frameTypes.find((frame) => String(frame.name).toLowerCase() === String(frameName).toLowerCase());
+    || frameTypes.find((frame) => String(frame.name).toLowerCase() === String(frameName).toLowerCase())
+    || frameTypes[0];
   const configuredBladeCount = Number(item.blade_count) || Number(frameType?.blade_count) || Number(product.blade_count) || Number(product.minimum_blades) || 0;
   const bladeCount = Math.max(0, configuredBladeCount);
   const hasPriceOverride = toNonNegativeNumber(product.estimated_price_override ?? item.estimated_price_override) > 0;
@@ -88,7 +90,9 @@ const getBladePricing = (product = {}, item = {}) => {
     ? getBladePriceOverrideRate(product, item)
     : configuredBladeRate;
   const framePrice = saleMode === "frame"
-    ? toNonNegativeNumber(item.frame_price ?? (item.custom_frame_size ? product.custom_frame_price : frameType?.price))
+    ? toNonNegativeNumber(item.custom_frame_size
+      ? product.custom_frame_price
+      : Number(item.frame_price) > 0 ? item.frame_price : frameType?.price)
     : 0;
 
   return { glassTypes, frameTypes, glassName, saleMode, frameName, frameType, bladeCount, bladeRate, framePrice };

@@ -734,8 +734,10 @@ export const validateInspectionMeasurementRows = (items = []) => {
       }
     }
     const pieceOptions = Array.isArray(item.piece_options) ? item.piece_options : [];
-    if (["per_piece", "piece", "per_set", "set"].includes(String(item.pricing_method || "").toLowerCase()) && pieceOptions.length
-      && !pieceOptions.some((option) => option.name === item.piece_option && Number(option.price_per_piece) > 0)) {
+    const selectedPieceOption = String(item.piece_option || "").trim();
+    if (["per_piece", "piece", "per_set", "set"].includes(String(item.pricing_method || "").toLowerCase())
+      && selectedPieceOption && pieceOptions.length
+      && !pieceOptions.some((option) => option.name === selectedPieceOption && Number(option.price_per_piece) > 0)) {
       rowErrors.piece_option = "Select an option.";
     }
     const areaOptions = Array.isArray(item.area_options) ? item.area_options : [];
@@ -1653,6 +1655,7 @@ function SiteInspection() {
       frame_type: item.frame_type || selectedProduct?.default_frame_type || selectedProduct?.blade_frame_types?.[0]?.name || "",
       custom_frame_size: Boolean(item.custom_frame_size),
       frame_price: Number(item.frame_price) || 0,
+      saved_line_total: Number(item.line_total) > 0 ? Number(item.line_total) : Number(item.estimated_price) || 0,
       blade_count: Number(item.blade_count) || Number(selectedProduct?.blade_count) || Number(selectedProduct?.minimum_blades) || 1,
       customization_fee: selectedProduct ? Number(selectedProduct.customization_fee) || 0 : Number(item.customization_fee) || 0,
       customization: selectedProduct ? Boolean(selectedProduct.customization) : Boolean(item.customization),
@@ -1794,6 +1797,41 @@ function SiteInspection() {
       ? sum + Math.max(0, Number(charge.amount) || 0)
       : sum;
   }, 0);
+  const getItemSelectedOptionalChargesTotal = (item) => {
+    if (item?.estimation_mode === "manual" && Number(item.manual_estimated_total) > 0 && !isFinishedDoorInspectionItem(item)) {
+      return Math.max(0, Math.round((getInspectionItemTotal(item) - Number(item.manual_estimated_total)) * 100) / 100);
+    }
+    const product = getInspectionProductForItem(item) || item;
+    // Order items keep the charge rates that were saved with the order. Use
+    // those rates when showing the edit delta so a catalog price change does
+    // not alter the amount being removed from this customer's total.
+    const configuredCharges = Array.isArray(item?.extra_charges) && item.extra_charges.length
+      ? item.extra_charges
+      : Array.isArray(product?.extra_charges) ? product.extra_charges : [];
+    if (!configuredCharges.length) return 0;
+
+    const selections = Array.isArray(item?.extra_charges) ? item.extra_charges : [];
+    const selectedNames = new Map();
+    configuredCharges.forEach((charge, index) => {
+      if (charge?.is_optional !== true || charge?.is_active === false) return;
+      const selection = selections[index] || {};
+      const isSelected = typeof selection.is_selected === "boolean"
+        ? selection.is_selected
+        : charge?.is_default_selected === true;
+      if (!isSelected) return;
+      const name = String(charge.name || charge.label || `Extra charge ${index + 1}`).trim();
+      selectedNames.set(name, (selectedNames.get(name) || 0) + 1);
+    });
+    if (!selectedNames.size) return 0;
+
+    return getProductLineBreakdown({ ...product, ...item, extra_charges: configuredCharges }, item).extraCharges.reduce((sum, charge) => {
+      const name = String(charge.name || "").trim();
+      const matches = selectedNames.get(name) || 0;
+      if (!matches) return sum;
+      selectedNames.set(name, matches - 1);
+      return sum + Math.max(0, Number(charge.total) || 0);
+    }, 0);
+  };
   const renderItemAdditionalCharges = (item, index, onFieldChange) => {
     const charges = getItemAdditionalCharges(item);
     const chargesTotal = getItemAdditionalChargesTotal(item);
@@ -2210,7 +2248,7 @@ function SiteInspection() {
       : "blade-measurement-control min-w-0 w-full rounded-lg border border-[#dde3ec] bg-white px-3 py-2.5 text-sm text-[#1a2230] outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/15";
     const labelClasses = `mb-1.5 block text-[10px] font-bold ${darkMode ? "text-slate-400" : "text-slate-600"}`;
     const mutedClass = darkMode ? "text-slate-400" : "text-slate-500";
-    const rowTotal = calculateRowSubtotal(item);
+    const rowTotal = mode.startsWith("edit") ? getEditItemSubtotalForTotals(item) : calculateRowSubtotal(item);
     const inspectionState = mode.startsWith("edit") ? editInspection : newInspection;
     const otherRushCount = getRushOrderCountForDate(
       inspectionState?.inspection_date,
@@ -2499,6 +2537,7 @@ function SiteInspection() {
           const baseRate = estimatedOverride || base || unitPrice || 0;
           const optionRate = Number(option?.price_per_piece) || 0;
           if (option && optionRate > 0) return `Base ₱${baseRate.toLocaleString()} + ${option.name} ₱${optionRate.toLocaleString()} / pc`;
+          if (!option && baseRate > 0) return `Base ₱${baseRate.toLocaleString()} / pc`;
           const pieceRate = estimatedOverride || Number(option?.price_per_piece) || unitPrice;
           return option ? `${option.name}: ₱${pieceRate.toLocaleString()} / pc` : `₱${pieceRate.toLocaleString()} / pc`;
         }
@@ -2733,8 +2772,16 @@ function SiteInspection() {
   };
 
   const handleEditItemFieldChange = (id, field, value) => {
+    const basePricingFields = new Set([
+      "width", "height", "qty", "quantity", "measurement_unit", "unit_price", "price_per_sqft", "price_per_blade",
+      "base_price", "area_option", "piece_option", "blade_glass_type", "sale_mode", "frame_type", "frame_price",
+      "custom_frame_size", "blade_count", "estimated_price_override", "customization_fee", "customization",
+      "door_measurement", "manual_estimated_total", "estimation_mode",
+    ]);
+    const projectPriceFields = new Set([...basePricingFields, "extra_charges", "additional_project_charges"]);
     setEditInspection((prev) => ({
       ...prev,
+      pricing_changed: prev.pricing_changed || projectPriceFields.has(field),
       items: (prev.items || []).map((item) => {
         if (item.id !== id) return item;
         const updated = { ...item, [field]: value };
@@ -2751,6 +2798,8 @@ function SiteInspection() {
         }
         return {
           ...updated,
+          _base_pricing_changed: item._base_pricing_changed || basePricingFields.has(field),
+          _catalog_charge_changed: item._catalog_charge_changed || field === "extra_charges",
           area: requiresInspectionItemDimensions(updated)
             ? calculateMeasurementArea(updated.width, updated.height, updated.qty ?? updated.quantity, updated.measurement_unit || updated.measurementUnit || updated.dimensions?.unit || "in")
             : 0,
@@ -2764,6 +2813,7 @@ function SiteInspection() {
     const selectedProduct = products.find((product) => String(product._id || product.id) === normalizedProductId);
     setEditInspection((prev) => ({
       ...prev,
+      pricing_changed: true,
       items: (prev.items || []).map((item) => {
         if (item.id !== id) return item;
         const productSnapshot = resolveInspectionProductPrice(selectedProduct, item);
@@ -2792,6 +2842,7 @@ function SiteInspection() {
         };
         return {
           ...updated,
+          _base_pricing_changed: true,
           area: requiresInspectionItemDimensions(updated)
             ? calculateMeasurementArea(updated.width, updated.height, updated.qty ?? updated.quantity, updated.measurement_unit)
             : 0,
@@ -2828,6 +2879,7 @@ function SiteInspection() {
     setMeasurementValidationAttempted((current) => ({ ...current, edit: false }));
     setEditInspection((prev) => ({
       ...prev,
+      pricing_changed: true,
       items: [
         ...(prev.items || []),
         { id: Date.now() + Math.random(), product_id: "", name: "", width: 1, height: 1, qty: 1, measurement_unit: "in", area: 0, unit: "sqft", unit_price: 0, estimation_mode: "auto", manual_estimated_total: "" },
@@ -2840,7 +2892,7 @@ function SiteInspection() {
   };
 
   const removeEditItemRow = (id) => {
-    setEditInspection((prev) => ({ ...prev, items: (prev.items || []).filter((it) => it.id !== id) }));
+    setEditInspection((prev) => ({ ...prev, pricing_changed: true, items: (prev.items || []).filter((it) => it.id !== id) }));
   };
 
   const requestMeasurementDelete = (mode, item, index) => {
@@ -2875,6 +2927,50 @@ function SiteInspection() {
     return { totalArea, totalEstimate };
   };
 
+  const getEditItemSubtotalForTotals = (item) => {
+    if (item._catalog_charge_changed) {
+      return item.estimation_mode === "manual" && !isFinishedDoorInspectionItem(item)
+        ? getInspectionItemTotal(item)
+        : calculateRowSubtotal(item);
+    }
+    if (!item._base_pricing_changed && Number(item.saved_line_total) > 0) {
+      return Number(item.saved_line_total);
+    }
+    return item.estimation_mode === "manual" && !isFinishedDoorInspectionItem(item)
+      ? getInspectionItemTotal(item)
+      : calculateRowSubtotal(item);
+  };
+
+  const getEditProjectTotal = () => {
+    if (!editInspection?.pricing_changed && Number(editInspection?.saved_project_total) > 0) {
+      return Number(editInspection.saved_project_total);
+    }
+    const savedProjectTotal = Number(editInspection?.saved_project_total) || 0;
+    const onlyChargesChanged = savedProjectTotal > 0
+      && !editInspection?.manual_override_changed
+      && (editInspection?.items || []).length === Number(editInspection?.saved_item_count)
+      && (editInspection?.items || []).every((item) => !item._base_pricing_changed);
+    if (onlyChargesChanged) {
+      const currentChargesTotal = (editInspection?.items || []).reduce((sum, item) => (
+        sum + getItemAdditionalChargesTotal(item) + getItemSelectedOptionalChargesTotal(item)
+      ), 0) + (editInspection?.project_additional_charges || []).reduce((sum, charge) => (
+        sum + Math.max(0, Number(charge.amount) || 0)
+      ), 0);
+      const savedChargesTotal = (Number(editInspection?.saved_product_charges_total) || 0)
+        + (Number(editInspection?.saved_optional_charges_total) || 0)
+        + (Number(editInspection?.saved_project_charges_total) || 0);
+      return Math.round(Math.max(0, savedProjectTotal + currentChargesTotal - savedChargesTotal) * 100) / 100;
+    }
+    const manualOverride = Number(editInspection?.manual_override) || 0;
+    if (manualOverride > 0) return manualOverride;
+    if (savedProjectTotal > 0) {
+      const savedItemsTotal = Number(editInspection?.saved_items_total) || 0;
+      const savedProjectChargesTotal = Number(editInspection?.saved_project_charges_total) || 0;
+      return Math.round(Math.max(0, savedProjectTotal + computeEditTotals().totalEstimate - savedItemsTotal - savedProjectChargesTotal) * 100) / 100;
+    }
+    return computeEditTotals().totalEstimate;
+  };
+
   const computeEditTotals = () => {
     if (!editInspection?.items) {
       return { totalArea: 0, totalEstimate: 0 };
@@ -2882,10 +2978,7 @@ function SiteInspection() {
     const completeItems = (editInspection.items || []).filter((item) => Object.keys(validateInspectionMeasurementRows([item]).itemErrors[0] || {}).length === 0);
     const totalArea = completeItems.reduce((sum, item) => sum + (Number(item.area) || 0), 0);
     const productEstimate = Math.round(
-      completeItems.reduce((sum, item) => {
-        if (item.estimation_mode === "manual") return sum + (Number(item.manual_estimated_total) || calculateRowSubtotal(item));
-        return sum + calculateRowSubtotal(item);
-      }, 0) * 100
+      completeItems.reduce((sum, item) => sum + getEditItemSubtotalForTotals(item), 0) * 100
     ) / 100;
     const productCharges = completeItems.reduce((sum, item) => sum + getItemAdditionalChargesTotal(item), 0);
     const totalEstimate = productEstimate + productCharges + (editInspection.project_additional_charges || []).reduce((sum, charge) => String(charge.name || "").trim() && String(charge.amount ?? "").trim() !== "" ? sum + Math.max(0, Number(charge.amount) || 0) : sum, 0);
@@ -3558,6 +3651,15 @@ function SiteInspection() {
       const paymentProof = getCustomerPaymentProof(inspection);
       const editItems = (inspection.items || []).map((item) => getEditItemFromOrderItem(item));
       const customerSelectedRush = editItems.some((item) => hasSelectedRushCharge(item));
+      const savedItemsTotal = editItems.reduce((sum, item) => sum + (Number(item.saved_line_total) || 0) + getItemAdditionalChargesTotal(item), 0);
+      const savedProductChargesTotal = editItems.reduce((sum, item) => sum + getItemAdditionalChargesTotal(item), 0);
+      const savedOptionalChargesTotal = editItems.reduce((sum, item) => sum + getItemSelectedOptionalChargesTotal(item), 0);
+      const savedProjectChargesTotal = (inspection.project_additional_charges || []).reduce((sum, charge) => sum + Math.max(0, Number(charge.amount) || 0), 0);
+      const reportedProjectTotal = getFinalProjectCost(inspection);
+      const calculatedSavedProjectTotal = savedItemsTotal + savedProjectChargesTotal;
+      const savedProjectTotal = Number(inspection.manual_override) > 0
+        ? reportedProjectTotal
+        : Math.max(reportedProjectTotal, calculatedSavedProjectTotal);
 
       const nextEditInspection = {
         id: orderId,
@@ -3577,6 +3679,14 @@ function SiteInspection() {
         estimated_installation_time: inspection.estimated_installation_time || "",
         installation_duration_minutes: Number(inspection.installation_duration_minutes) || 60,
         project_additional_charges: Array.isArray(inspection.project_additional_charges) ? inspection.project_additional_charges.map((charge) => ({ ...charge })) : [],
+        saved_project_total: savedProjectTotal,
+        saved_items_total: savedItemsTotal,
+        saved_product_charges_total: savedProductChargesTotal,
+        saved_optional_charges_total: savedOptionalChargesTotal,
+        saved_project_charges_total: savedProjectChargesTotal,
+        saved_item_count: editItems.length,
+        pricing_changed: false,
+        manual_override_changed: false,
         warranty_period: normalizedWarrantyPeriod,
         warranty_assignment_mode: inspection.warranty_assignment_mode === "per_product" ? "per_product" : "same",
         warranty_status: inspection.warranty_status || "",
@@ -3918,7 +4028,12 @@ function SiteInspection() {
         };
       }
 
-      return { ...prev, [name]: name === "phone" ? normalizePhoneInput(value) : value };
+      return {
+        ...prev,
+        pricing_changed: prev.pricing_changed || name === "manual_override" || name === "project_additional_charges",
+        manual_override_changed: prev.manual_override_changed || name === "manual_override",
+        [name]: name === "phone" ? normalizePhoneInput(value) : value,
+      };
     });
   };
 
@@ -4046,7 +4161,7 @@ function SiteInspection() {
         payment_terms: editInspection.payment_terms || undefined,
         required_downpayment_amount: resolveRequiredPaymentAmount(
           editInspection.payment_terms,
-          Number(editInspection.manual_override) || computeEditTotals().totalEstimate,
+          getEditProjectTotal(),
           editInspection.required_downpayment_amount,
         ),
         agreed_payment_date: toApiDate(editInspection.agreed_payment_date),
@@ -4084,6 +4199,8 @@ function SiteInspection() {
             price_per_sqft: Number(item.price_per_sqft) || 0,
             area_option: item.area_option || "",
             area_options: Array.isArray(item.area_options) ? item.area_options : [],
+            piece_option: item.piece_option || "",
+            piece_options: Array.isArray(item.piece_options) ? item.piece_options : [],
             price_per_blade: Number(item.price_per_blade) || 0,
             base_price: Number(item.base_price) || 0,
             blade_glass_type: item.blade_glass_type || "",
@@ -4097,6 +4214,7 @@ function SiteInspection() {
             customization: Boolean(item.customization),
             extra_charges: item.extra_charges || [],
             additional_project_charges: getItemAdditionalCharges(item).filter((charge) => String(charge.name || "").trim() || String(charge.amount ?? "").trim()).map((charge) => ({ name: String(charge.name || "").trim(), amount: Number(charge.amount), note: String(charge.note || "").trim() })),
+            source_item_id: item._id || item.id || "",
             size_limits: item.size_limits || {},
             finished_door_pricing: item.finished_door_pricing || { enabled: false },
             door_measurement: item.door_measurement || null,
@@ -4107,6 +4225,8 @@ function SiteInspection() {
             estimated_price: item.estimation_mode === "manual"
               ? Number(item.manual_estimated_total) || calculateRowSubtotal(item)
               : calculateRowSubtotal(item),
+            estimation_mode: item.estimation_mode === "manual" ? "manual" : "auto",
+            manual_estimated_total: item.estimation_mode === "manual" ? Number(item.manual_estimated_total) || 0 : 0,
             is_estimate: true,
             unit: item.unit || "sqft",
             ...(hasMultipleItems || hasStoredItemWarranty ? {
@@ -4119,8 +4239,8 @@ function SiteInspection() {
           };
         }),
         estimated_cost: computeEditTotals().totalEstimate,
-        final_project_cost: Number(editInspection.manual_override) || computeEditTotals().totalEstimate,
-        total_amount: Number(editInspection.manual_override) || computeEditTotals().totalEstimate,
+        final_project_cost: getEditProjectTotal(),
+        total_amount: getEditProjectTotal(),
       };
 
       // Validate that all items have product_id before sending
@@ -6460,7 +6580,7 @@ function SiteInspection() {
                         const hasSelectedProduct = Boolean(normalizeProductId(item.product_id));
                         const rowIncomplete = measurementValidationAttempted.edit && Object.keys(validateInspectionMeasurementRows([item]).itemErrors[0] || {}).length > 0;
                         const hasActiveProduct = products.some((product) => String(product._id || product.id) === normalizeProductId(item.product_id));
-                        const rowSubtotal = hasSelectedProduct ? calculateRowSubtotal(item) + getItemAdditionalChargesTotal(item) : 0;
+                        const rowSubtotal = hasSelectedProduct ? getEditItemSubtotalForTotals(item) + getItemAdditionalChargesTotal(item) : 0;
                         const bladeRow = hasSelectedProduct ? renderBladeMeasurementRow(item, index, handleEditItemFieldChange, handleEditItemProductChange, removeEditItemRow, computeEditTotals(), "edit") : null;
                         if (bladeRow) return <Fragment key={`edit-blade-charge-${item.id || index}`}>{bladeRow}{renderItemAdditionalCharges(item, index, handleEditItemFieldChange)}</Fragment>;
                         return (
@@ -6595,7 +6715,7 @@ function SiteInspection() {
                         const hasSelectedProduct = Boolean(normalizeProductId(item.product_id));
                         const rowIncomplete = measurementValidationAttempted.edit && Object.keys(validateInspectionMeasurementRows([item]).itemErrors[0] || {}).length > 0;
                         const hasActiveProduct = products.some((product) => String(product._id || product.id) === normalizeProductId(item.product_id));
-                        const rowSubtotal = hasSelectedProduct ? calculateRowSubtotal(item) + getItemAdditionalChargesTotal(item) : 0;
+                        const rowSubtotal = hasSelectedProduct ? getEditItemSubtotalForTotals(item) + getItemAdditionalChargesTotal(item) : 0;
                         const bladeRow = hasSelectedProduct ? renderBladeMeasurementRow(item, index, handleEditItemFieldChange, handleEditItemProductChange, removeEditItemRow, computeEditTotals(), "edit-mobile") : null;
                         if (bladeRow) return <Fragment key={`edit-mobile-blade-charge-${item.id || index}`}>{bladeRow}{renderItemAdditionalCharges(item, index, handleEditItemFieldChange)}</Fragment>;
                         const inputClasses = darkMode
@@ -6707,7 +6827,7 @@ function SiteInspection() {
                     <div className={`mt-4 flex justify-end border-t pt-4 ${darkMode ? "border-slate-700" : "border-slate-200"}`}>
                       <div className={`text-right ${darkMode ? "text-slate-100" : "text-slate-900"}`}>
                         {((editInspection.project_additional_charges || []).some((charge) => String(charge.name || "").trim() && String(charge.amount ?? "").trim() !== "") || (editInspection.items || []).some((item) => getItemAdditionalChargesTotal(item) > 0)) && <p className="mb-1 text-xs font-medium text-slate-500">Products + <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency((editInspection.project_additional_charges || []).reduce((sum, charge) => String(charge.name || "").trim() && String(charge.amount ?? "").trim() !== "" ? sum + (Number(charge.amount) || 0) : sum, 0) + (editInspection.items || []).reduce((sum, item) => sum + getItemAdditionalChargesTotal(item), 0))}</span> additional charges</p>}
-                        <div className="text-lg font-black">Project total <span className={`ml-2 text-xl ${darkMode ? "text-red-300" : "text-red-600"}`}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(computeEditTotals().totalEstimate)}</span></span></div>
+                        <div className="text-lg font-black">Project total <span className={`ml-2 text-xl ${darkMode ? "text-red-300" : "text-red-600"}`}><span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(getEditProjectTotal())}</span></span></div>
                       </div>
                     </div>
                   </section>
@@ -6719,7 +6839,7 @@ function SiteInspection() {
 
                     <div className={`mb-5 rounded-xl border px-4 py-3 text-sm font-medium ${darkMode ? "border-amber-500/30 bg-amber-500/10 text-amber-100" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
                       <span className="mr-2 text-base">Tip:</span>
-                      Business Policy: {isFullPaymentPlan(editInspection.payment_terms || "") ? "Full payment is required before project commences." : `Downpayment to be paid: ${formatCurrency(resolveRequiredPaymentAmount(editInspection.payment_terms, Number(editInspection.manual_override) || computeEditTotals().totalEstimate, editInspection.required_downpayment_amount))}.`}
+                      Business Policy: {isFullPaymentPlan(editInspection.payment_terms || "") ? "Full payment is required before project commences." : `Downpayment to be paid: ${formatCurrency(resolveRequiredPaymentAmount(editInspection.payment_terms, getEditProjectTotal(), editInspection.required_downpayment_amount))}.`}
                     </div>
 
                     {(() => {
@@ -6813,7 +6933,7 @@ function SiteInspection() {
                       <div>
                         <label className={`mb-2 block text-[14px] font-bold ${labelClass}`}>Estimated Cost</label>
                         <div className={`rounded-xl border px-3 py-3 text-xl font-black ${darkMode ? "border-slate-600 bg-[#122d42] text-white" : "border-slate-200 bg-white text-slate-900"}`}>
-                          <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(computeEditTotals().totalEstimate)}</span>
+                          <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(getEditProjectTotal())}</span>
                         </div>
                       </div>
 
@@ -6866,7 +6986,7 @@ function SiteInspection() {
                       <div className="flex items-center justify-between gap-4 text-[14px] font-bold">
                         <span>Final Project Cost</span>
                         <span className={`text-[18px] font-black ${darkMode ? "text-white" : "text-slate-900"}`}>
-                          <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(Number(editInspection.manual_override) || computeEditTotals().totalEstimate)}</span>
+                          <span className="font-[inherit] text-emerald-700 dark:text-emerald-400">{formatCurrency(getEditProjectTotal())}</span>
                         </span>
                       </div>
                       <div className={`mt-3 flex items-center justify-between gap-4 border-t pt-3 text-[14px] font-bold ${darkMode ? "border-slate-700 text-red-400" : "border-slate-200 text-red-600"}`}>
@@ -6875,10 +6995,10 @@ function SiteInspection() {
                           id="edit-required-downpayment-amount"
                           type={hidePaymentAmounts ? "password" : "number"}
                           min="0"
-                          max={Number(editInspection.manual_override) || computeEditTotals().totalEstimate}
+                          max={getEditProjectTotal()}
                           step="0.01"
                           inputMode="decimal"
-                          value={resolveRequiredPaymentAmount(editInspection.payment_terms, Number(editInspection.manual_override) || computeEditTotals().totalEstimate, editInspection.required_downpayment_amount)}
+                          value={resolveRequiredPaymentAmount(editInspection.payment_terms, getEditProjectTotal(), editInspection.required_downpayment_amount)}
                           onChange={(event) => handleEditChange("required_downpayment_amount", event.target.value)}
                           disabled={isFullPaymentPlan(editInspection.payment_terms || "") || editInspection.payment_terms === "50%_down_payment"}
                           className={`w-full max-w-[220px] rounded-lg border px-3 py-2 text-right text-base font-black outline-none focus:border-red-500 disabled:opacity-70 ${darkMode ? "border-slate-600 bg-[#122d42] text-red-300" : "border-slate-200 bg-white text-red-600"}`}
