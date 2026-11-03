@@ -1413,7 +1413,7 @@ function Transactions() {
     : 0;
   const formatCurrency = (amount) => hidePaymentAmounts ? "••••••" : `₱${amount.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const summaryMetrics = [
-    { label: "Total Revenue", value: formatCurrency(financialTotals.revenue), detail: "Target profit margin: 33.33%", detailClassName: `text-xs font-bold ${darkMode ? "text-amber-200" : "text-amber-900"}`, color: "text-rose-300" },
+    { label: "Total Revenue", value: formatCurrency(financialTotals.revenue), color: "text-rose-300" },
     { label: "Total Collected", value: formatCurrency(financialTotals.collected), color: "text-emerald-300" },
     { label: "Pending Balance", value: formatCurrency(financialTotals.pending), color: "text-amber-200" },
     { label: "Completed Projects", value: completedProjects.length.toLocaleString(), color: "text-emerald-300" },
