@@ -30,7 +30,7 @@ import AppToaster from "@/components/AppToaster";
 import { toJpeg } from "html-to-image";
 import jsPDF from "jspdf";
 
-import { getAdminOrders, getAdminOrder, generateContract, updateOrderInspection, updateOrderStatus, createInspection, sendWalkInApprovalEmail } from "@/api/orders";
+import { getAdminOrders, getAdminOrder, generateContract, updateOrderInspection, updateOrderStatus, cancelAdminOrder, createInspection, sendWalkInApprovalEmail } from "@/api/orders";
 import { subscribeToRealtime } from "@/lib/realtimeEvents";
 import { buildContractSnapshot, hasContractSnapshotChanged, hasExistingContract } from "./contractState";
 import { getCustomerPaymentProof, getPaymentSummary } from "@/pages/Transactions/paymentProofUtils";
@@ -3792,58 +3792,58 @@ function SiteInspection() {
   };
   openContractButtonHandlerRef.current = openContractButtonHandler;
 
-  const handleCancel = async (orderId) => {
+  const handleCancel = async (orderId, reason) => {
     if (!orderId) return;
     try {
       setCancellingId(orderId);
-      const res = await updateOrderStatus(orderId, { status: "cancelled" });
-      recordActivity(user, `Cancelled site inspection ${orderId}.`, "Site Inspection");
+      const res = await cancelAdminOrder(orderId, { reason });
+      recordActivity(user, `Cancelled site inspection ${orderId}. Reason: ${reason}`, "Site Inspection");
       if (res && res.order) {
         setInspections((prev) => prev.filter((i) => (i._id || i.id) !== orderId));
         setCancelledInspections((prev) => [res.order, ...prev]);
         setRushOrderRecords((prev) => prev.map((i) => ((i._id || i.id) === orderId ? res.order : i)));
-        // show undo toast with react-hot-toast
-        toast((t) => (
-          <div className="flex items-center justify-between gap-4">
-            <div>Inspection cancelled</div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={async () => {
-                  toast.dismiss(t.id);
-                  await handleRestore(orderId);
-                }}
-                className="text-sm text-blue-600"
-              >
-                Undo
-              </button>
-            </div>
-          </div>
-        ), { duration: 6000 });
+        toast.success("Inspection cancelled.");
       } else {
         setInspections((prev) => prev.filter((i) => (i._id || i.id) !== orderId));
         setRushOrderRecords((prev) => prev.filter((i) => (i._id || i.id) !== orderId));
       }
+      return true;
     } catch (err) {
       console.error("Failed to cancel inspection", err);
       toast.error(err?.data?.message || err?.message || "Failed to cancel inspection.");
+      return false;
     } finally {
       setCancellingId(null);
     }
   };
 
   const [cancelConfirm, setCancelConfirm] = useState({ open: false, id: null });
+  const [cancelReason, setCancelReason] = useState("");
 
   const requestCancel = (orderId) => {
+    setCancelReason("");
     setCancelConfirm({ open: true, id: orderId });
   };
 
   const handleConfirmCancel = async () => {
+    const reason = cancelReason.trim();
+    if (!reason) {
+      toast.error("Enter a cancellation reason to continue.");
+      return;
+    }
     const orderId = cancelConfirm.id;
-    setCancelConfirm({ open: false, id: null });
-    await handleCancel(orderId);
+    const cancelled = await handleCancel(orderId, reason);
+    if (cancelled) {
+      setCancelConfirm({ open: false, id: null });
+      setCancelReason("");
+    }
   };
 
-  const closeCancelModal = () => setCancelConfirm({ open: false, id: null });
+  const closeCancelModal = () => {
+    if (cancellingId === cancelConfirm.id) return;
+    setCancelConfirm({ open: false, id: null });
+    setCancelReason("");
+  };
 
   const [restoreConfirm, setRestoreConfirm] = useState({ open: false, id: null });
   const [contractConfirm, setContractConfirm] = useState({ open: false, id: null });
@@ -4425,22 +4425,51 @@ function SiteInspection() {
 
           {/* CANCEL CONFIRMATION MODAL */}
           {cancelConfirm.open && (
-            <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-50">
-              <div className="bg-white w-full max-w-md rounded-3xl p-6">
-                <h3 className="text-xl font-bold mb-4">Confirm Cancel Inspection</h3>
-                <p className="text-gray-600 mb-6">Are you sure you want to mark this inspection as cancelled?</p>
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+              <section
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="cancel-inspection-title"
+                className={`w-full max-w-md rounded-3xl border p-6 shadow-2xl ${darkMode ? "border-slate-700 bg-slate-800 text-slate-100" : "border-slate-200 bg-white text-slate-900"}`}
+              >
+                <h3 id="cancel-inspection-title" className="mb-2 text-xl font-bold">Cancel Inspection</h3>
+                <p className={`mb-5 text-sm ${darkMode ? "text-slate-300" : "text-slate-600"}`}>
+                  Enter the reason for cancelling this project. This reason will be recorded and shared with the customer.
+                </p>
+                <label htmlFor="inspection-cancellation-reason" className="mb-2 block text-sm font-semibold">
+                  Cancellation reason <span className="text-red-500">(required)</span>
+                </label>
+                <textarea
+                  id="inspection-cancellation-reason"
+                  value={cancelReason}
+                  onChange={(event) => setCancelReason(event.target.value)}
+                  maxLength={1000}
+                  rows={4}
+                  autoFocus
+                  placeholder="Describe why this project is being cancelled."
+                  className={`w-full resize-y rounded-xl border px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-red-500 ${darkMode ? "border-slate-600 bg-slate-900 text-slate-100 placeholder:text-slate-500" : "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400"}`}
+                />
+                <p className={`mt-1 text-right text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>{cancelReason.length}/1000</p>
 
-                <div className="flex justify-end gap-3">
-                  <button onClick={closeCancelModal} className="px-4 py-2 bg-gray-200 rounded-xl">Close</button>
+                <div className="mt-5 flex justify-end gap-3">
                   <button
-                    onClick={handleConfirmCancel}
-                    className="px-4 py-2 bg-red-600 text-white rounded-xl"
+                    type="button"
+                    onClick={closeCancelModal}
                     disabled={cancellingId === cancelConfirm.id}
+                    className={`rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-50 ${darkMode ? "bg-slate-700 text-slate-100 hover:bg-slate-600" : "bg-gray-200 text-gray-800 hover:bg-gray-300"}`}
                   >
-                    {cancellingId === cancelConfirm.id ? 'Cancelling...' : 'Confirm Cancel'}
+                    Close
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleConfirmCancel}
+                    className="rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={cancellingId === cancelConfirm.id || !cancelReason.trim()}
+                  >
+                    {cancellingId === cancelConfirm.id ? "Cancelling..." : "Confirm Cancel"}
                   </button>
                 </div>
-              </div>
+              </section>
             </div>
           )}
 
